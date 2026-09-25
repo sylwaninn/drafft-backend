@@ -30,8 +30,16 @@ them; Claude Code loads them through `CLAUDE.md`.
 (`pnpm verify`) means, in this repository:
 
 ```sh
-(cd supabase/functions && deno check */index.ts) && deno check scripts/*.ts && supabase test db
+deno fmt --check supabase/functions scripts && deno lint supabase/functions scripts \
+  && (cd supabase/functions && deno check ./*/index.ts) && deno check scripts/*.ts \
+  && supabase test db && supabase db advisors --local --level info -o json | python3 scripts/ci/advisors.py
 ```
+
+CI (`.github/workflows/`) runs the same, plus shellcheck, actionlint, gitleaks, a schema lint, the
+migration guard (`scripts/ci/migrations-guard.sh`: migrations on main are immutable, destructive or
+locking statements need `-- migration-guard: allow <what> - <why>`), and after each deploy and daily
+the drift check between the repository, staging and production (`scripts/ci/env-parity.sh`). A new
+advisor finding fails the build: fix it, or accept it in `supabase/advisors-baseline.json` with a reason.
 
 @.agents/rules/commits.md
 @.agents/rules/github.md

@@ -1,9 +1,8 @@
-# Checks every change; ships main to staging and v* tags to production.
+# Checks every change; ships main to staging and v* tags to production, then checks for drift.
 #
-#   pull request      → checks
-#   push to main      → checks, then scripts/deploy.sh staging
-#   push of a v* tag  → checks, then scripts/deploy.sh production (the `production` environment only
-#                       accepts v* tags)
+#   pull request      → code, database and migration checks
+#   push to main      → checks, deploy to staging, drift check
+#   push of a v* tag  → checks, deploy to production (the environment only accepts v* tags), drift check
 #
 # Migrations and Edge Functions only: secrets stay in the local .env files (`deploy.sh <env> --secrets`).
 name: backend
@@ -14,36 +13,80 @@ on:
     branches: [main]
     tags: ["v*"]
 
+permissions:
+  contents: read
+
 concurrency:
   group: backend-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Pinned: `latest` asks GitHub's API for the release and hits its rate limit. Same as local.
+  SUPABASE_CLI: 2.90.0
 
 jobs:
-  check:
+  code:
+    name: code (format, lint, types, shell, workflows, secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Format
+        run: deno fmt --check supabase/functions scripts
+      - name: Lint
+        run: deno lint supabase/functions scripts
+      - name: Type-check Edge Functions
+        working-directory: supabase/functions
+        run: deno check ./*/index.ts
+      - name: Type-check scripts
+        run: deno check scripts/*.ts
+      - name: Shell scripts
+        run: shellcheck -S warning scripts/*.sh scripts/ci/*.sh
+      - name: Workflows
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
+      - name: Secrets (whole history)
+        run: docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:v8.28.0 git --no-banner --config .gitleaks.toml --redact .
+
+  database:
+    name: database (tests, schema lint, advisors)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - name: Type-check Edge Functions
-        working-directory: supabase/functions
-        run: deno check */index.ts
-      - name: Type-check scripts
-        run: deno check scripts/*.ts
       - uses: supabase/setup-cli@v1
         with:
-          # Pinned: `latest` asks GitHub's API for the release and hits its rate limit. Same as local.
-          version: 2.90.0
-      - name: Database tests
-        run: |
-          supabase start -x studio,imgproxy,edge-runtime,logflare,vector
-          supabase test db
+          version: ${{ env.SUPABASE_CLI }}
+      - name: Start a database from the migrations
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector
+      - name: Tests (pgTAP)
+        run: supabase test db
+      - name: Schema lint (plpgsql_check)
+        run: supabase db lint --local -s public,private --level warning --fail-on error
+      - name: Security and performance advisors
+        run: supabase db advisors --local --level info -o json | python3 scripts/ci/advisors.py
+
+  migrations:
+    name: migrations (immutable, ordered, safe)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Guard
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: scripts/ci/migrations-guard.sh "$BASE"
 
   staging:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: check
+    needs: [code, database]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: staging
@@ -51,15 +94,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: 2.90.0
+          version: ${{ env.SUPABASE_CLI }}
       - name: Deploy to staging
         run: scripts/deploy.sh staging
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Drift (production may lag until the next tag)
+        run: scripts/ci/env-parity.sh --allow-prod-behind
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
   production:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: check
+    needs: [code, database]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
@@ -67,9 +114,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: 2.90.0
+          version: ${{ env.SUPABASE_CLI }}
       - name: Deploy to production
         # The tag is the confirmation deploy.sh asks for.
         run: echo production | scripts/deploy.sh production
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Drift
+        run: scripts/ci/env-parity.sh
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

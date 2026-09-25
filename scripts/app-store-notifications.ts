@@ -37,14 +37,17 @@ async function api(method: string, path: string, body?: unknown): Promise<any> {
   return text ? JSON.parse(text) : {};
 }
 
-const fields = "subscriptionStatusUrl,subscriptionStatusUrlVersion,subscriptionStatusUrlForSandbox,subscriptionStatusUrlVersionForSandbox";
+const fields =
+  "subscriptionStatusUrl,subscriptionStatusUrlVersion,subscriptionStatusUrlForSandbox,subscriptionStatusUrlVersionForSandbox";
 const [found] = (await api("GET", `/v1/apps?filter[bundleId]=${BUNDLE_ID}`)).data;
 if (!found) throw new Error(`No app ${BUNDLE_ID}`);
 // The filtered list leaves these attributes out: read the app itself.
 const app = (await api("GET", `/v1/apps/${found.id}?fields[apps]=${fields}`)).data;
 const a = app.attributes;
 console.log(`now:  production ${a.subscriptionStatusUrl ?? "(none)"} ${a.subscriptionStatusUrlVersion ?? ""}`);
-console.log(`now:  sandbox    ${a.subscriptionStatusUrlForSandbox ?? "(none)"} ${a.subscriptionStatusUrlVersionForSandbox ?? ""}`);
+console.log(
+  `now:  sandbox    ${a.subscriptionStatusUrlForSandbox ?? "(none)"} ${a.subscriptionStatusUrlVersionForSandbox ?? ""}`,
+);
 
 if (mode === "apply") {
   const production = Deno.env.get("PRODUCTION_URL");

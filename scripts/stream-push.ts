@@ -9,7 +9,10 @@
 import { StreamChat } from "npm:stream-chat@9";
 
 const mode = Deno.args[0] ?? "plan";
-const env = (name: string) => Deno.env.get(name) ?? (() => { throw new Error(`${name} is not set`); })();
+const env = (name: string) =>
+  Deno.env.get(name) ?? (() => {
+    throw new Error(`${name} is not set`);
+  })();
 const client = StreamChat.getInstance(env("STREAM_API_KEY"), env("STREAM_API_SECRET"));
 
 const key = {
@@ -39,7 +42,9 @@ for (const w of WANT) {
 
 if (mode === "apply") {
   for (const w of WANT) {
-    await client.upsertPushProvider({ ...key, ...w, type: "apn", description: "" } as Parameters<typeof client.upsertPushProvider>[0]);
+    await client.upsertPushProvider(
+      { ...key, ...w, type: "apn", description: "" } as Parameters<typeof client.upsertPushProvider>[0],
+    );
   }
   console.log("applied");
 }
