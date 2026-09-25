@@ -36,20 +36,27 @@ The app-side list lives in `drafft/TODO.md`.
       and send `sender name` + `photo key` in the payload so the app's service extension shows the
       sender's photo as the icon. Decide whether like pushes name the liker (today: anonymous, because
       "see who liked you" may be a paid feature).
-- [ ] **Auth emails.** Without custom SMTP, Supabase only emails members of the organization, a few per
-      hour: beta testers get no confirmation email. Resend (or Postmark) + custom SMTP in Auth settings.
-- [ ] **Email codes on the hosted project.** The app changes email and password with a 6-digit code:
-      in Auth > Emails, paste `supabase/templates/email_change.html` and `reauthentication.html`
-      (they show `{{ .Token }}`), and turn "Secure email change" off (`double_confirm_changes = false`).
+- [ ] **Auth emails** (`auth-email`, Send Email hook; code done). Per environment: a Resend API key,
+      Auth > Hooks > Send Email (HTTPS) to `https://<ref>.supabase.co/functions/v1/auth-email`, its secret
+      and the key in `functions/.env.<env>` (`SEND_EMAIL_HOOK_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`),
+      `deploy.sh <env> --secrets`, then enable the hook. Auth > Providers > Email: "Confirm email" on, email
+      OTP length 6, "Secure email change" off (the app types one code sent to the new address).
+- [ ] **Email domain.** Resend only delivers to its own account's address until a domain is verified:
+      `mail.getdrafft.com` in Resend, its DNS records in Cloudflare, then `EMAIL_FROM=drafft <no-reply@mail.getdrafft.com>`.
 - [ ] **Apple and Google sign-in** (providers disabled for now; see README, "Production setup").
-- [ ] **Phone verification.** SMS provider for Supabase Auth phone OTP (Twilio, MessageBird, Vonage),
-      then `BackendConfig.smsEnabled = true` in the app (sign-up and You use `phone_change`).
+- [ ] **Phone verification** (`auth-sms`, Send SMS hook; code done). Per environment: Twilio Messaging
+      Service (sender "drafft", geo permissions limited to FR BE CH LU GB ES IT DE US CA, SMS pumping
+      protection, spend alert), an API key, Auth > Hooks > Send SMS (HTTPS) to `…/functions/v1/auth-sms`,
+      its secret and the Twilio values in `functions/.env.<env>`, `deploy.sh <env> --secrets`, then enable
+      the hook. Auth > Providers > Phone: "Enable phone confirmations" on (off, Auth sets any number without a
+      code), resend interval 30 s, SMS rate limit per hour. Then `SMS_ENABLED = YES` in the app's
+      `Config/Production.xcconfig`.
 - [ ] **Reports.** Review tool (or Studio saved queries) and process; automatic hide after N reports.
 - [ ] **Real services end to end.** Verified in production: R2 (HEAD, reject missing, delete), Stream (channel
       on match, openers, users can't create channels). Still to run: sessions, pushes (APNs), media-upload-url
       with a real user token.
 - [ ] **Production project** (Ireland, linked; migrations and Vault done). Compute Small+, PITR, function secrets without
-      `MODERATION_MODE`, Apple and Google auth, R2 bucket + `media.drafft.so` + image transformations,
+      `MODERATION_MODE`, Apple and Google auth, R2 bucket + `media.getdrafft.com` + image transformations,
       Stream EU app with the APNs key (see README, "Production setup").
 - [ ] **Staging project** mirroring production, and CI: `supabase test db` + `deno check` + `deno lint` on
       every push, `supabase db push` on merge.

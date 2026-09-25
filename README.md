@@ -12,7 +12,7 @@ iPhone ── PostgREST RPCs ─────────────▶ Postgres
    ├── Edge Functions ──────────────────┤                                 ├─ APNs: match, like, session pushes
    │   stream-token, media-upload-url,  │                                 └─ R2: moderation check, deletions
    │   delete-account                   │
-   ├── PUT (presigned) ─▶ R2 ◀── CDN (media.drafft.so) ◀── image/video GETs
+   ├── PUT (presigned) ─▶ R2 ◀── CDN (media.getdrafft.com) ◀── image/video GETs
    └── Stream Chat SDK ─▶ Stream (EU)
 ```
 
@@ -32,7 +32,7 @@ Principles:
 ```
 supabase/
   migrations/   foundation, profiles, social, sessions, events, purchases, media review, weekly boost, notification settings
-  functions/    stream-token, media-upload-url, db-events, delete-account, revenuecat-webhook, stream-webhook, app-config, _shared/
+  functions/    stream-token, media-upload-url, db-events, delete-account, revenuecat-webhook, stream-webhook, app-config, auth-email, auth-sms, _shared/
   tests/        pgTAP (supabase test db)
   seed.sql      local Vault secrets
 scripts/bench.sql   latency benchmark on synthetic data
@@ -66,6 +66,16 @@ drafft tempo's weekly boost: subscribing credits one straight away, then `privat
 
 Edge Functions: `stream-token`, `media-upload-url`, `delete-account`, `app-config` (public: `mediaUrl`, where media keys are served from).
 
+Auth emails: Supabase Auth sends none itself. Its Send Email hook calls `auth-email`, which picks the
+person's language (`profiles.language`, set at sign-up from the app's `language` metadata) and sends through
+Resend: a 6-digit code to confirm sign-up, a new email or a password change (the app types it in), and a
+link to reset a forgotten password.
+
+Verification SMS: same for the phone step (sign-up and You, a phone change): the Send SMS hook calls
+`auth-sms`, which texts the code through Twilio in the person's language, only to the countries the app
+offers. Locally the SMS lands in Mailpit too. Locally
+they land in Mailpit (http://127.0.0.1:55424).
+
 ## Local development
 
 ```sh
@@ -82,6 +92,29 @@ Local media: point `R2_ENDPOINT` at the local Storage S3 API (`http://host.docke
 Update the CLI (`brew upgrade supabase`): the Postgres image bundled with CLI 2.90 (17.6.1.106) crashes when
 a role calls a function it has no EXECUTE on from psql. Tests check privileges with `has_function_privilege`
 for that reason. Through the API the same call correctly returns 42501.
+
+### Local database, staging services
+
+The app's **Drafft Local** scheme ("drafft local") runs on this local Supabase while chat, media, pushes,
+moderation and purchases go through the staging services:
+
+```sh
+supabase start
+scripts/local-env.sh     # once: functions/.env.local from .env.staging with local values; yours to edit after
+supabase functions serve --env-file supabase/functions/.env.local
+# in the app repository: scripts/local-backend.sh (--device for an iPhone on the same Wi-Fi)
+```
+
+In `.env.local`, `EMAIL_REAL=true` / `SMS_REAL=true` send auth emails (Resend, your own key if you set one)
+and SMS (Twilio) for real instead of to Mailpit. The script never rewrites the file once it exists.
+
+Outgoing calls just work. Incoming webhooks still go to staging, which ignores users it doesn't know
+(`ignored: unknown app_user_id`). To credit local purchases, expose the functions with a tunnel
+(`cloudflared tunnel --url http://localhost:55421`) and add a **second** webhook in RevenueCat `drafft staging`
+to `https://<tunnel>/functions/v1/revenuecat-webhook`, Authorization from
+`scripts/local-env.sh --webhook-auth | pbcopy`. Never repoint staging's own webhooks (RevenueCat, Stream).
+Local users and media land in Stream staging and `drafft-media-staging`; a `supabase db reset` leaves them
+orphaned there.
 
 ## Benchmark
 
@@ -114,8 +147,10 @@ cost doesn't grow with density. The first version filtered and sorted every cand
 3. `echo production | scripts/sync-vault.sh production` (Vault secrets, from `functions/.env.production`).
 4. `supabase secrets set --env-file supabase/functions/.env.production` (see `functions/.env.example`),
    **without** `MODERATION_MODE`. Then `supabase functions deploy`.
-5. Auth: Apple (bundle id `so.drafft.app`) and Google (iOS + web client ids) in the dashboard.
-6. R2 bucket `drafft-media` with a custom domain (`media.drafft.so`) and Cloudflare image transformations
+5. Auth: Apple (bundle id `so.drafft.app`) and Google (iOS + web client ids) in the dashboard. Send Email hook
+   (HTTPS) to `auth-email`: its secret into `SEND_EMAIL_HOOK_SECRET`, with `RESEND_API_KEY` and `EMAIL_FROM`,
+   then `deploy.sh production --secrets` before enabling it.
+6. R2 bucket `drafft-media` with a custom domain (`media.getdrafft.com`) and Cloudflare image transformations
    enabled on that zone. The app requests sizes with `/cdn-cgi/image/width=800,quality=80/<key>`.
 7. Stream app in the EU region, APNs `.p8` key uploaded in its push settings (chat pushes come from Stream).
 
@@ -156,7 +191,7 @@ Setting it up once:
    from `DB_EVENTS_SECRET`), so database events reach the functions. Run it again whenever `DB_EVENTS_SECRET`
    changes, in either environment.
 5. Auth on the branch: redirect URLs `drafft://auth-callback` and `drafft://auth-callback/reset`, Apple and
-   Google (same client ids as production), email templates, SMTP.
+   Google (same client ids as production), Send Email hook to its `auth-email` (its own secret and Resend key).
 6. Stream staging app (EU), configured by script like production, `--env-file=supabase/functions/.env.<env>`:
    `stream-settings.ts` (app settings, grants), `stream-push.ts` (APNs providers from `APNS_*`),
    `stream-webhook.ts` (with `SUPABASE_URL` for staging). `stream-diff.ts` compares the two apps.
