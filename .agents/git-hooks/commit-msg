@@ -1,0 +1,27 @@
+#!/bin/sh
+# Enforces .agents/rules/commits.md for everyone (agents and humans): one line,
+# `type(scope): description`, no Co-Authored-By. Enabled by `git config core.hooksPath .agents/git-hooks`.
+msg_file=$1
+# The message as git will store it: comment lines and trailing blank lines dropped.
+lines=$(grep -v '^#' "$msg_file" | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}')
+first=$(printf '%s\n' "$lines" | head -n 1)
+
+case "$first" in
+  Merge\ *|Revert\ *|fixup!\ *|squash!\ *) exit 0 ;;
+esac
+
+fail() {
+  echo "commit-msg: $1" >&2
+  echo "  Format: type(scope): description   (see .agents/rules/commits.md)" >&2
+  exit 1
+}
+
+if printf '%s\n' "$lines" | grep -qi 'co-authored-by'; then
+  fail "no Co-Authored-By trailers: commits are attributed to the author only."
+fi
+if [ "$(printf '%s\n' "$lines" | grep -c .)" -gt 1 ]; then
+  fail "one line only, no body."
+fi
+if ! printf '%s\n' "$first" | grep -qE '^(feat|fix|docs|style|refactor|test|chore)(\([a-z0-9-]+\))?: [a-z].*[^.]$'; then
+  fail "\"$first\" isn't type(scope): lowercase description without a final period."
+fi

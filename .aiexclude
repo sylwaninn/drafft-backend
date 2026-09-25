@@ -1,0 +1,8 @@
+# Secrets: never read, index or send to an AI model.
+.env
+.env.production
+.env.local
+.env.*.local
+supabase/.env
+supabase/functions/.env
+supabase/functions/.env.production
