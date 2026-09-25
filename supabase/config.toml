@@ -214,7 +214,8 @@ enable_signup = true
 # Off: the app asks for the password, then a 6-digit code sent to the new address.
 double_confirm_changes = false
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = false
+# On, like the hosted projects: the app types the 6-digit code from the sign-up email.
+enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
@@ -234,15 +235,6 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# The app types these codes in (6 boxes): the templates show {{ .Token }}, not a link.
-[auth.email.template.email_change]
-subject = "Your drafft code"
-content_path = "./supabase/templates/email_change.html"
-
-[auth.email.template.reauthentication]
-subject = "Your drafft code"
-content_path = "./supabase/templates/reauthentication.html"
-
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"
@@ -258,11 +250,13 @@ content_path = "./supabase/templates/reauthentication.html"
 # Allow/disallow new user signups via SMS to your project.
 enable_signup = false
 # If enabled, users need to confirm their phone number before signing in.
-enable_confirmations = false
+# On: a phone change only takes effect with the texted code. Off, Auth sets any number straight away.
+enable_confirmations = true
 # Template for sending OTP to users
 template = "Your code is {{ .Code }}"
 # Controls the minimum amount of time that must pass before sending another sms otp.
-max_frequency = "5s"
+# Same as the app's "Resend code" timer: each SMS costs money, and bots hammer resend.
+max_frequency = "30s"
 
 # Use pre-defined map of phone number to OTP for testing.
 # [auth.sms.test_otp]
@@ -279,6 +273,21 @@ max_frequency = "5s"
 # [auth.hook.before_user_created]
 # enabled = true
 # uri = "pg-functions://postgres/auth/before-user-created-hook"
+
+# Auth sends no email itself: the auth-email Edge Function does, in the person's language (Resend when
+# hosted, Mailpit here). Hosted projects: Auth > Hooks > Send Email (HTTPS), its secret in SEND_EMAIL_HOOK_SECRET.
+# This secret is for local development only, like seed.sql's; it must match functions/.env*.
+[auth.hook.send_email]
+enabled = true
+uri = "http://host.docker.internal:55421/functions/v1/auth-email"
+secrets = "v1,whsec_bG9jYWwtZGV2LXNlbmQtZW1haWwtaG9vay1zZWNyZXQ="
+
+# Same for SMS: the auth-sms Edge Function texts the code (Twilio when hosted, Mailpit here, never a
+# real phone). Hosted: Auth > Hooks > Send SMS (HTTPS), its secret in SEND_SMS_HOOK_SECRET.
+[auth.hook.send_sms]
+enabled = true
+uri = "http://host.docker.internal:55421/functions/v1/auth-sms"
+secrets = "v1,whsec_bG9jYWwtZGV2LXNlbmQtc21zLWhvb2stc2VjcmV0"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
 # [auth.hook.custom_access_token]
@@ -432,6 +441,14 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.app-config]
+verify_jwt = false
+
+# Called by Supabase Auth (Send Email and Send SMS hooks), authenticated with the hooks' Standard Webhooks
+# signatures.
+[functions.auth-email]
+verify_jwt = false
+
+[functions.auth-sms]
 verify_jwt = false
 
 # Called by the app with the person's access token, checked in code (requireUser → auth.getUser). The
