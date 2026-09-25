@@ -49,7 +49,8 @@ The app-side list lives in `drafft/TODO.md`.
       protection, spend alert), an API key, Auth > Hooks > Send SMS (HTTPS) to `…/functions/v1/auth-sms`,
       its secret and the Twilio values in `functions/.env.<env>`, `deploy.sh <env> --secrets`, then enable
       the hook. Auth > Providers > Phone: "Enable phone confirmations" on (off, Auth sets any number without a
-      code), resend interval 30 s, SMS rate limit per hour. Then `SMS_ENABLED = YES` in the app's
+      code), resend interval 30 s, SMS OTP expiry 600 s (the app's `SMS_CODE_LIFETIME`, which
+      tells an expired code from a wrong one), SMS rate limit per hour. Then `SMS_ENABLED = YES` in the app's
       `Config/Production.xcconfig`.
 - [ ] **Reports.** Review tool (or Studio saved queries) and process; automatic hide after N reports.
 - [ ] **Real services end to end.** Verified in production: R2 (HEAD, reject missing, delete), Stream (channel
