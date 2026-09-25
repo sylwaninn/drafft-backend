@@ -23,12 +23,42 @@ const SUBSCRIPTIONS = [
 ];
 const SUBSCRIPTION_DESCRIPTION = "Unlimited likes and every drafft tempo perk"; // ≤ 55
 const CONSUMABLES = [
-  { productId: "so.drafft.app.boost.1", name: "1 Boost", price: "4.99", description: "30 minutes at the top of decks nearby" },
-  { productId: "so.drafft.app.boost.5", name: "5 Boosts", price: "17.99", description: "30 minutes at the top of decks nearby" },
-  { productId: "so.drafft.app.boost.10", name: "10 Boosts", price: "29.99", description: "30 minutes at the top of decks nearby" },
-  { productId: "so.drafft.app.superlike.3", name: "3 Super Likes", price: "4.99", description: "They see you first, with your note" },
-  { productId: "so.drafft.app.superlike.15", name: "15 Super Likes", price: "17.99", description: "They see you first, with your note" },
-  { productId: "so.drafft.app.superlike.30", name: "30 Super Likes", price: "29.99", description: "They see you first, with your note" },
+  {
+    productId: "so.drafft.app.boost.1",
+    name: "1 Boost",
+    price: "4.99",
+    description: "30 minutes at the top of decks nearby",
+  },
+  {
+    productId: "so.drafft.app.boost.5",
+    name: "5 Boosts",
+    price: "17.99",
+    description: "30 minutes at the top of decks nearby",
+  },
+  {
+    productId: "so.drafft.app.boost.10",
+    name: "10 Boosts",
+    price: "29.99",
+    description: "30 minutes at the top of decks nearby",
+  },
+  {
+    productId: "so.drafft.app.superlike.3",
+    name: "3 Super Likes",
+    price: "4.99",
+    description: "They see you first, with your note",
+  },
+  {
+    productId: "so.drafft.app.superlike.15",
+    name: "15 Super Likes",
+    price: "17.99",
+    description: "They see you first, with your note",
+  },
+  {
+    productId: "so.drafft.app.superlike.30",
+    name: "30 Super Likes",
+    price: "29.99",
+    description: "They see you first, with your note",
+  },
 ]; // IAP name ≤ 30, description ≤ 45
 
 // MARK: API
@@ -53,7 +83,7 @@ async function api(method: string, path: string, body?: Json): Promise<Json> {
   // Apple's API answers intermittent 500s: retry with backoff. A retried POST that did go through
   // fails with a 409 on the unique product id instead of creating a duplicate.
   let res: Response;
-  for (let attempt = 1; ; attempt++) {
+  for (let attempt = 1;; attempt++) {
     res = await fetch(url, {
       method,
       headers: { authorization: `Bearer ${await jwt()}`, "content-type": "application/json" },
@@ -88,7 +118,9 @@ async function pricePoint(path: string, price: string): Promise<{ id: string; pr
   const target = Number(price);
   let best = points[0];
   for (const p of points) {
-    if (Math.abs(Number(p.attributes.customerPrice) - target) < Math.abs(Number(best.attributes.customerPrice) - target)) {
+    if (
+      Math.abs(Number(p.attributes.customerPrice) - target) < Math.abs(Number(best.attributes.customerPrice) - target)
+    ) {
       best = p;
     }
   }
@@ -113,14 +145,20 @@ for (const g of groups) {
 const iapIds = new Set(existingIaps.map((i: Json) => i.attributes.productId));
 
 if (mode === "plan") {
-  console.log(`Existing: ${groups.length} subscription group(s), ${existingSubs.size} subscription(s), ${iapIds.size} in-app purchase(s)`);
+  console.log(
+    `Existing: ${groups.length} subscription group(s), ${existingSubs.size} subscription(s), ${iapIds.size} in-app purchase(s)`,
+  );
   // Price points are per product, so check against an existing product if there is one; otherwise
   // report the grid from the app-level endpoint for consumables.
   const grid = await all(`/v1/apps/${app.id}/appPricePoints?filter[territory]=${BASE_TERRITORY}&limit=200`);
   const prices = new Set(grid.map((p: Json) => p.attributes.customerPrice));
   for (const item of [...SUBSCRIPTIONS, ...CONSUMABLES]) {
     const status = iapIds.has(item.productId) || existingSubs.has(item.productId) ? "exists" : "to create";
-    console.log(`  ${item.productId.padEnd(32)} €${item.price.padEnd(6)} ${prices.has(item.price) ? "price OK" : "PRICE NOT ON APPLE'S GRID"}  ${status}`);
+    console.log(
+      `  ${item.productId.padEnd(32)} €${item.price.padEnd(6)} ${
+        prices.has(item.price) ? "price OK" : "PRICE NOT ON APPLE'S GRID"
+      }  ${status}`,
+    );
   }
   Deno.exit(0);
 }
@@ -208,7 +246,13 @@ for (const s of SUBSCRIPTIONS) {
   const sub = (await api("POST", "/v1/subscriptions", {
     data: {
       type: "subscriptions",
-      attributes: { name: s.name, productId: s.productId, subscriptionPeriod: s.period, groupLevel: 1, familySharable: false },
+      attributes: {
+        name: s.name,
+        productId: s.productId,
+        subscriptionPeriod: s.period,
+        groupLevel: 1,
+        familySharable: false,
+      },
       relationships: { group: { data: { type: "subscriptionGroups", id: group.id } } },
     },
   })).data;
@@ -232,7 +276,12 @@ for (const s of SUBSCRIPTIONS) {
   const point = await pricePoint(`/v1/subscriptions/${sub.id}/pricePoints`, s.price);
   const equalized = await all(`/v1/subscriptionPricePoints/${point.id}/equalizations?limit=200`);
   let priced = 0;
-  for (const p of [{ id: point.id, territory: BASE_TERRITORY }, ...equalized.map((e: Json) => ({ id: e.id, territory: e.relationships?.territory?.data?.id }))]) {
+  for (
+    const p of [
+      { id: point.id, territory: BASE_TERRITORY },
+      ...equalized.map((e: Json) => ({ id: e.id, territory: e.relationships?.territory?.data?.id })),
+    ]
+  ) {
     await api("POST", "/v1/subscriptionPrices", {
       data: {
         type: "subscriptionPrices",
@@ -246,7 +295,11 @@ for (const s of SUBSCRIPTIONS) {
     });
     priced++;
   }
-  console.log(`+ ${s.productId} €${point.price}${point.exact ? "" : ` (nearest to €${s.price})`}, priced in ${priced} territories`);
+  console.log(
+    `+ ${s.productId} €${point.price}${
+      point.exact ? "" : ` (nearest to €${s.price})`
+    }, priced in ${priced} territories`,
+  );
 }
 
 console.log("Done. Screenshots for review are added on the website before the first submission.");

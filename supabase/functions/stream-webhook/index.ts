@@ -48,8 +48,12 @@ serve(async (req) => {
   // The app sends the emoji itself as the reaction type.
   await pushToUser(author, {
     title: "drafft",
-    body: reaction(language(to.language), from?.name || event.user?.name || "Someone", r.type,
-      to.notify_message_previews ? message.text : undefined),
+    body: reaction(
+      language(to.language),
+      from?.name || event.user?.name || "Someone",
+      r.type,
+      to.notify_message_previews ? message.text : undefined,
+    ),
     data: { match: matchId },
     collapseId: `reaction-${message.id}`,
   });

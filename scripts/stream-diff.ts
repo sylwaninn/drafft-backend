@@ -17,7 +17,8 @@ function streamKeys(file: string): [string, string] {
 }
 
 // Values that identify the app or change on their own, not configuration.
-const IGNORED = /(^|\.)(id|name|organization|created_at|updated_at|cdn_expiration_seconds|suspended|suspended_explanation|webhook_url|before_message_send_hook_url|event_hooks\.\d+\.(id|webhook_url|created_at|updated_at))$|secret|private_key|p12|credentials|api_key/i;
+const IGNORED =
+  /(^|\.)(id|name|organization|created_at|updated_at|cdn_expiration_seconds|suspended|suspended_explanation|webhook_url|before_message_send_hook_url|event_hooks\.\d+\.(id|webhook_url|created_at|updated_at))$|secret|private_key|p12|credentials|api_key/i;
 
 // Lists compare by content, not position: primitives sorted, objects keyed by their name.
 function label(item: unknown, i: number): string {
@@ -50,9 +51,13 @@ async function snapshot(file: string) {
 
 const prod = await snapshot("supabase/functions/.env.production");
 const staging = await snapshot("supabase/functions/.env.staging");
-console.log(`production: ${prod.name}   staging: ${staging.name}   same app: ${prod.key === staging.key ? "YES (wrong)" : "no"}`);
+console.log(
+  `production: ${prod.name}   staging: ${staging.name}   same app: ${prod.key === staging.key ? "YES (wrong)" : "no"}`,
+);
 
 const paths = [...new Set([...Object.keys(prod.flat), ...Object.keys(staging.flat)])].sort();
 const diffs = paths.filter((p) => prod.flat[p] !== staging.flat[p]);
-for (const p of diffs) console.log(`${p}\n  production: ${prod.flat[p] ?? "(absent)"}\n  staging:    ${staging.flat[p] ?? "(absent)"}`);
+for (const p of diffs) {
+  console.log(`${p}\n  production: ${prod.flat[p] ?? "(absent)"}\n  staging:    ${staging.flat[p] ?? "(absent)"}`);
+}
 console.log(diffs.length ? `${diffs.length} difference(s).` : "Identical configuration.");

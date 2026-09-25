@@ -8,7 +8,10 @@ import { StreamChat } from "npm:stream-chat@9";
 
 const EVENTS = ["reaction.new", "reaction.updated"];
 const mode = Deno.args[0] ?? "plan";
-const env = (name: string) => Deno.env.get(name) ?? (() => { throw new Error(`${name} is not set`); })();
+const env = (name: string) =>
+  Deno.env.get(name) ?? (() => {
+    throw new Error(`${name} is not set`);
+  })();
 
 const client = StreamChat.getInstance(env("STREAM_API_KEY"), env("STREAM_API_SECRET"));
 const base = Deno.env.get("SUPABASE_URL") ?? "https://wrcpgnqwjmnirjfxpcux.supabase.co";
