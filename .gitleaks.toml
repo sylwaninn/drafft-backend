@@ -1,0 +1,8 @@
+# Secret scanning (CI). Real secrets live in git-ignored .env files; the only values allowed here are
+# the local development placeholders.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Local development placeholders (supabase start), never used by a hosted project"
+paths = ['''supabase/seed\.sql''', '''\.env\.example$''']
