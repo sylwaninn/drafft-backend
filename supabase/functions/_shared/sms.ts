@@ -1,17 +1,17 @@
-// The verification SMS, in the app's languages (same register as texts.ts). Code first, and no word after
-// "code" (iOS offers that word above the keyboard): the sender "drafft" already names the app. Under 70
-// characters, so it stays one SMS even when an accent switches it to Unicode.
+// The verification SMS, in the app's languages. Apple's documented shape ("Your Example code is 123456"):
+// the code last, nothing after it, so iOS offers it above the keyboard. The sender "drafft" names the app.
+// Short, so it stays one SMS even when an accent switches it to Unicode.
 import { env, optionalEnv } from "./env.ts";
 import type { Language } from "./texts.ts";
 
 const verification: Record<Language, (code: string) => string> = {
-  en: (c) => `${c} is your code. Don't share it with anyone.`,
-  fr: (c) => `${c} est ton code. Ne le partage avec personne.`,
-  es: (c) => `${c} es tu código. No lo compartas con nadie.`,
-  de: (c) => `${c} ist dein Code. Teile ihn mit niemandem.`,
-  it: (c) => `${c} è il tuo codice. Non condividerlo con nessuno.`,
-  pt: (c) => `${c} é o teu código. Não o partilhes com ninguém.`,
-  nl: (c) => `${c} is je code. Deel hem met niemand.`,
+  en: (c) => `Your drafft code is ${c}`,
+  fr: (c) => `Ton code de vérification est ${c}`,
+  es: (c) => `Tu código de verificación es ${c}`,
+  de: (c) => `Dein Bestätigungscode ist ${c}`,
+  it: (c) => `Il tuo codice di verifica è ${c}`,
+  pt: (c) => `O teu código de verificação é ${c}`,
+  nl: (c) => `Je verificatiecode is ${c}`,
 };
 
 export function verificationSms(lang: Language, code: string): string {
