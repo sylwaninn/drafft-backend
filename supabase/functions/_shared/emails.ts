@@ -10,52 +10,52 @@ type Copy = { subject: string; title: string; body: string; action?: string; not
 const copy: Record<AuthEmail, Record<Language, Copy>> = {
   confirm: {
     en: {
-      subject: "Confirm your email",
+      subject: "{code} is your code",
       title: "Welcome to drafft",
-      body: "Enter this code in drafft to confirm your email:",
-      note: "The code works for 1 hour.",
+      body: "To confirm your email in drafft, enter this code:",
+      note: "Valid for 1 hour.",
       ignore: "If you didn't sign up for drafft, you can ignore this email.",
     },
     fr: {
-      subject: "Confirme ton e-mail",
+      subject: "{code} est ton code",
       title: "Bienvenue sur drafft",
-      body: "Saisis ce code dans drafft pour confirmer ton e-mail :",
-      note: "Le code est valable 1 heure.",
+      body: "Pour confirmer ton e-mail dans drafft, saisis ce code :",
+      note: "Valable 1 heure.",
       ignore: "Si tu n'as pas créé de compte drafft, tu peux ignorer cet e-mail.",
     },
     es: {
-      subject: "Confirma tu correo",
+      subject: "{code} es tu código",
       title: "Te damos la bienvenida a drafft",
-      body: "Introduce este código en drafft para confirmar tu correo:",
-      note: "El código vale durante 1 hora.",
+      body: "Para confirmar tu correo en drafft, introduce este código:",
+      note: "Válido durante 1 hora.",
       ignore: "Si no te has registrado en drafft, puedes ignorar este correo.",
     },
     de: {
-      subject: "Bestätige deine E-Mail",
+      subject: "{code} ist dein Code",
       title: "Willkommen bei drafft",
-      body: "Gib diesen Code in drafft ein, um deine E-Mail-Adresse zu bestätigen:",
-      note: "Der Code ist 1 Stunde gültig.",
+      body: "Um deine E-Mail-Adresse in drafft zu bestätigen, nutze diesen Code:",
+      note: "1 Stunde gültig.",
       ignore: "Wenn du dich nicht bei drafft registriert hast, kannst du diese E-Mail ignorieren.",
     },
     it: {
-      subject: "Conferma la tua email",
+      subject: "{code} è il tuo codice",
       title: "Ti diamo il benvenuto su drafft",
-      body: "Inserisci questo codice in drafft per confermare la tua email:",
-      note: "Il codice è valido per 1 ora.",
+      body: "Per confermare la tua email su drafft, inserisci questo codice:",
+      note: "Valido per 1 ora.",
       ignore: "Se non hai creato un account drafft, puoi ignorare questa email.",
     },
     pt: {
-      subject: "Confirma o teu email",
+      subject: "{code} é o teu código",
       title: "Damos-te as boas-vindas ao drafft",
-      body: "Introduz este código no drafft para confirmares o teu email:",
-      note: "O código é válido durante 1 hora.",
+      body: "Para confirmares o teu email no drafft, introduz este código:",
+      note: "Válido durante 1 hora.",
       ignore: "Se não criaste uma conta drafft, podes ignorar este email.",
     },
     nl: {
-      subject: "Bevestig je e-mailadres",
+      subject: "{code} is je code",
       title: "Welkom bij drafft",
-      body: "Vul deze code in drafft in om je e-mailadres te bevestigen:",
-      note: "De code is 1 uur geldig.",
+      body: "Om je e-mailadres in drafft te bevestigen, gebruik je deze code:",
+      note: "1 uur geldig.",
       ignore: "Heb je geen drafft-account aangemaakt? Dan kun je deze e-mail negeren.",
     },
   },
@@ -119,103 +119,103 @@ const copy: Record<AuthEmail, Record<Language, Copy>> = {
   },
   newEmail: {
     en: {
-      subject: "Your drafft code",
+      subject: "{code} is your code",
       title: "Confirm your new email",
-      body: "Enter this code in drafft to switch your account to {email}:",
-      note: "The code works for 1 hour.",
+      body: "To switch your drafft account to {email}, enter this code:",
+      note: "Valid for 1 hour.",
       ignore: "If you didn't ask for this, you can ignore this email.",
     },
     fr: {
-      subject: "Ton code drafft",
+      subject: "{code} est ton code",
       title: "Confirme ta nouvelle adresse",
-      body: "Saisis ce code dans drafft pour passer ton compte sur {email} :",
-      note: "Le code est valable 1 heure.",
+      body: "Pour passer ton compte drafft sur {email}, saisis ce code :",
+      note: "Valable 1 heure.",
       ignore: "Si tu n'as rien demandé, tu peux ignorer cet e-mail.",
     },
     es: {
-      subject: "Tu código de drafft",
+      subject: "{code} es tu código",
       title: "Confirma tu nuevo correo",
-      body: "Introduce este código en drafft para cambiar tu cuenta a {email}:",
-      note: "El código vale durante 1 hora.",
+      body: "Para cambiar tu cuenta de drafft a {email}, introduce este código:",
+      note: "Válido durante 1 hora.",
       ignore: "Si no lo has pedido, puedes ignorar este correo.",
     },
     de: {
-      subject: "Dein drafft-Code",
+      subject: "{code} ist dein Code",
       title: "Bestätige deine neue E-Mail",
-      body: "Gib diesen Code in drafft ein, um dein Konto auf {email} umzustellen:",
-      note: "Der Code ist 1 Stunde gültig.",
+      body: "Um dein drafft-Konto auf {email} umzustellen, nutze diesen Code:",
+      note: "1 Stunde gültig.",
       ignore: "Wenn du das nicht angefordert hast, kannst du diese E-Mail ignorieren.",
     },
     it: {
-      subject: "Il tuo codice drafft",
+      subject: "{code} è il tuo codice",
       title: "Conferma la nuova email",
-      body: "Inserisci questo codice in drafft per spostare il tuo account su {email}:",
-      note: "Il codice è valido per 1 ora.",
+      body: "Per spostare il tuo account drafft su {email}, inserisci questo codice:",
+      note: "Valido per 1 ora.",
       ignore: "Se non l'hai chiesto tu, puoi ignorare questa email.",
     },
     pt: {
-      subject: "O teu código drafft",
+      subject: "{code} é o teu código",
       title: "Confirma o teu novo email",
-      body: "Introduz este código no drafft para mudares a tua conta para {email}:",
-      note: "O código é válido durante 1 hora.",
+      body: "Para mudares a tua conta drafft para {email}, introduz este código:",
+      note: "Válido durante 1 hora.",
       ignore: "Se não pediste isto, podes ignorar este email.",
     },
     nl: {
-      subject: "Je drafft-code",
+      subject: "{code} is je code",
       title: "Bevestig je nieuwe e-mailadres",
-      body: "Vul deze code in drafft in om je account over te zetten naar {email}:",
-      note: "De code is 1 uur geldig.",
+      body: "Om je drafft-account over te zetten naar {email}, gebruik je deze code:",
+      note: "1 uur geldig.",
       ignore: "Heb je dit niet aangevraagd? Dan kun je deze e-mail negeren.",
     },
   },
   reauth: {
     en: {
-      subject: "Your drafft code",
+      subject: "{code} is your code",
       title: "Confirm it's you",
-      body: "Enter this code in drafft to change your password:",
-      note: "The code works for 1 hour.",
+      body: "To change your drafft password, enter this code:",
+      note: "Valid for 1 hour.",
       ignore: "If you didn't ask for this, you can ignore this email.",
     },
     fr: {
-      subject: "Ton code drafft",
+      subject: "{code} est ton code",
       title: "Confirme que c'est toi",
-      body: "Saisis ce code dans drafft pour changer ton mot de passe :",
-      note: "Le code est valable 1 heure.",
+      body: "Pour changer ton mot de passe drafft, saisis ce code :",
+      note: "Valable 1 heure.",
       ignore: "Si tu n'as rien demandé, tu peux ignorer cet e-mail.",
     },
     es: {
-      subject: "Tu código de drafft",
+      subject: "{code} es tu código",
       title: "Confirma que eres tú",
-      body: "Introduce este código en drafft para cambiar tu contraseña:",
-      note: "El código vale durante 1 hora.",
+      body: "Para cambiar tu contraseña de drafft, introduce este código:",
+      note: "Válido durante 1 hora.",
       ignore: "Si no lo has pedido, puedes ignorar este correo.",
     },
     de: {
-      subject: "Dein drafft-Code",
+      subject: "{code} ist dein Code",
       title: "Bestätige, dass du es bist",
-      body: "Gib diesen Code in drafft ein, um dein Passwort zu ändern:",
-      note: "Der Code ist 1 Stunde gültig.",
+      body: "Um dein drafft-Passwort zu ändern, nutze diesen Code:",
+      note: "1 Stunde gültig.",
       ignore: "Wenn du das nicht angefordert hast, kannst du diese E-Mail ignorieren.",
     },
     it: {
-      subject: "Il tuo codice drafft",
+      subject: "{code} è il tuo codice",
       title: "Conferma che sei tu",
-      body: "Inserisci questo codice in drafft per cambiare la password:",
-      note: "Il codice è valido per 1 ora.",
+      body: "Per cambiare la password di drafft, inserisci questo codice:",
+      note: "Valido per 1 ora.",
       ignore: "Se non l'hai chiesto tu, puoi ignorare questa email.",
     },
     pt: {
-      subject: "O teu código drafft",
+      subject: "{code} é o teu código",
       title: "Confirma que és tu",
-      body: "Introduz este código no drafft para mudares a tua palavra-passe:",
-      note: "O código é válido durante 1 hora.",
+      body: "Para mudares a tua palavra-passe do drafft, introduz este código:",
+      note: "Válido durante 1 hora.",
       ignore: "Se não pediste isto, podes ignorar este email.",
     },
     nl: {
-      subject: "Je drafft-code",
+      subject: "{code} is je code",
       title: "Bevestig dat jij het bent",
-      body: "Vul deze code in drafft in om je wachtwoord te wijzigen:",
-      note: "De code is 1 uur geldig.",
+      body: "Om je drafft-wachtwoord te wijzigen, gebruik je deze code:",
+      note: "1 uur geldig.",
       ignore: "Heb je dit niet aangevraagd? Dan kun je deze e-mail negeren.",
     },
   },
@@ -262,7 +262,7 @@ export function renderAuthEmail(
 
   const html = `<!doctype html>
 <html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>${escape(c.subject)}</title></head>
+<title>${escape(c.subject.replace("{code}", vars.code ?? ""))}</title></head>
 <body style="margin:0;background:${color.canvas};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px">
@@ -275,7 +275,10 @@ export function renderAuthEmail(
 </table></td></tr></table></body></html>`;
 
   const text = [c.title, "", body, "", textMain, "", c.note, c.ignore].join("\n");
-  return { subject: c.subject, html, text };
+  // iOS offers the word right after "code" above the keyboard: so the subject is "123456 is your code", and
+  // no copy has a word after "code" but the code itself (the sender's name already says drafft).
+  const subject = c.subject.replace("{code}", vars.code ?? "");
+  return { subject, html, text };
 }
 
 function escape(s: string): string {
