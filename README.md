@@ -35,13 +35,15 @@ supabase/
   functions/    stream-token, media-upload-url, db-events, delete-account, revenuecat-webhook, stream-webhook, app-config, auth-email, auth-sms, _shared/
   tests/        pgTAP (supabase test db)
   seed.sql      local Vault secrets
+docs/matching.md    Discover and matching: eligibility, ranking, likes, boosts, pause, error codes
 scripts/bench.sql   latency benchmark on synthetic data
 scripts/app-store-products.ts   creates the in-app products in App Store Connect (plan / apply)
 ```
 
 ## API for the app
 
-RPCs (`POST /rest/v1/rpc/<name>`, signed-in user). Errors carry a stable code in `hint`.
+RPCs (`POST /rest/v1/rpc/<name>`, signed-in user). Errors carry a stable code in `hint`. How Discover picks
+and orders cards, and the rules for likes, super likes, boosts and pause: [docs/matching.md](docs/matching.md).
 
 | Area | RPCs |
 | --- | --- |
@@ -125,8 +127,8 @@ orphaned there.
 
 | Query | Time |
 | --- | --- |
-| `discover`, 10 km | ~2 ms |
-| `discover`, any distance, 2 sports, age 25-35 | ~30 ms |
+| `discover`, 10 km | ~3 ms |
+| `discover`, any distance, 2 sports, age 25-35 | ~55 ms |
 | one card by id | ~0.5 ms |
 | 20 cards by id | ~1 ms |
 | profile edit + card rebuild | ~2 ms |
@@ -138,7 +140,8 @@ database time over 11 calls. A full card rebuild from scratch: ~0.15 ms. The fin
 
 Discover walks the location index nearest-first (KNN) and stops once it has enough eligible people, so its
 cost doesn't grow with density. The first version filtered and sorted every candidate in the radius:
-160 ms on the same data.
+160 ms on the same data. It takes twice the batch (40 people) so the score can reorder them, which
+doubles the walk when filters are narrow; see [docs/matching.md](docs/matching.md#performance).
 
 ## Production setup
 
