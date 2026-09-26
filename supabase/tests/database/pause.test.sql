@@ -1,7 +1,7 @@
 -- A paused profile is frozen: its owner can read but not act, others can't reach it, until it resumes.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(16);
 
 create function pg_temp.person(p_name text, p_km float8) returns uuid language plpgsql as $$
 declare
@@ -56,6 +56,8 @@ update public.profiles set paused = true where id = (select pia from ids);
 select throws_ok(format('select public.swipe(%L, %L)', (select cleo from ids), 'like'), 'P0001',
   'your profile is paused, resume it first', 'no swiping');
 select throws_ok('select public.undo_last_swipe()', 'P0001', 'your profile is paused, resume it first', 'no undo');
+select throws_ok('select public.start_boost()', 'P0001', 'your profile is paused, resume it first', 'no boost');
+select throws_ok('select public.discover()', 'P0001', 'your profile is paused, resume it first', 'no browsing');
 select throws_ok(format('select public.respond_session(%L, true, %L)', (select id from s1), (select options[1] from s1)),
   'P0001', 'your profile is paused, resume it first', 'no answering a session');
 select throws_ok(format('select public.cancel_session(%L)', (select id from s1)),
