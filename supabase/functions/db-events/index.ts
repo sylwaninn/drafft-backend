@@ -7,7 +7,7 @@ import { pushToUser } from "../_shared/apns.ts";
 import { HttpError, json, readJson, safeEqual, serve } from "../_shared/http.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
-import { ensureChannel, ensureUsers, sendOnce, stream } from "../_shared/stream.ts";
+import { ensureChannel, ensureUsers, sendOnce, setChatPaused, stream } from "../_shared/stream.ts";
 import { admin, check, must } from "../_shared/supabase.ts";
 import { language, weeklyBoost } from "../_shared/texts.ts";
 
@@ -182,6 +182,16 @@ const handlers: Record<string, Handler> = {
   async "push.preferences"(p: { userId: string; messages: boolean }) {
     await ensureUsers([p.userId]);
     await stream().setPushPreferences([{ user_id: p.userId, chat_level: p.messages ? "all" : "none" }]);
+  },
+
+  // Paused or resumed: chats become read-only, or writable again. The current state decides, not the
+  // payload, so a pause and a resume arriving out of order still end right.
+  async "profile.paused"(p: { userId: string }) {
+    const { data, error } = await admin.from("profiles").select("paused").eq("id", p.userId).maybeSingle();
+    if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
+    // Deleted since: the account and its chats are gone.
+    if (!data) return;
+    await setChatPaused(p.userId, data.paused);
   },
 
   // drafft tempo's free boost of the week was credited (private.credit_weekly_boosts). Tapping it
