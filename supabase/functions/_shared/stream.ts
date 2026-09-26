@@ -33,6 +33,23 @@ export async function ensureUsers(ids: string[]) {
   await stream().upsertUsers(profiles.map((p) => ({ id: p.id, name: p.name })));
 }
 
+/** Server-side author of moderation actions (bans). Never gets a token: stream-token signs profile ids only. */
+const SYSTEM_USER = "drafft";
+
+/**
+ * A paused profile reads its chats but can't write in them (messages, reactions, uploads): a global
+ * Stream ban while paused, lifted on resume. Both calls are idempotent.
+ */
+export async function setChatPaused(userId: string, paused: boolean) {
+  await ensureUsers([userId]);
+  if (paused) {
+    await stream().upsertUser({ id: SYSTEM_USER, name: "drafft", role: "admin" });
+    await stream().banUser(userId, { banned_by_id: SYSTEM_USER, reason: "paused" });
+  } else {
+    await stream().unbanUser(userId);
+  }
+}
+
 /**
  * Sends a message with a deterministic id, so a retried event doesn't post twice.
  * Stream answers a duplicate id with an error, which is treated as success here.
