@@ -22,7 +22,6 @@ update public.profiles p set
   gender = (array['woman', 'man', 'nonbinary']::public.gender[])[1 + (abs(hashtext(p.id::text)) % 20 = 0)::int * 2 + (abs(hashtext(p.id::text)) % 2)],
   interested_in = case abs(hashtext(p.id::text || 'i')) % 3 when 0 then '{man}' when 1 then '{woman}' else '{}' end::public.gender[],
   birthdate = current_date - make_interval(years => 20 + abs(hashtext(p.id::text || 'a')) % 30),
-  intent = (enum_range(null::public.intent))[1 + abs(hashtext(p.id::text || 't')) % 5],
   bio = repeat('Training for a marathon, coffee after. ', 5),
   icebreaker = '{"kind": "hotTake", "text": "Pools are better than the sea."}'
 where p.id in (select id from auth.users where email like '%@bench.dev');
@@ -99,7 +98,7 @@ select set_config('request.jwt.claims', '{"sub": "11111111-1111-4111-8111-111111
 update public.profiles set
   name = 'Chloé', birthdate = '1994-05-12', gender = 'woman', interested_in = '{man}', pronouns = 'she/her',
   neighborhood = 'Canal Saint-Martin', bio = repeat('Marathoner, negative splits, croissants at km 33. ', 6),
-  goal = 'Sub 3:15 in Berlin', favorite_spot = 'Parc des Buttes-Chaumont', intent = 'marathon',
+  goal = 'Sub 3:15 in Berlin', favorite_spot = 'Parc des Buttes-Chaumont',
   drinks = 'Socially', smokes = 'Never', diet = 'Omnivore', chronotype = 'Early bird',
   icebreaker = '{"kind": "twoTruths", "statements": ["I ran Paris in 3:21", "I hate croissants", "I swim at 6am"], "lieIndex": 1}',
   voice_intro_key = 'u/11111111-1111-4111-8111-111111111111/voice/intro.m4a',
