@@ -45,6 +45,9 @@ jobs:
         run: deno check ./*/index.ts
       - name: Type-check scripts
         run: deno check scripts/*.ts
+      - name: Unit tests (Edge Function helpers)
+        working-directory: supabase/functions
+        run: deno test
       - name: Shell scripts
         run: shellcheck -S warning scripts/*.sh scripts/ci/*.sh
       - name: Workflows
