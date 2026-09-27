@@ -16,6 +16,17 @@ export const weeklyBoost: Record<Language, string> = {
   nl: "Je wekelijkse boost is er. Gebruik hem wanneer je wilt: 30 minuten bovenaan bij mensen in de buurt.",
 };
 
+/** A photo refused, by Rekognition or by the team (the app's PhotoRefusal screen says why). */
+export const photoRefused: Record<Language, string> = {
+  en: "One of your photos wasn't approved. Tap to see why.",
+  fr: "Une de tes photos n'a pas été validée. Touche pour savoir pourquoi.",
+  es: "Una de tus fotos no se ha aprobado. Toca para ver por qué.",
+  de: "Eines deiner Fotos wurde nicht freigegeben. Tippe, um zu sehen, warum.",
+  it: "Una delle tue foto non è stata approvata. Tocca per scoprire perché.",
+  pt: "Uma das tuas fotos não foi aprovada. Toca para saber porquê.",
+  nl: "Een van je foto's is niet goedgekeurd. Tik om te zien waarom.",
+};
+
 /** "Maya reacted ❤️ to: “See you at 7?”", or without the message (previews off, or not text). */
 export function reaction(lang: Language, name: string, emoji: string, text?: string): string {
   if (!text) {

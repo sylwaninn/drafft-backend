@@ -12,7 +12,7 @@ import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
 import { ensureChannel, ensureUsers, sendOnce, setChatHeld, stream } from "../_shared/stream.ts";
 import { admin, check, must } from "../_shared/supabase.ts";
-import { language, sessionAutoCancelled, weeklyBoost } from "../_shared/texts.ts";
+import { type Language, language, photoRefused, sessionAutoCancelled, weeklyBoost } from "../_shared/texts.ts";
 
 interface Event {
   id: number;
@@ -236,15 +236,7 @@ const handlers: Record<string, Handler> = {
           "media flag",
         );
       }
-      if (verdict === "rejected") {
-        // The app shows its own banner when it's open (and hides this push there).
-        await pushToUser(p.userId, {
-          title: "drafft",
-          body: "One of your photos wasn't approved. Tap to see why.",
-          data: { kind: "photo_refused", media: p.mediaId },
-          collapseId: `photo-${p.mediaId}`,
-        });
-      }
+      if (verdict === "rejected") await pushPhotoRefused(p.userId, p.mediaId);
       return;
     }
     // MODERATION_MODE: "auto_approve" for local development only. Otherwise media stays pending.
@@ -321,6 +313,31 @@ const handlers: Record<string, Handler> = {
     if (!email) return;
     const { data: profile } = await admin.from("profiles").select("language").eq("id", p.userId).maybeSingle();
     await sendEmail(email, renderNotice("photoApproved", language(profile?.language)), `photo-approved-${p.mediaId}`);
+  },
+
+  // A person decided (review_media, from the dashboard). A refusal reaches the owner like Rekognition's:
+  // the same push, and an email too when they had asked for that second look (as an approval is, see
+  // media.approved_on_review). An approval needs nothing more: the open app hears `media` on Realtime.
+  // Moderation news, not an optional notification: no notify_* setting applies (same as media.created).
+  async "media.reviewed"(p: {
+    mediaId: string;
+    userId: string;
+    status: "approved" | "rejected";
+    secondLook: boolean;
+    at: string;
+  }) {
+    if (p.status !== "rejected") return;
+    const { data: media, error } = await admin.from("profile_media").select("status").eq("id", p.mediaId)
+      .maybeSingle();
+    if (error) throw new Error(`media ${p.mediaId}: ${error.message}`);
+    // Deleted, or sent for another look since: that decision will speak for itself.
+    if (media?.status !== "rejected") return;
+    const lang = await pushPhotoRefused(p.userId, p.mediaId);
+    if (!p.secondLook || !lang) return;
+    const email = await accountEmail(p.userId);
+    if (!email) return;
+    // One email per decision: a photo can be refused, sent back, and refused again.
+    await sendEmail(email, renderNotice("photoRefused", lang), `photo-refused-${p.mediaId}-${p.at}`);
   },
 
   // A support request: the person gets their reference, the team a copy they can reply to.
@@ -453,6 +470,22 @@ const handlers: Record<string, Handler> = {
     });
   },
 };
+
+/** The refusal push, in the person's language. The app shows its own banner when it's open (and hides this
+ * push there). Returns the language, or null when the account is gone. */
+async function pushPhotoRefused(userId: string, mediaId: string): Promise<Language | null> {
+  const { data, error } = await admin.from("profiles").select("language").eq("id", userId).maybeSingle();
+  if (error) throw new Error(`profile ${userId}: ${error.message}`);
+  if (!data) return null;
+  const lang = language(data.language);
+  await pushToUser(userId, {
+    title: "drafft",
+    body: photoRefused[lang],
+    data: { kind: "photo_refused", media: mediaId },
+    collapseId: `photo-${mediaId}`,
+  });
+  return lang;
+}
 
 async function setStatus(mediaId: string, status: "approved" | "rejected") {
   check(await admin.from("profile_media").update({ status }).eq("id", mediaId), "media status");

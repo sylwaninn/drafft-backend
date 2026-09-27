@@ -1,10 +1,11 @@
-// Emails that aren't auth codes: good news (a hold lifted, a photo approved on a second look) and the
+// Emails that aren't auth codes: news about the account (a hold lifted, a photo approved or refused on a
+// second look) and the
 // acknowledgement of a support request, in the person's language; plus the team's copies (SUPPORT_INBOX),
 // in English, until the dashboard lists them. Same layout and register as emails.ts.
 import { codeBox, color, escape, layout, paragraph, type Rendered, small, title } from "./emails.ts";
 import type { Language } from "./texts.ts";
 
-export type Notice = "accountRestored" | "accountReopened" | "photoApproved" | "supportReceived";
+export type Notice = "accountRestored" | "accountReopened" | "photoApproved" | "photoRefused" | "supportReceived";
 
 type Copy = { subject: string; title: string; body: string; note: string };
 
@@ -163,6 +164,58 @@ const copy: Record<Notice, Record<Language, Copy>> = {
       body:
         "Je vroeg ons een van je foto's opnieuw te bekijken. Ons team heeft hem gecontroleerd: hij is goedgekeurd en staat nu op je profiel.",
       note: "Bedankt dat je het vroeg.",
+    },
+  },
+  // A refused photo, refused again after the second look the person asked for.
+  photoRefused: {
+    en: {
+      subject: "About the photo you asked us to check",
+      title: "We looked at your photo again",
+      body:
+        "You asked for a second look at one of your photos. Our team checked it: it doesn't meet our photo guidelines, so it stays off your profile.",
+      note: "You can add another photo anytime in drafft.",
+    },
+    fr: {
+      subject: "À propos de la photo que tu nous as demandé de revoir",
+      title: "Nous avons revu ta photo",
+      body:
+        "Tu as demandé qu'une de tes photos soit revue. Notre équipe l'a vérifiée : elle ne respecte pas nos règles sur les photos, elle reste donc hors de ton profil.",
+      note: "Tu peux ajouter une autre photo quand tu veux dans drafft.",
+    },
+    es: {
+      subject: "Sobre la foto que nos pediste revisar",
+      title: "Hemos vuelto a revisar tu foto",
+      body:
+        "Pediste que revisáramos una de tus fotos. Nuestro equipo la ha revisado: no cumple nuestras normas sobre fotos, así que no aparecerá en tu perfil.",
+      note: "Puedes añadir otra foto cuando quieras en drafft.",
+    },
+    de: {
+      subject: "Zu dem Foto, das wir noch einmal prüfen sollten",
+      title: "Wir haben dein Foto noch einmal geprüft",
+      body:
+        "Du hast um eine zweite Prüfung eines deiner Fotos gebeten. Unser Team hat es angesehen: Es entspricht nicht unseren Foto-Richtlinien und bleibt deshalb nicht in deinem Profil.",
+      note: "Du kannst in drafft jederzeit ein anderes Foto hinzufügen.",
+    },
+    it: {
+      subject: "Sulla foto che ci hai chiesto di ricontrollare",
+      title: "Abbiamo ricontrollato la tua foto",
+      body:
+        "Hai chiesto di ricontrollare una delle tue foto. Il nostro team l'ha verificata: non rispetta le nostre regole sulle foto, quindi resta fuori dal tuo profilo.",
+      note: "Puoi aggiungere un'altra foto quando vuoi su drafft.",
+    },
+    pt: {
+      subject: "Sobre a foto que nos pediste para rever",
+      title: "Voltámos a ver a tua foto",
+      body:
+        "Pediste que voltássemos a ver uma das tuas fotos. A nossa equipa verificou-a: não cumpre as nossas regras sobre fotos, por isso fica fora do teu perfil.",
+      note: "Podes adicionar outra foto quando quiseres no drafft.",
+    },
+    nl: {
+      subject: "Over de foto die we opnieuw moesten bekijken",
+      title: "We hebben je foto opnieuw bekeken",
+      body:
+        "Je vroeg ons een van je foto's opnieuw te bekijken. Ons team heeft hem gecontroleerd: hij voldoet niet aan onze fotoregels en komt daarom niet op je profiel.",
+      note: "Je kunt in drafft altijd een andere foto toevoegen.",
     },
   },
   // A support request, received: its reference follows the body. Fixed text, nothing the form typed: the
