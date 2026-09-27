@@ -3,6 +3,10 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(11);
 
+-- The events below are SANDBOX, the store environment of staging and local (purchase_environment.test.sql).
+delete from vault.secrets where name = 'purchase_environment';
+select vault.create_secret('SANDBOX', 'purchase_environment');
+
 insert into auth.users (id, email, aud, role, instance_id)
 values ('22222222-2222-4222-8222-222222222222', 'tempo@test.dev', 'authenticated', 'authenticated',
         '00000000-0000-0000-0000-000000000000');
