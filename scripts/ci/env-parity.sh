@@ -18,6 +18,21 @@ status=0
 fail() { echo "error: $*"; status=1; }
 quiet() { grep -vE '^(WARN: environment variable|A new version|We recommend|Initialising|Connecting)' || true; }
 
+# Links one project; on failure, says why (the CLI's own message) instead of exiting silently.
+link() { # env ref
+  local out
+  out=$(supabase link --project-ref "$2" 2>&1) && return
+  echo "error: couldn't link the CLI to $1 ($2):" >&2
+  printf '%s\n' "$out" | quiet >&2
+  exit 1
+}
+# On every exit, errors included: leave the CLI linked to staging, never to production.
+relink_staging() {
+  supabase link --project-ref "$STAGING_REF" >/dev/null 2>&1 \
+    || echo "warning: couldn't link the CLI back to staging: run supabase link --project-ref $STAGING_REF" >&2
+}
+trap relink_staging EXIT
+
 repo_migrations=$(ls supabase/migrations | sed -E 's/_.*//' | sort)
 repo_functions=$(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts | awk -F/ '{print $3}' | sort)
 
@@ -27,7 +42,7 @@ schema_staging=""
 schema_production=""
 for env in staging production; do
   ref=$STAGING_REF; [ $env = production ] && ref=$PRODUCTION_REF
-  supabase link --project-ref "$ref" >/dev/null 2>&1
+  link "$env" "$ref"
 
   ran=$(supabase db query --linked "select version from supabase_migrations.schema_migrations order by 1" -o csv 2>/dev/null | tail -n +2 | sort)
   missing=$(comm -23 <(echo "$repo_migrations") <(echo "$ran"))
@@ -55,7 +70,6 @@ for env in staging production; do
 
   supabase db advisors --linked --level info -o json 2>/dev/null | python3 scripts/ci/advisors.py | sed "s/^/$env: /" || fail "$env has advisor findings the baseline doesn't accept"
 done
-supabase link --project-ref "$STAGING_REF" >/dev/null 2>&1
 
 [ "$secrets_staging" = "$secrets_production" ] \
   || fail "secret names differ: $(diff <(echo "$secrets_staging") <(echo "$secrets_production") | grep '^[<>]' | tr '\n' ' ')"

@@ -48,8 +48,15 @@ trap 'rm -f "$sql"' EXIT
   upsert purchase_environment "$purchases"
 } > "$sql"
 
+# On every exit, errors included: remove the SQL file and never leave the CLI linked to production.
+cleanup() {
+  rm -f "$sql"
+  [ "$ref" = "$STAGING_REF" ] && return
+  supabase link --project-ref "$STAGING_REF" >/dev/null \
+    || echo "warning: couldn't link the CLI back to staging: run supabase link --project-ref $STAGING_REF" >&2
+}
+trap cleanup EXIT
 supabase link --project-ref "$ref" >/dev/null
 supabase db query --linked -f "$sql" -o csv >/dev/null
 supabase db query --linked "select name, updated_at from vault.secrets order by name" -o table
-[ "$ref" = "$STAGING_REF" ] || supabase link --project-ref "$STAGING_REF" >/dev/null
 echo "Vault synced for $env ($ref)."
