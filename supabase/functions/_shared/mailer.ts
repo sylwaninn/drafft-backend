@@ -1,5 +1,5 @@
 // Sends one email. Hosted: Resend (RESEND_API_KEY). Local: MAILPIT_URL set, the email lands in the
-// local Mailpit (http://127.0.0.1:55424) and never leaves the machine.
+// local Mailpit (http://127.0.0.1:55424), unless EMAIL_REAL=true sends it through Resend.
 // EMAIL_FROM: `drafft <no-reply@mail.getdrafft.com>` (a Resend-verified domain; `onboarding@resend.dev` until
 // then, which only delivers to the Resend account's own address).
 import { env, optionalEnv } from "./env.ts";
