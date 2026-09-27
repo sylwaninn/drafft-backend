@@ -217,7 +217,7 @@ Setting it up once:
    and fresh random `DB_EVENTS_SECRET` and `REVENUECAT_WEBHOOK_AUTH` (`openssl rand -hex 32`). Then
    `scripts/deploy.sh staging --secrets`. Wrangler needs `--jurisdiction eu` to see either bucket.
 4. `scripts/sync-vault.sh staging`: the database's Vault secrets (`edge_functions_url`, `db_events_secret`
-   from `DB_EVENTS_SECRET`), so database events reach the functions. Run it again whenever `DB_EVENTS_SECRET`
+   from `DB_EVENTS_SECRET`, `purchase_environment`), so database events reach the functions. Run it again whenever `DB_EVENTS_SECRET`
    changes, in either environment.
 5. Auth on the branch: redirect URLs `drafft://auth-callback` and `drafft://auth-callback/reset`, Apple and
    Google (same client ids as production), Send Email hook to its `auth-email` (its own secret and Resend key).
@@ -231,6 +231,10 @@ Setting it up once:
 8. App Store Server Notifications (V2): production URL → RevenueCat `drafft`, sandbox URL → RevenueCat
    `drafft staging` (`scripts/app-store-notifications.ts`). Production TestFlight builds buy in the
    sandbox, so their server notifications go to staging; their SDK still syncs on launch.
+   Each database only credits purchases from its own store environment, the Vault secret
+   `purchase_environment` read by `apply_purchase_event`: `PRODUCTION` when unset (production), `SANDBOX`
+   on staging (`sync-vault.sh`) and locally (`seed.sql`). Other events are recorded, not credited
+   (`ignored: sandbox event`, `ignored: production event`).
 
 ## Not done yet
 

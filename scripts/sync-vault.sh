@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Writes the database's two Vault secrets for one environment, from the same source as the functions:
-#   edge_functions_url  https://<ref>.supabase.co/functions/v1
-#   db_events_secret    DB_EVENTS_SECRET from supabase/functions/.env.<environment>
+# Writes the database's Vault secrets for one environment, from the same source as the functions:
+#   edge_functions_url    https://<ref>.supabase.co/functions/v1
+#   db_events_secret      DB_EVENTS_SECRET from supabase/functions/.env.<environment>
+#   purchase_environment  the store environment whose purchases count (apply_purchase_event):
+#                         SANDBOX on staging, PRODUCTION on production (also the default when unset)
 # Creates them or replaces their value. Prints nothing secret.
 #
 #   scripts/sync-vault.sh staging
@@ -14,9 +16,10 @@ STAGING_REF=rjlghcuspdtrmbimyioe
 
 env=${1:-}
 case "$env" in
-  staging) ref=$STAGING_REF ;;
+  staging) ref=$STAGING_REF; purchases=SANDBOX ;;
   production)
     ref=$PRODUCTION_REF
+    purchases=PRODUCTION
     read -r -p "Write the PRODUCTION Vault ($ref)? Type 'production' to go on: " answer
     [ "$answer" = production ] || { echo "Stopped."; exit 1; }
     ;;
@@ -39,7 +42,11 @@ upsert() { # name value
 
 sql=$(mktemp)
 trap 'rm -f "$sql"' EXIT
-{ upsert edge_functions_url "https://$ref.supabase.co/functions/v1"; upsert db_events_secret "$secret"; } > "$sql"
+{
+  upsert edge_functions_url "https://$ref.supabase.co/functions/v1"
+  upsert db_events_secret "$secret"
+  upsert purchase_environment "$purchases"
+} > "$sql"
 
 supabase link --project-ref "$ref" >/dev/null
 supabase db query --linked -f "$sql" -o csv >/dev/null
