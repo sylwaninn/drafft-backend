@@ -3,7 +3,7 @@
 // with a phone change (sign-up and You), so the code goes to the new number, and only then.
 // Signed with the hook's secret (Standard Webhooks, SEND_SMS_HOOK_SECRET: `v1,whsec_…` from Auth > Hooks).
 import { hookError, hookOk, verifyHook } from "../_shared/hook.ts";
-import { isAllowedNumber, sendSms, verificationSms } from "../_shared/sms.ts";
+import { isAllowedNumber, isRefusedLine, sendSms, verificationSms } from "../_shared/sms.ts";
 import { admin } from "../_shared/supabase.ts";
 import { language } from "../_shared/texts.ts";
 
@@ -29,6 +29,11 @@ Deno.serve(async (req) => {
   const to = raw.startsWith("+") ? raw : `+${raw}`;
   if (!isAllowedNumber(to)) {
     console.warn(`auth-sms: ${to.slice(0, 4)}… not in the allowed countries`);
+    return hookError(400, "This number can't receive codes.");
+  }
+  // Virtual and VoIP numbers: same answer, so it doesn't say what was checked.
+  if (await isRefusedLine(to)) {
+    console.warn(`auth-sms: ${to.slice(0, 4)}… refused line type`);
     return hookError(400, "This number can't receive codes.");
   }
 
