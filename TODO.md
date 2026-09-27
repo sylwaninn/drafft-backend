@@ -57,6 +57,11 @@ The app-side list lives in `drafft/TODO.md`.
       already hold the account for review.
 - [ ] **sophros per environment.** Cloudflare Access applications (staging, production), the staff in
       `private.staff` of each database, the Workers' secrets: see the sophros README.
+- [ ] **Support replies landing back.** Replies written in sophros are emailed (db-events, `support.reply`)
+      with Reply-To SUPPORT_INBOX, so answers reach the team's mailbox, not the thread. Once the domain is on
+      Cloudflare: Email Routing for `support@getdrafft.com` to an Email Worker that reads the `[DR-XXXXXX]`
+      reference in the subject and posts the message to a `support-inbound` function (shared secret), which
+      adds it to `private.support_messages` and reopens the request.
 - [ ] **Privacy policy.** Mention device reports (model, iOS, app version, IP and country, for safety,
       180 days for IPs, a year for devices) and staff access to conversations when investigating.
 - [ ] **Real services end to end.** Verified in production: R2 (HEAD, reject missing, delete), Stream (channel

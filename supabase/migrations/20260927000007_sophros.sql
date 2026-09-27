@@ -764,7 +764,10 @@ declare
 begin
   perform private.require_staff(p_actor, 'support');
   return coalesce((
-    select jsonb_agg(to_jsonb(s) - 'user_id' || jsonb_build_object('person', private.admin_person(s.user_id))
+    select jsonb_agg(to_jsonb(s) - 'user_id' || jsonb_build_object('person', private.admin_person(s.user_id),
+        'replies', (select coalesce(jsonb_agg(jsonb_build_object('id', m.id, 'author', m.author, 'body', m.body,
+            'createdAt', m.created_at, 'sentAt', m.sent_at, 'error', m.error) order by m.created_at), '[]')
+          from private.support_messages m where m.request_id = s.id))
       order by s.created_at desc)
     from (select * from private.support_requests
           where (not p_open or handled_at is null)
@@ -773,6 +776,78 @@ begin
           order by created_at desc limit least(greatest(p_limit, 1), 200) offset greatest(p_offset, 0)) s), '[]');
 end;
 $$;
+
+-- Replies from the team, written in sophros and emailed by db-events (`support.reply`), in the thread of
+-- their request. Replies to that email reach SUPPORT_INBOX, for now.
+create table private.support_messages (
+  id bigint generated always as identity primary key,
+  request_id bigint not null references private.support_requests (id) on delete cascade,
+  author text not null,
+  body text not null check (char_length(body) between 1 and 8000),
+  created_at timestamptz not null default now(),
+  sent_at timestamptz,
+  error text
+);
+
+create index support_messages_request_idx on private.support_messages (request_id, created_at);
+
+-- Sends a reply to the person (queued: db-events emails it), and closes the request unless asked not to.
+create function public.admin_reply_support(p_actor text, p_id bigint, p_body text, p_close boolean default true)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_message bigint;
+  v_request private.support_requests;
+begin
+  perform private.require_staff(p_actor, 'support');
+  if coalesce(trim(p_body), '') = '' then
+    perform private.fail('empty_reply', 'write the reply first');
+  end if;
+  select * into v_request from private.support_requests where id = p_id;
+  if not found then
+    perform private.fail('not_found', 'no such request');
+  end if;
+  insert into private.support_messages (request_id, author, body)
+    values (p_id, lower(trim(p_actor)), trim(p_body))
+    returning id into v_message;
+  perform private.emit('support.reply', jsonb_build_object('id', v_message));
+  if p_close then
+    update private.support_requests set handled_at = now(), handled_by = lower(trim(p_actor)) where id = p_id;
+  end if;
+  perform private.audit(p_actor, 'support.reply', v_request.user_id, v_request.reference, null,
+    jsonb_build_object('closed', p_close));
+end;
+$$;
+
+-- db-events: one reply and its request, to email it; then marked sent (or failed).
+create function public.support_reply(p_id bigint)
+returns table (reference text, email text, language text, topic text, message text, body text, author text, sent_at timestamptz)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select r.reference, r.email, r.language, r.topic, r.message, m.body, m.author, m.sent_at
+  from private.support_messages m join private.support_requests r on r.id = m.request_id
+  where m.id = p_id;
+$$;
+
+create function public.support_reply_sent(p_id bigint, p_error text default null)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  update private.support_messages
+    set sent_at = case when p_error is null then now() end, error = p_error
+    where id = p_id;
+$$;
+
+revoke execute on function public.support_reply(bigint), public.support_reply_sent(bigint, text) from public, anon, authenticated;
+grant execute on function public.support_reply(bigint), public.support_reply_sent(bigint, text) to service_role;
 
 create function public.admin_set_support_handled(p_actor text, p_id bigint, p_handled boolean)
 returns void
@@ -834,23 +909,49 @@ $$;
 
 -- MARK: Conversations
 
--- Matches, newest first: everyone's, or one account's. The messages themselves are in Stream (one
--- channel per match id); the dashboard logs each reading through admin_log.
-create function public.admin_matches(p_actor text, p_user uuid default null, p_limit int default 60, p_offset int default 0)
+-- Matches, newest first: everyone's, or one account's, narrowed by a name or email (either person),
+-- status (active, ended), a report between them, chat photos flagged since they matched, or sessions.
+-- The messages themselves are in Stream (one channel per match id); the dashboard logs each reading
+-- through admin_log.
+create function public.admin_matches(
+  p_actor text, p_user uuid default null, p_query text default '', p_status text default 'all',
+  p_reported boolean default false, p_flagged boolean default false, p_sessions boolean default false,
+  p_limit int default 60, p_offset int default 0
+)
 returns jsonb
 language plpgsql
 stable
 security definer
 set search_path = ''
 as $$
+declare
+  v_query text := nullif(trim(coalesce(p_query, '')), '');
 begin
   perform private.require_staff(p_actor, 'moderator');
   return coalesce((
     select jsonb_agg(jsonb_build_object('id', m.id, 'createdAt', m.created_at, 'endedAt', m.ended_at, 'endedBy', m.ended_by,
         'a', private.admin_person(m.user_a), 'b', private.admin_person(m.user_b),
-        'sessions', (select count(*) from public.sessions s where s.match_id = m.id)) order by m.created_at desc)
-    from (select * from public.matches where p_user is null or p_user in (user_a, user_b)
-          order by created_at desc limit least(greatest(p_limit, 1), 200) offset greatest(p_offset, 0)) m), '[]');
+        'sessions', m.sessions, 'reported', m.reported, 'chatFlags', m.chat_flags) order by m.created_at desc)
+    from (
+      select x.*,
+             (select count(*) from public.sessions s where s.match_id = x.id) as sessions,
+             exists (select 1 from public.reports r
+               where (r.reporter = x.user_a and r.reported = x.user_b) or (r.reporter = x.user_b and r.reported = x.user_a)) as reported,
+             (select count(*) from public.media_flags f
+               where f.context = 'chat' and f.user_id in (x.user_a, x.user_b) and f.created_at >= x.created_at) as chat_flags
+      from public.matches x
+      where (p_user is null or p_user in (x.user_a, x.user_b))
+        and (p_status <> 'active' or x.ended_at is null)
+        and (p_status <> 'ended' or x.ended_at is not null)
+        and (v_query is null or exists (
+          select 1 from public.profiles p join auth.users u on u.id = p.id
+          where p.id in (x.user_a, x.user_b)
+            and (p.name ilike private.like_pattern(v_query) or u.email ilike private.like_pattern(v_query)
+                 or p.id::text = lower(v_query))))
+      order by x.created_at desc
+    ) m
+    where (not p_reported or m.reported) and (not p_flagged or m.chat_flags > 0) and (not p_sessions or m.sessions > 0)
+    limit least(greatest(p_limit, 1), 200) offset greatest(p_offset, 0)), '[]');
 end;
 $$;
 

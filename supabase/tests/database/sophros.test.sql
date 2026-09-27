@@ -2,7 +2,7 @@
 -- holds with their actor, reports and flags closed, and the app's device reports.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(29);
+select plan(34);
 
 create function pg_temp.person(p_email text, p_name text) returns uuid language plpgsql as $$
 declare
@@ -91,6 +91,26 @@ select is((select count(*) from jsonb_array_elements(public.admin_flags('mod@dra
 select throws_ok($$select public.admin_log('mod@drafft.test', 'conversation.view', null, 'm', '')$$,
   'P0001', 'say why', 'reading a conversation needs a reason');
 select throws_ok($$select public.admin_matches('sup@drafft.test')$$, 'P0001', 'not allowed', 'support reads no conversation');
+
+-- MARK: Support replies
+
+create temp table req as select public.create_support_request((select ana from ids), 'ana@sophros.test', 'fr', 'Help', 'Stuck') as ref;
+select throws_ok(format($$select public.admin_reply_support('sup@drafft.test', %s, '  ')$$,
+    (select id from private.support_requests where reference = (select ref from req))),
+  'P0001', 'write the reply first', 'a reply needs words');
+select public.admin_reply_support('sup@drafft.test', (select id from private.support_requests where reference = (select ref from req)), 'Bonjour Ana');
+select is((select handled_by from private.support_requests where reference = (select ref from req)), 'sup@drafft.test',
+  'replying closes the request');
+select is((select count(*) from private.outbox o join private.support_messages m on (o.payload ->> 'id')::bigint = m.id
+    where o.event = 'support.reply' and m.body = 'Bonjour Ana'), 1::bigint, 'db-events is asked to email it');
+select is(public.admin_support('sup@drafft.test', false, (select ref from req)) -> 0 -> 'replies' -> 0 ->> 'body', 'Bonjour Ana',
+  'the thread shows it');
+
+-- MARK: Conversation filters
+
+insert into public.matches (user_a, user_b) select least(ana, cy), greatest(ana, cy) from ids;
+select is(jsonb_array_length(public.admin_matches('mod@drafft.test', null, 'cy@sophros', 'all', true)), 1,
+  'by email, with a report between them');
 
 -- MARK: Device reports
 

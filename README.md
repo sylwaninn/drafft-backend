@@ -92,6 +92,10 @@ insert into private.staff (email, role) values ('someone@getdrafft.com', 'admin'
 
 Locally, `supabase db reset` seeds `dev@drafft.local` (admin), the identity sophros uses in dev mode.
 
+Support replies are written in sophros (`admin_reply_support`) and emailed by db-events (`support.reply`),
+framed in the person's language, with Reply-To SUPPORT_INBOX. The mailer never sends to reserved domains
+(`.test`, `.example`, `.invalid`, `.localhost`), which the demo and test accounts use.
+
 ## Local development
 
 ```sh

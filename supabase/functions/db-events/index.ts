@@ -6,7 +6,7 @@ import { env, optionalEnv } from "../_shared/env.ts";
 import { pushToUser } from "../_shared/apns.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
 import { sendEmail } from "../_shared/mailer.ts";
-import { renderNotice, renderTeamEmail } from "../_shared/notices.ts";
+import { renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/notices.ts";
 import { HttpError, json, readJson, safeEqual, serve } from "../_shared/http.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
@@ -297,6 +297,36 @@ const handlers: Record<string, Handler> = {
       `support-team-${request.reference}`,
       request.email,
     );
+  },
+
+  // A reply written in sophros: emailed to the person, framed in their language; their answer goes to
+  // SUPPORT_INBOX. A failed send is recorded on the message (the dashboard shows it) and retried.
+  async "support.reply"(p: { id: number }) {
+    const [reply] = must(await admin.rpc("support_reply", { p_id: p.id }), "support reply") as {
+      reference: string;
+      email: string;
+      language: string;
+      topic: string;
+      message: string;
+      body: string;
+      sent_at: string | null;
+    }[];
+    if (!reply || reply.sent_at) return;
+    try {
+      await sendEmail(
+        reply.email,
+        renderSupportReply(language(reply.language), reply),
+        `support-reply-${p.id}`,
+        optionalEnv("SUPPORT_INBOX"),
+      );
+    } catch (error) {
+      check(
+        await admin.rpc("support_reply_sent", { p_id: p.id, p_error: String(error).slice(0, 500) }),
+        "support reply failed",
+      );
+      throw error;
+    }
+    check(await admin.rpc("support_reply_sent", { p_id: p.id }), "support reply sent");
   },
 
   // A report: the team is told (the account may already be held, see reports_events).

@@ -235,6 +235,87 @@ export function renderNotice(
   return { subject: c.subject, html: layout(lang, c.subject, rows), text };
 }
 
+// A reply from the team (sophros), framed in the person's language; the reply itself is as written.
+const replyCopy: Record<Language, { title: string; intro: string; yours: string; note: string }> = {
+  en: {
+    title: "From the drafft team",
+    intro: "Here's our reply about: {topic}",
+    yours: "Your message",
+    note: "Just reply to this email to write back. Your reference:",
+  },
+  fr: {
+    title: "De la part de l'équipe drafft",
+    intro: "Voici notre réponse au sujet de : {topic}",
+    yours: "Ton message",
+    note: "Réponds simplement à cet email pour nous écrire. Ta référence :",
+  },
+  es: {
+    title: "Del equipo de drafft",
+    intro: "Esta es nuestra respuesta sobre: {topic}",
+    yours: "Tu mensaje",
+    note: "Responde a este correo para escribirnos. Tu referencia:",
+  },
+  de: {
+    title: "Vom drafft-Team",
+    intro: "Hier ist unsere Antwort zu: {topic}",
+    yours: "Deine Nachricht",
+    note: "Antworte einfach auf diese E-Mail, um uns zu schreiben. Deine Referenz:",
+  },
+  it: {
+    title: "Dal team di drafft",
+    intro: "Ecco la nostra risposta su: {topic}",
+    yours: "Il tuo messaggio",
+    note: "Rispondi a questa email per scriverci. Il tuo riferimento:",
+  },
+  pt: {
+    title: "Da equipa drafft",
+    intro: "Aqui está a nossa resposta sobre: {topic}",
+    yours: "A tua mensagem",
+    note: "Responde a este email para nos escreveres. A tua referência:",
+  },
+  nl: {
+    title: "Van het drafft-team",
+    intro: "Hier is ons antwoord over: {topic}",
+    yours: "Je bericht",
+    note: "Beantwoord deze e-mail om ons te schrijven. Je referentie:",
+  },
+};
+
+/** Like small(), for markup already escaped. */
+function muted(html: string): string {
+  return `<tr><td style="font-size:14px;line-height:20px;color:${color.mute};padding-bottom:16px">${html}</td></tr>`;
+}
+
+export function renderSupportReply(
+  lang: Language,
+  vars: { reference: string; topic: string; body: string; message: string },
+): Rendered {
+  const c = replyCopy[lang];
+  const subject = `Re: ${vars.topic} [${vars.reference}]`;
+  const rows = [
+    title(c.title),
+    muted(escape(c.intro).replace("{topic}", `<strong>${escape(vars.topic)}</strong>`)),
+    paragraph(escape(vars.body).replace(/\n/g, "<br>")),
+    muted(`${escape(c.yours)}<br>${escape(vars.message).replace(/\n/g, "<br>")}`),
+    small(escape(c.note), color.mute),
+    `<tr><td style="padding-bottom:24px">${codeBox(vars.reference)}</td></tr>`,
+  ];
+  const text = [
+    c.title,
+    "",
+    c.intro.replace("{topic}", vars.topic),
+    "",
+    vars.body,
+    "",
+    `${c.yours}:`,
+    vars.message,
+    "",
+    c.note,
+    vars.reference,
+  ].join("\n");
+  return { subject, html: layout(lang, subject, rows), text };
+}
+
 /** The team's copy: a subject and labelled lines, in English. */
 export function renderTeamEmail(subject: string, lines: [string, string][]): Rendered {
   const html = layout("en", subject, [
