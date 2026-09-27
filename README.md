@@ -51,7 +51,7 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 | Discover | `discover(p_filters, p_limit)`, `swipe(p_target, p_action, p_opener, p_note)`, `undo_last_swipe`, `start_boost` |
 | Likes, matches | `liked_me`, `my_matches`, `get_cards(p_ids, p_known)`, `unmatch` |
 | Sessions | `propose_session`, `respond_session`, `counter_session`, `cancel_session`, `upcoming_sessions` |
-| Safety | `block_user`, `unblock_user`, `blocked_users`, `report_user` |
+| Safety | `block_user`, `unblock_user`, `blocked_users`, `report_user`, `report_app_open(p_install, p_device)` (each time the app comes to the front: install id, model, iOS, app version, locale, time zone; the IP and country come from the request) |
 | Push | `register_push_token`, `unregister_push_token`; `PATCH /rest/v1/profiles` with `language` (en, fr, es, de, it, pt, nl) and the settings `notify_matches`, `notify_likes`, `notify_messages` (mirrored to Stream), `notify_message_previews`, `notify_reactions`, `notify_session_evening`, `notify_session_hour_before`, `notify_weekly_boost` (the app reads them back at launch) |
 
 Realtime: subscribe to the private broadcast channel `user:<your id>`. Events: `like`, `match`,
@@ -77,6 +77,24 @@ Verification SMS: same for the phone step (sign-up and You, a phone change): the
 `auth-sms`, which texts the code through Twilio in the person's language, only to the countries the app
 offers. Locally the SMS lands in Mailpit too. Locally
 they land in Mailpit (http://127.0.0.1:55424).
+
+## sophros, the team's dashboard
+
+Moderation and support run in [sophros](../sophros), its own repository: one Cloudflare Worker per
+environment behind Cloudflare Access. It reaches the database with the secret key, only through the
+`admin_*` functions (`20260927000007_sophros.sql`, service role only). Each call names the staff member;
+the database checks their role in `private.staff` (`support`, `moderator`, `admin`) and writes
+`private.admin_audit`, which can't be edited or deleted. Staff are per database:
+
+```sql
+insert into private.staff (email, role) values ('someone@getdrafft.com', 'admin');
+```
+
+Locally, `supabase db reset` seeds `dev@drafft.local` (admin), the identity sophros uses in dev mode.
+
+Support replies are written in sophros (`admin_reply_support`) and emailed by db-events (`support.reply`),
+framed in the person's language, with Reply-To SUPPORT_INBOX. The mailer never sends to reserved domains
+(`.test`, `.example`, `.invalid`, `.localhost`), which the demo and test accounts use.
 
 ## Local development
 

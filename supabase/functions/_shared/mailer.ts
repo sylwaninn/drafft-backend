@@ -13,6 +13,11 @@ export async function sendEmail(
   idempotencyKey?: string,
   replyTo?: string,
 ): Promise<void> {
+  // Reserved top-level domains never receive mail (RFC 2606, 6761): demo and test accounts use them.
+  if (/\.(test|example|invalid|localhost)$/i.test(to.trim())) {
+    console.log(`mailer: ${to} is a reserved domain, not sent: ${email.subject}`);
+    return;
+  }
   const from = env("EMAIL_FROM");
   // Locally Mailpit, unless EMAIL_REAL=true in .env.local: then Resend, as hosted.
   const mailpit = optionalEnv("EMAIL_REAL") === "true" ? undefined : optionalEnv("MAILPIT_URL");

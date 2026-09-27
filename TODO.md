@@ -10,7 +10,8 @@ The app-side list lives in `drafft/TODO.md`.
       analysis** (today only the poster frame is judged).
 - [ ] **Act on flags.** Chat photos are checked silently (`chat-media`) and flagged ones, like refused or
       borderline profile photos, land in `media_flags` (`private.flagged_users`: flags per person over
-      30 days). Decide thresholds and actions (warning, shadow limit, ban review) and a metrics view.
+      30 days). sophros shows them and closes them by hand; still to decide: thresholds and automatic
+      actions (warning, shadow limit, ban review).
 - [x] **Purchases (server side).** App Store Connect products (`scripts/app-store-products.ts`), RevenueCat
       project `proj3dc1aebd` (App Store app, 9 products, entitlement `drafft_tempo`, offering `default`,
       keys validated), webhook → `revenuecat-webhook` → `apply_purchase_event`, test event received.
@@ -52,7 +53,17 @@ The app-side list lives in `drafft/TODO.md`.
       code), resend interval 30 s, SMS OTP expiry 600 s (the app's `SMS_CODE_LIFETIME`, which
       tells an expired code from a wrong one), SMS rate limit per hour. Then `SMS_ENABLED = YES` in the app's
       `Config/Production.xcconfig`.
-- [ ] **Reports.** Review tool (or Studio saved queries) and process; automatic hide after N reports.
+- [x] **Reports.** Reviewed and closed in sophros (the team's dashboard); underage or 3 reporters in 30 days
+      already hold the account for review.
+- [ ] **sophros per environment.** Cloudflare Access applications (staging, production), the staff in
+      `private.staff` of each database, the Workers' secrets: see the sophros README.
+- [ ] **Support replies landing back.** Replies written in sophros are emailed (db-events, `support.reply`)
+      with Reply-To SUPPORT_INBOX, so answers reach the team's mailbox, not the thread. Once the domain is on
+      Cloudflare: Email Routing for `support@getdrafft.com` to an Email Worker that reads the `[DR-XXXXXX]`
+      reference in the subject and posts the message to a `support-inbound` function (shared secret), which
+      adds it to `private.support_messages` and reopens the request.
+- [ ] **Privacy policy.** Mention device reports (model, iOS, app version, IP and country, for safety,
+      180 days for IPs, a year for devices) and staff access to conversations when investigating.
 - [ ] **Real services end to end.** Verified in production: R2 (HEAD, reject missing, delete), Stream (channel
       on match, openers, users can't create channels). Still to run: sessions, pushes (APNs), media-upload-url
       with a real user token.
