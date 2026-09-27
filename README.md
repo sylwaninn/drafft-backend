@@ -156,6 +156,13 @@ doubles the walk when filters are narrow; see [docs/matching.md](docs/matching.m
 6. R2 bucket `drafft-media` with a custom domain (`media.getdrafft.com`) and Cloudflare image transformations
    enabled on that zone. The app requests sizes with `/cdn-cgi/image/width=800,quality=80/<key>`.
 7. Stream app in the EU region, APNs `.p8` key uploaded in its push settings (chat pushes come from Stream).
+8. Moderation and support secrets: `DEVICECHECK_KEY_ID` and `DEVICECHECK_PRIVATE_KEY` (an Apple key with
+   DeviceCheck; the team comes from `APNS_TEAM_ID`), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key:
+   virtual and VoIP numbers get no code), `SUPPORT_INBOX` (the team's copy of support requests, reports and
+   export requests). Unset, each feature is skipped and logged. The Vault secret `identity_hash_key` is
+   created by migration `20260927000004`: never delete or rotate it, every ban and hold mark would be lost.
+   The team acts with `set_moderation(user, 'review' | 'selfie' | 'banned' | null, note)` and
+   `review_media(media, approved)`, service role only.
 
 ## Staging
 
@@ -178,6 +185,7 @@ secrets are still set by hand with `deploy.sh <env> --secrets`.
 | Stream | app `drafft` (EU) | app `drafft-staging` (EU) |
 | RevenueCat | project `drafft` (`proj3dc1aebd`) | project `drafft staging` (`proje5eb803d`), same catalog |
 | APNs, Rekognition | shared (same bundle id, same key) | shared |
+| DeviceCheck key | shared (the app picks Apple's development or production DeviceCheck) | shared |
 
 Setting it up once:
 
