@@ -26,6 +26,40 @@ export function isAllowedNumber(e164: string): boolean {
   return /^\+[1-9]\d{6,14}$/.test(e164) && allowedPrefixes.some((p) => e164.startsWith(p));
 }
 
+/** Lines that never get a code: virtual and VoIP numbers (made in seconds, the usual way back after a
+ * ban), and lines that can't take an SMS anyway. */
+const refusedLineTypes = new Set([
+  "nonFixedVoip",
+  "fixedVoip",
+  "tollFree",
+  "premium",
+  "sharedCost",
+  "uan",
+  "voicemail",
+  "pager",
+  "landline",
+]);
+
+/** Twilio Lookup v2 (Line Type Intelligence, a few cents each), only at a phone verification. Lookup
+ * runs in Twilio's US1 region, so it has its own US1 API key (TWILIO_LOOKUP_API_KEY_SID and _SECRET).
+ * Unset (locally), unknown type, or Lookup down: the code goes out; this filters, it doesn't gate. */
+export async function isRefusedLine(e164: string): Promise<boolean> {
+  const sid = optionalEnv("TWILIO_LOOKUP_API_KEY_SID"), secret = optionalEnv("TWILIO_LOOKUP_API_KEY_SECRET");
+  if (!sid || !secret) return false;
+  try {
+    const res = await fetch(
+      `https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(e164)}?Fields=line_type_intelligence`,
+      { headers: { authorization: `Basic ${btoa(`${sid}:${secret}`)}` }, signal: AbortSignal.timeout(4000) },
+    );
+    if (!res.ok) throw new Error(`lookup ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const body = await res.json() as { line_type_intelligence?: { type?: string | null } | null };
+    return refusedLineTypes.has(body.line_type_intelligence?.type ?? "");
+  } catch (error) {
+    console.error("twilio lookup", error);
+    return false;
+  }
+}
+
 const regionHosts: Record<string, string> = {
   us1: "api.twilio.com",
   ie1: "api.dublin.ie1.twilio.com",
