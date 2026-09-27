@@ -4,6 +4,9 @@
 // twice (a lost ack) or out of order (a session event before its match channel exists).
 import { env, optionalEnv } from "../_shared/env.ts";
 import { pushToUser } from "../_shared/apns.ts";
+import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
+import { sendEmail } from "../_shared/mailer.ts";
+import { renderNotice, renderTeamEmail } from "../_shared/notices.ts";
 import { HttpError, json, readJson, safeEqual, serve } from "../_shared/http.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
@@ -34,6 +37,26 @@ async function wants(userId: string, setting: Setting): Promise<boolean> {
   const { data, error } = await admin.from("profiles").select(setting).eq("id", userId).maybeSingle();
   if (error) throw new Error(`profile ${userId}: ${error.message}`);
   return (data as Record<Setting, boolean> | null)?.[setting] ?? true;
+}
+
+/** The account's email, from Auth. Null when the account is gone. */
+async function accountEmail(userId: string): Promise<string | null> {
+  const { data, error } = await admin.auth.admin.getUserById(userId);
+  if (error) {
+    if (error.status === 404) return null;
+    throw new Error(`auth user ${userId}: ${error.message}`);
+  }
+  return data.user?.email || null;
+}
+
+/** The team's copy, to SUPPORT_INBOX. Unset (locally): logged only. */
+async function toTeam(subject: string, lines: [string, string][], key: string, replyTo?: string) {
+  const inbox = optionalEnv("SUPPORT_INBOX");
+  if (!inbox) {
+    console.warn(`db-events: SUPPORT_INBOX not set, team email skipped: ${subject}`);
+    return;
+  }
+  await sendEmail(inbox, renderTeamEmail(subject, lines), key, replyTo);
 }
 
 const handlers: Record<string, Handler> = {
@@ -192,6 +215,131 @@ const handlers: Record<string, Handler> = {
     // Deleted since: the account and its chats are gone.
     if (!data) return;
     await setChatPaused(p.userId, data.paused);
+  },
+
+  // A hold changed. The iPhone's DeviceCheck bits follow (bit0 closed, bit1 on hold), and when the hold is
+  // lifted the person is emailed that they're back. The current state decides, the payload says where it
+  // came from. No token yet (Simulator, an old app): device-check sets the bits at the next launch.
+  async "account.moderation"(p: { userId: string; previous: string | null }) {
+    const { data: profile, error } = await admin.from("profiles").select("moderation, language").eq("id", p.userId)
+      .maybeSingle();
+    if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
+    // Deleted since: the bits set earlier stay, which is the point.
+    if (!profile) return;
+    const state = profile.moderation as string | null;
+
+    if (deviceCheckConfigured()) {
+      const held = (s: string | null) => s === "review" || s === "selfie";
+      const change: { bit0?: boolean; bit1?: boolean } = {};
+      if (state === "banned") change.bit0 = true;
+      else if (p.previous === "banned") change.bit0 = false;
+      if (held(state)) change.bit1 = true;
+      else if (held(p.previous)) change.bit1 = false;
+      const rows = must(await admin.rpc("device_check_token", { p_user: p.userId }), "device token") as {
+        token: string;
+        environment: DeviceEnvironment;
+      }[];
+      try {
+        for (const row of rows) await updateBits(row.token, row.environment, change);
+      } catch (error) {
+        // Never hold the email back for Apple: the bits are set again at the next launch.
+        console.error("account.moderation: devicecheck", error);
+      }
+    }
+
+    if (state === null && p.previous) {
+      const email = await accountEmail(p.userId);
+      if (!email) return;
+      const kind = p.previous === "banned" ? "accountReopened" : "accountRestored";
+      await sendEmail(email, renderNotice(kind, language(profile.language)), `hold-lifted-${p.userId}-${p.previous}`);
+    }
+  },
+
+  // A refused photo, approved on the second look the person asked for: they're told by email.
+  async "media.approved_on_review"(p: { mediaId: string; userId: string }) {
+    const { data: media } = await admin.from("profile_media").select("status").eq("id", p.mediaId).maybeSingle();
+    // Deleted or refused again since: nothing to celebrate.
+    if (media?.status !== "approved") return;
+    const email = await accountEmail(p.userId);
+    if (!email) return;
+    const { data: profile } = await admin.from("profiles").select("language").eq("id", p.userId).maybeSingle();
+    await sendEmail(email, renderNotice("photoApproved", language(profile?.language)), `photo-approved-${p.mediaId}`);
+  },
+
+  // A support request: the person gets their reference, the team a copy they can reply to.
+  async "support.created"(p: { id: number }) {
+    const [request] = must(await admin.rpc("support_request", { p_id: p.id }), "support request") as {
+      reference: string;
+      user_id: string | null;
+      email: string;
+      language: string;
+      topic: string;
+      message: string;
+      context: Record<string, unknown>;
+    }[];
+    if (!request) return;
+    await sendEmail(
+      request.email,
+      renderNotice("supportReceived", language(request.language), {
+        reference: request.reference,
+        topic: request.topic,
+      }),
+      `support-ack-${request.reference}`,
+    );
+    await toTeam(
+      `[support] ${request.reference} ${request.topic}`,
+      [
+        ["From", `${request.email}${request.user_id ? ` (account ${request.user_id})` : " (signed out)"}`],
+        ["Language", request.language],
+        ["Message", request.message],
+        ["Context", JSON.stringify(request.context)],
+      ],
+      `support-team-${request.reference}`,
+      request.email,
+    );
+  },
+
+  // A report: the team is told (the account may already be held, see reports_events).
+  async "report.created"(p: { id: string }) {
+    const [report] = must(await admin.rpc("report_details", { p_id: p.id }), "report") as {
+      reporter: string | null;
+      reported: string;
+      reason: string;
+      details: string;
+      reported_hold: string | null;
+    }[];
+    if (!report) return;
+    await toTeam(`[report] ${report.reason}`, [
+      ["Reported account", report.reported],
+      ["Reported by", report.reporter ?? "(deleted account)"],
+      ["Details", report.details || "(none)"],
+      ["Account now", report.reported_hold ?? "not on hold"],
+    ], `report-${p.id}`);
+  },
+
+  // You > Your data > Email me my export: the team prepares it (no automatic export yet).
+  async "export.requested"(p: { id: number; userId: string }) {
+    const email = await accountEmail(p.userId);
+    await toTeam("[data export] request", [
+      ["Account", p.userId],
+      ["Email", email ?? "(none)"],
+      ["Promised", "a download link by email, usually within 24 hours (the app says so)"],
+    ], `export-${p.id}`);
+  },
+
+  // A hold was lifted after a selfie check: the selfies go (bucket verification-selfies). Held again
+  // since (a new request): kept for now, the next lift deletes them all.
+  async "selfie.delete"(p: { userId: string }) {
+    const { data: profile, error } = await admin.from("profiles").select("moderation").eq("id", p.userId)
+      .maybeSingle();
+    if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
+    if (profile?.moderation) return;
+    const paths = must(await admin.rpc("selfie_paths", { p_user: p.userId }), "selfie paths") as string[];
+    if (paths.length > 0) {
+      const removed = await admin.storage.from("verification-selfies").remove(paths);
+      if (removed.error) throw new Error(`selfies of ${p.userId}: ${removed.error.message}`);
+    }
+    check(await admin.rpc("forget_selfies", { p_user: p.userId }), "forget selfies");
   },
 
   // drafft tempo's free boost of the week was credited (private.credit_weekly_boosts). Tapping it

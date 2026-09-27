@@ -222,7 +222,7 @@ const copy: Record<AuthEmail, Record<Language, Copy>> = {
 };
 
 // DESIGN.md palette: canvas, ink, body, mute, primary (on-primary text), canvas-soft.
-const color = {
+export const color = {
   canvas: "#ffffff",
   ink: "#0e0f0c",
   body: "#454745",
@@ -255,24 +255,17 @@ export function renderAuthEmail(
     textMain = `${c.action}: ${vars.link}`;
   } else {
     if (!vars.code) throw new Error(`${kind}: code missing`);
-    main = `<div style="display:inline-block;background:${color.soft};color:${color.ink};font-size:32px;` +
-      `font-weight:800;letter-spacing:8px;padding:14px 20px 14px 28px;border-radius:16px">${escape(vars.code)}</div>`;
+    main = codeBox(vars.code);
     textMain = vars.code;
   }
 
-  const html = `<!doctype html>
-<html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>${escape(c.subject.replace("{code}", vars.code ?? ""))}</title></head>
-<body style="margin:0;background:${color.canvas};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px">
-<tr><td style="font-size:22px;font-weight:600;color:${color.ink};padding-bottom:32px">drafft</td></tr>
-<tr><td style="font-size:26px;font-weight:800;color:${color.ink};padding-bottom:12px">${escape(c.title)}</td></tr>
-<tr><td style="font-size:16px;line-height:24px;color:${color.body};padding-bottom:24px">${htmlBody}</td></tr>
-<tr><td style="padding-bottom:24px">${main}</td></tr>
-<tr><td style="font-size:14px;line-height:20px;color:${color.body};padding-bottom:8px">${escape(c.note)}</td></tr>
-<tr><td style="font-size:14px;line-height:20px;color:${color.mute}">${escape(c.ignore)}</td></tr>
-</table></td></tr></table></body></html>`;
+  const html = layout(lang, c.subject.replace("{code}", vars.code ?? ""), [
+    title(c.title),
+    paragraph(htmlBody),
+    `<tr><td style="padding-bottom:24px">${main}</td></tr>`,
+    small(c.note, color.body),
+    small(c.ignore, color.mute),
+  ]);
 
   const text = [c.title, "", body, "", textMain, "", c.note, c.ignore].join("\n");
   // iOS offers the word right after "code" above the keyboard: so the subject is "123456 is your code", and
@@ -281,6 +274,40 @@ export function renderAuthEmail(
   return { subject, html, text };
 }
 
-function escape(s: string): string {
+/** A code or reference in large type, on a soft block. */
+export function codeBox(value: string): string {
+  return `<div style="display:inline-block;background:${color.soft};color:${color.ink};font-size:32px;` +
+    `font-weight:800;letter-spacing:8px;padding:14px 20px 14px 28px;border-radius:16px">${escape(value)}</div>`;
+}
+
+export function title(text: string): string {
+  return `<tr><td style="font-size:26px;font-weight:800;color:${color.ink};padding-bottom:12px">${
+    escape(text)
+  }</td></tr>`;
+}
+
+/** `html` is already escaped (it may hold a <strong>). */
+export function paragraph(html: string): string {
+  return `<tr><td style="font-size:16px;line-height:24px;color:${color.body};padding-bottom:24px">${html}</td></tr>`;
+}
+
+export function small(text: string, tone: string = color.body): string {
+  return `<tr><td style="font-size:14px;line-height:20px;color:${tone};padding-bottom:8px">${escape(text)}</td></tr>`;
+}
+
+/** Every drafft email: white page, the wordmark, then the rows. */
+export function layout(lang: string, subject: string, rows: string[]): string {
+  return `<!doctype html>
+<html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>${escape(subject)}</title></head>
+<body style="margin:0;background:${color.canvas};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px">
+<tr><td style="font-size:22px;font-weight:600;color:${color.ink};padding-bottom:32px">drafft</td></tr>
+${rows.join("\n")}
+</table></td></tr></table></body></html>`;
+}
+
+export function escape(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

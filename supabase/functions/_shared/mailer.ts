@@ -5,8 +5,14 @@
 import { env, optionalEnv } from "./env.ts";
 import type { Rendered } from "./emails.ts";
 
-/** `idempotencyKey`: the same key within 24 h sends once (Resend), so a retried hook doesn't send twice. */
-export async function sendEmail(to: string, email: Rendered, idempotencyKey?: string): Promise<void> {
+/** `idempotencyKey`: the same key within 24 h sends once (Resend), so a retried hook doesn't send twice.
+ * `replyTo`: where a reply goes (the person, on the team's copy of a support request). */
+export async function sendEmail(
+  to: string,
+  email: Rendered,
+  idempotencyKey?: string,
+  replyTo?: string,
+): Promise<void> {
   const from = env("EMAIL_FROM");
   // Locally Mailpit, unless EMAIL_REAL=true in .env.local: then Resend, as hosted.
   const mailpit = optionalEnv("EMAIL_REAL") === "true" ? undefined : optionalEnv("MAILPIT_URL");
@@ -18,6 +24,7 @@ export async function sendEmail(to: string, email: Rendered, idempotencyKey?: st
       body: JSON.stringify({
         From: { Email: address, Name: name },
         To: [{ Email: to }],
+        ...(replyTo ? { ReplyTo: [{ Email: replyTo }] } : {}),
         Subject: email.subject,
         HTML: email.html,
         Text: email.text,
@@ -34,7 +41,14 @@ export async function sendEmail(to: string, email: Rendered, idempotencyKey?: st
       "content-type": "application/json",
       ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
     },
-    body: JSON.stringify({ from, to: [to], subject: email.subject, html: email.html, text: email.text }),
+    body: JSON.stringify({
+      from,
+      to: [to],
+      ...(replyTo ? { reply_to: replyTo } : {}),
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+    }),
   });
   if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
 }
