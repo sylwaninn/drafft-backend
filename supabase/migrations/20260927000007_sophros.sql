@@ -143,6 +143,29 @@ as $$
     jsonb_build_object('id', p_user, 'deleted', true)) end;
 $$;
 
+-- What a reviewer needs to know about the account behind a photo, next to it.
+create function private.admin_account_brief(p_user uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'createdAt', p.created_at,
+    'lastActiveAt', p.last_active_at,
+    'age', private.age_of(p.birthdate),
+    'gender', p.gender,
+    'onboarded', p.onboarded_at is not null,
+    'flags30d', (select count(*) from public.media_flags f where f.user_id = p.id and f.created_at > now() - interval '30 days'),
+    'reports30d', (select count(distinct r.reporter) from public.reports r
+      where r.reported = p.id and r.created_at > now() - interval '30 days'),
+    'holds', (select count(*) from private.moderation_log l where l.user_id = p.id and l.state is not null),
+    'photos', (select coalesce(jsonb_agg(jsonb_build_object('key', coalesce(m.poster_key, m.key), 'status', m.status)
+        order by m.position), '[]') from public.profile_media m where m.user_id = p.id))
+  from public.profiles p where p.id = p_user;
+$$;
+
 -- ILIKE pattern that matches the text as typed.
 create function private.like_pattern(p_text text)
 returns text
@@ -588,8 +611,9 @@ begin
   return coalesce((
     select jsonb_agg(jsonb_build_object('id', m.id, 'person', private.admin_person(m.user_id), 'kind', m.kind,
         'key', m.key, 'posterKey', m.poster_key, 'width', m.width, 'height', m.height, 'createdAt', m.created_at,
-        'reviewRequestedAt', m.review_requested_at,
-        'labels', (select f.labels from public.media_flags f where f.key = m.key order by f.created_at desc limit 1))
+        'reviewRequestedAt', m.review_requested_at, 'position', m.position,
+        'labels', (select f.labels from public.media_flags f where f.key = m.key order by f.created_at desc limit 1),
+        'account', private.admin_account_brief(m.user_id))
       order by m.review_requested_at nulls last, m.created_at)
     from (select * from public.profile_media
           where status = 'pending' and (review_requested_at is not null or created_at < now() - interval '5 minutes')
@@ -617,7 +641,8 @@ begin
 end;
 $$;
 
--- Flagged photos and videos (chats and profiles). `open`: not looked at yet.
+-- Flagged photos and videos (chats and profiles). `open`: not looked at yet, oldest first (a queue);
+-- otherwise everything, newest first.
 create function public.admin_flags(p_actor text, p_open boolean default true, p_limit int default 60, p_offset int default 0)
 returns jsonb
 language plpgsql
@@ -630,10 +655,13 @@ begin
   return coalesce((
     select jsonb_agg(to_jsonb(f) - 'user_id' || jsonb_build_object('person', private.admin_person(f.user_id),
         'userFlags30d', (select count(*) from public.media_flags x
-          where x.user_id = f.user_id and x.created_at > now() - interval '30 days'))
-      order by f.created_at desc)
+          where x.user_id = f.user_id and x.created_at > now() - interval '30 days'),
+        'media', (select jsonb_build_object('id', m.id, 'status', m.status) from public.profile_media m where m.key = f.key),
+        'account', private.admin_account_brief(f.user_id))
+      order by case when p_open then f.created_at end, f.created_at desc)
     from (select * from public.media_flags where not p_open or reviewed_at is null
-          order by created_at desc limit least(greatest(p_limit, 1), 200) offset greatest(p_offset, 0)) f), '[]');
+          order by case when p_open then created_at end, created_at desc
+          limit least(greatest(p_limit, 1), 200) offset greatest(p_offset, 0)) f), '[]');
 end;
 $$;
 
