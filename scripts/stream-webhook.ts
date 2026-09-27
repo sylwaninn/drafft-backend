@@ -1,9 +1,11 @@
 // Points Stream Chat's webhook at the stream-webhook function, for reaction pushes.
 //
-//   deno run -A --env-file=supabase/functions/.env.production scripts/stream-webhook.ts plan
-//   deno run -A --env-file=supabase/functions/.env.production scripts/stream-webhook.ts apply
+//   SUPABASE_URL=https://<ref>.supabase.co deno run -A --env-file=supabase/functions/.env.<env> scripts/stream-webhook.ts plan
+//   SUPABASE_URL=https://<ref>.supabase.co deno run -A --env-file=supabase/functions/.env.<env> scripts/stream-webhook.ts apply
 //
-// Needs STREAM_API_KEY and STREAM_API_SECRET. SUPABASE_URL defaults to the production project.
+// Needs STREAM_API_KEY, STREAM_API_SECRET and SUPABASE_URL, the project of the same environment as the
+// Stream app (refs in scripts/deploy.sh). No default: a missing URL stops the script rather than point
+// one environment's Stream app at another's function.
 import { StreamChat } from "npm:stream-chat@9";
 
 const EVENTS = ["reaction.new", "reaction.updated"];
@@ -14,7 +16,7 @@ const env = (name: string) =>
   })();
 
 const client = StreamChat.getInstance(env("STREAM_API_KEY"), env("STREAM_API_SECRET"));
-const base = Deno.env.get("SUPABASE_URL") ?? "https://wrcpgnqwjmnirjfxpcux.supabase.co";
+const base = env("SUPABASE_URL");
 const url = `${base.replace(/\/$/, "")}/functions/v1/stream-webhook`;
 const { app } = await client.getAppSettings();
 // Stream's hook system (v2): webhooks live in `event_hooks`, one entry per destination.

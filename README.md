@@ -224,7 +224,7 @@ Setting it up once:
    Google (same client ids as production), Send Email hook to its `auth-email` (its own secret and Resend key).
 6. Stream staging app (EU), configured by script like production, `--env-file=supabase/functions/.env.<env>`:
    `stream-settings.ts` (app settings, grants), `stream-push.ts` (APNs providers from `APNS_*`),
-   `stream-webhook.ts` (with `SUPABASE_URL` for staging). `stream-diff.ts` compares the two apps.
+   `stream-webhook.ts` (`SUPABASE_URL` of the same environment, required). `stream-diff.ts` compares the two apps.
 7. RevenueCat project `drafft staging`: same apps, products, entitlement and offerings as `drafft`
    (identifiers included), App Store Connect API key and In-App Purchase key uploaded, webhook →
    staging `revenuecat-webhook` with `REVENUECAT_WEBHOOK_AUTH` as its Authorization header. Any catalog
