@@ -11,8 +11,11 @@ commands such as cat/grep/sed/base64, scripts, or asking a tool to echo them):
 - any other `.env`, `.env.production`, `.env.local` or `.env.*.local`
 
 They hold production credentials (R2, Stream, APNs, auth providers). To use them, run the CLI that consumes
-them without displaying them, e.g. `supabase secrets set --env-file supabase/functions/.env.production`.
-If a task seems to need a value from them, ask the human instead. The `.env.example` files are safe to read.
+them without displaying them, always naming the project, e.g.
+`supabase secrets set --project-ref <ref> --env-file supabase/functions/.env.<env>` (refs in
+`scripts/deploy.sh`; the CLI stays linked to staging, so without `--project-ref` it writes there), and only
+when the human asks for it: it writes to a remote project. If a task seems to need a value from them, ask the
+human instead. The `.env.example` files are safe to read.
 
 ## Rules for every agent
 
