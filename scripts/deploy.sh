@@ -29,7 +29,9 @@ esac
 
 supabase link --project-ref "$ref"
 supabase db push
-supabase functions deploy --project-ref "$ref"
+# Bundled by Supabase (--use-api), not in a local Docker: the same everywhere, CI runners included, where
+# the Docker bundler fails ("No such file or directory").
+supabase functions deploy --project-ref "$ref" --use-api
 
 if [ "${2:-}" = --secrets ]; then
   # Read by the CLI only, never printed.
