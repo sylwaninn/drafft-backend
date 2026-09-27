@@ -215,6 +215,8 @@ $$;
 
 -- MARK: Overview
 
+-- What waits for the team: each queue's size and its oldest item, for triage. No usage figures: sophros
+-- is for moderation, not metrics.
 create function public.admin_overview(p_actor text)
 returns jsonb
 language plpgsql
@@ -224,28 +226,38 @@ set search_path = ''
 as $$
 begin
   perform private.require_staff(p_actor, 'support');
-  return jsonb_build_object(
-    'accounts', (select count(*) from public.profiles),
-    'onboarded', (select count(*) from public.profiles where onboarded_at is not null),
-    'signups7d', (select count(*) from public.profiles where created_at > now() - interval '7 days'),
-    'active1d', (select count(*) from public.profiles where last_active_at > now() - interval '1 day'),
-    'active7d', (select count(*) from public.profiles where last_active_at > now() - interval '7 days'),
-    'opened1d', (select count(distinct user_id) from private.devices where last_seen_at > now() - interval '1 day'),
-    'premium', (select count(*) from public.wallets where premium_until > now()),
-    'matches7d', (select count(*) from public.matches where created_at > now() - interval '7 days'),
-    'holds', (select coalesce(jsonb_object_agg(moderation, n), '{}')
-      from (select moderation, count(*) as n from public.profiles where moderation is not null group by moderation) h),
-    'selfiesToCheck', (select count(*) from public.profiles p
-      where p.moderation = 'review' and exists (select 1 from private.selfie_checks c where c.user_id = p.id)),
-    'openReports', (select count(*) from public.reports where handled_at is null),
-    'openSupport', (select count(*) from private.support_requests where handled_at is null),
-    'openDataRequests', (select count(*) from private.data_requests where fulfilled_at is null),
-    'mediaToReview', (select count(*) from public.profile_media
-      where status = 'pending' and (review_requested_at is not null or created_at < now() - interval '5 minutes')),
-    'openFlags', (select count(*) from public.media_flags where reviewed_at is null),
-    'signupsByDay', (select jsonb_agg(jsonb_build_object('day', d::date, 'count', (
-        select count(*) from public.profiles where created_at >= d and created_at < d + interval '1 day')) order by d)
-      from generate_series(date_trunc('day', now()) - interval '13 days', date_trunc('day', now()), interval '1 day') d)
+  return (
+    with held as (
+      select p.id, p.moderation,
+             exists (select 1 from private.selfie_checks c where c.user_id = p.id) as has_selfie,
+             (select max(l.created_at) from private.moderation_log l where l.user_id = p.id) as since
+      from public.profiles p where p.moderation is not null
+    ),
+    pending_media as (
+      select coalesce(review_requested_at, created_at) as at from public.profile_media
+      where status = 'pending' and (review_requested_at is not null or created_at < now() - interval '5 minutes')
+    )
+    select jsonb_build_object(
+      'holds', jsonb_build_object(
+        'review', (select count(*) from held where moderation = 'review'),
+        'selfie', (select count(*) from held where moderation = 'selfie'),
+        'banned', (select count(*) from held where moderation = 'banned')),
+      'queues', jsonb_build_object(
+        'selfies', (select jsonb_build_object('count', count(*), 'oldest', min(since)) from held
+          where moderation = 'review' and has_selfie),
+        'reviews', (select jsonb_build_object('count', count(*), 'oldest', min(since)) from held
+          where moderation = 'review' and not has_selfie),
+        'selfieOwed', (select jsonb_build_object('count', count(*), 'oldest', min(since)) from held
+          where moderation = 'selfie'),
+        'reports', (select jsonb_build_object('count', count(*), 'oldest', min(created_at)) from public.reports
+          where handled_at is null),
+        'support', (select jsonb_build_object('count', count(*), 'oldest', min(created_at)) from private.support_requests
+          where handled_at is null),
+        'exports', (select jsonb_build_object('count', count(*), 'oldest', min(created_at)) from private.data_requests
+          where fulfilled_at is null),
+        'photos', (select jsonb_build_object('count', count(*), 'oldest', min(at)) from pending_media),
+        'flags', (select jsonb_build_object('count', count(*), 'oldest', min(created_at)) from public.media_flags
+          where reviewed_at is null)))
   );
 end;
 $$;
@@ -253,7 +265,7 @@ $$;
 -- MARK: Accounts
 
 -- Search by id, email, name or phone digits. Filters: all, held, review, selfie, banned, flagged,
--- reported, premium, active.
+-- reported, premium, active (most recently active first).
 create function public.admin_users(
   p_actor text, p_query text default '', p_filter text default 'all', p_limit int default 50, p_offset int default 0
 )
