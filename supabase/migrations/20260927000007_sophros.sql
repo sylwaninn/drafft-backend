@@ -257,8 +257,10 @@ begin
       from public.profiles p where p.moderation is not null
     ),
     pending_media as (
-      select coalesce(review_requested_at, created_at) as at from public.profile_media
-      where status = 'pending' and (review_requested_at is not null or created_at < now() - interval '5 minutes')
+      select coalesce(x.review_requested_at, x.created_at) as at from public.profile_media x
+      where (x.status = 'pending' and (x.review_requested_at is not null or x.created_at < now() - interval '5 minutes'))
+         or (x.status = 'rejected' and exists (
+           select 1 from public.media_flags f where f.key = x.key and f.context = 'profile' and f.reviewed_at is null))
     )
     select jsonb_build_object(
       'holds', jsonb_build_object(
@@ -280,7 +282,7 @@ begin
           where fulfilled_at is null),
         'photos', (select jsonb_build_object('count', count(*), 'oldest', min(at)) from pending_media),
         'flags', (select jsonb_build_object('count', count(*), 'oldest', min(created_at)) from public.media_flags
-          where reviewed_at is null)))
+          where reviewed_at is null and context = 'chat')))
   );
 end;
 $$;
@@ -597,8 +599,11 @@ $$;
 
 -- MARK: Photos and flags
 
--- Profile media waiting for a person: second looks asked for first, then borderline ones (anything
--- still pending after 5 minutes: the automatic check has spoken).
+-- Profile photos waiting for a person, oldest first:
+-- - `pending`: the automatic check left them to a person (borderline labels, too large to check) or they
+--   asked for a second look (first);
+-- - `refused`: the check refused them on its own and flagged them; a person confirms or restores.
+-- Each carries its unreviewed flags, which any decision on the photo closes.
 create function public.admin_media_queue(p_actor text, p_limit int default 100)
 returns jsonb
 language plpgsql
@@ -612,12 +617,16 @@ begin
     select jsonb_agg(jsonb_build_object('id', m.id, 'person', private.admin_person(m.user_id), 'kind', m.kind,
         'key', m.key, 'posterKey', m.poster_key, 'width', m.width, 'height', m.height, 'createdAt', m.created_at,
         'reviewRequestedAt', m.review_requested_at, 'position', m.position,
+        'state', case when m.status = 'pending' then 'pending' else 'refused' end,
         'labels', (select f.labels from public.media_flags f where f.key = m.key order by f.created_at desc limit 1),
+        'flagIds', (select coalesce(jsonb_agg(f.id), '[]') from public.media_flags f where f.key = m.key and f.reviewed_at is null),
         'account', private.admin_account_brief(m.user_id))
       order by m.review_requested_at nulls last, m.created_at)
-    from (select * from public.profile_media
-          where status = 'pending' and (review_requested_at is not null or created_at < now() - interval '5 minutes')
-          order by review_requested_at nulls last, created_at
+    from (select * from public.profile_media x
+          where (x.status = 'pending' and (x.review_requested_at is not null or x.created_at < now() - interval '5 minutes'))
+             or (x.status = 'rejected' and exists (
+               select 1 from public.media_flags f where f.key = x.key and f.context = 'profile' and f.reviewed_at is null))
+          order by x.review_requested_at nulls last, x.created_at
           limit least(greatest(p_limit, 1), 500)) m), '[]');
 end;
 $$;
@@ -641,9 +650,11 @@ begin
 end;
 $$;
 
--- Flagged photos and videos (chats and profiles). `open`: not looked at yet, oldest first (a queue);
--- otherwise everything, newest first.
-create function public.admin_flags(p_actor text, p_open boolean default true, p_limit int default 60, p_offset int default 0)
+-- Flagged photos and videos: `chat` (shared media, already delivered), `profile`, or both (null).
+-- `open`: not looked at yet, oldest first (a queue); otherwise everything, newest first.
+create function public.admin_flags(
+  p_actor text, p_open boolean default true, p_limit int default 60, p_offset int default 0, p_context text default null
+)
 returns jsonb
 language plpgsql
 stable
@@ -659,7 +670,7 @@ begin
         'media', (select jsonb_build_object('id', m.id, 'status', m.status) from public.profile_media m where m.key = f.key),
         'account', private.admin_account_brief(f.user_id))
       order by case when p_open then f.created_at end, f.created_at desc)
-    from (select * from public.media_flags where not p_open or reviewed_at is null
+    from (select * from public.media_flags where (not p_open or reviewed_at is null) and (p_context is null or context = p_context)
           order by case when p_open then created_at end, created_at desc
           limit least(greatest(p_limit, 1), 200) offset greatest(p_offset, 0)) f), '[]');
 end;
