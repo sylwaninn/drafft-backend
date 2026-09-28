@@ -1,8 +1,9 @@
--- Upcoming sessions end with the match or the account: cancelled at an unmatch or a block (no event), at
--- a ban (session.cancelled in the banned account's name) and just before a deletion (no event).
+-- Upcoming sessions end with the match or the account: cancelled at an unmatch, a block, a ban and just
+-- before a deletion. The other person always gets session.auto_cancelled (one neutral push), never the
+-- usual session.cancelled; the chat card only for a ban, while the chat exists.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(19);
 
 create function pg_temp.person(p_email text) returns uuid language plpgsql as $$
 declare
@@ -38,6 +39,12 @@ create function pg_temp.cancel_events(p_match uuid) returns bigint language sql 
   select count(*) from private.outbox where event = 'session.cancelled' and payload ->> 'matchId' = p_match::text;
 $$;
 
+-- session.auto_cancelled events of a match, as "recipient:chat" (chat when a card goes to the chat).
+create function pg_temp.auto_events(p_match uuid) returns text language sql as $$
+  select coalesce(string_agg((payload ->> 'to') || ':' || (payload ->> 'chatFrom' is not null), ',' order by id), '')
+  from private.outbox where event = 'session.auto_cancelled' and payload ->> 'matchId' = p_match::text;
+$$;
+
 grant execute on all functions in schema pg_temp to authenticated;
 create temp table ids as select pg_temp.person('ana@test.dev') as ana, pg_temp.person('bo@test.dev') as bo,
   pg_temp.person('cy@test.dev') as cy, pg_temp.person('di@test.dev') as di, pg_temp.person('ed@test.dev') as ed,
@@ -63,7 +70,12 @@ select is(pg_temp.statuses((select unmatched from m)), 'accepted,cancelled,cance
   'an unmatch cancels the upcoming sessions, not the past ones');
 select is(pg_temp.statuses((select blocked from m)), 'accepted,cancelled,cancelled', 'so does a block');
 select is(pg_temp.cancel_events((select unmatched from m)) + pg_temp.cancel_events((select blocked from m)), 0::bigint,
-  'no push or chat message for an ended match');
+  'no session.cancelled (it names the person) for an ended match');
+select is(pg_temp.auto_events((select unmatched from m)),
+  (select bo::text || ':false,' || bo::text || ':false' from ids),
+  'the person unmatched gets the neutral push for each upcoming session, without a chat card');
+select is(pg_temp.auto_events((select blocked from m)),
+  (select di::text || ':false,' || di::text || ':false' from ids), 'so does the person blocked');
 select is((select count(*) from private.outbox where event = 'match.ended'
     and payload ->> 'matchId' in ((select unmatched::text from m), (select blocked::text from m))), 2::bigint,
   'the match itself still ends as before');
@@ -79,10 +91,14 @@ select public.set_moderation((select ed from ids), 'review');
 select is(pg_temp.statuses((select banned from m)), 'accepted,accepted,pending', 'a review hold keeps the sessions');
 select public.set_moderation((select ed from ids), 'banned');
 select is(pg_temp.statuses((select banned from m)), 'accepted,cancelled,cancelled', 'a ban cancels them');
-select is(pg_temp.cancel_events((select banned from m)), 2::bigint, 'and the other person is told (db-events)');
-select is((select count(*) from private.outbox where event = 'session.cancelled'
-    and payload ->> 'matchId' = (select banned::text from m) and payload ->> 'actorId' = (select ed::text from ids)),
-  2::bigint, 'in the name of the banned account');
+select is(pg_temp.cancel_events((select banned from m)), 0::bigint, 'no session.cancelled naming the account');
+select is(pg_temp.auto_events((select banned from m)),
+  (select fa::text || ':true,' || fa::text || ':true' from ids),
+  'the other person gets the neutral push, and the chat card since the chat stays');
+select is((select count(*) from private.outbox where event = 'session.auto_cancelled'
+    and payload ->> 'matchId' = (select banned::text from m) and payload ->> 'language' = 'en'
+    and payload ->> 'timezone' = 'UTC' and (payload ->> 'notify')::boolean and payload ? 'at'),
+  2::bigint, 'with the language, time zone and setting the push needs');
 select is(current_setting('drafft.session_actor', true), '', 'the actor is not left behind for the transaction');
 select public.set_moderation((select ed from ids), null);
 select is(pg_temp.statuses((select banned from m)), 'accepted,cancelled,cancelled', 'lifting the ban brings none back');
@@ -95,6 +111,10 @@ delete from auth.users where id = (select fa from ids);
 select is((select count(*) from public.sessions where id in (select id from deleted_sessions)), 0::bigint,
   'a deleted account takes its sessions');
 select is(pg_temp.cancel_events((select deleted from m)), 0::bigint, 'without an event db-events could not handle');
+select is(pg_temp.auto_events((select deleted from m)),
+  (select ana::text || ':false,' || ana::text || ':false' from ids),
+  'the other person still gets the neutral push, emitted before the cascade');
+select is(current_setting('drafft.session_quiet', true), '', 'the quiet flag is not left behind');
 
 select * from finish();
 rollback;
