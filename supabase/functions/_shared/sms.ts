@@ -3,6 +3,7 @@
 // Short, so it stays one SMS even when an accent switches it to Unicode.
 import { env, optionalEnv } from "./env.ts";
 import type { Language } from "./texts.ts";
+import { checkResponse, viaProvider } from "./providers.ts";
 
 const verification: Record<Language, (code: string) => string> = {
   en: (c) => `Your drafft code is ${c}`,
@@ -116,10 +117,13 @@ export async function sendSms(to: string, body: string): Promise<void> {
   // Ireland (ie1) by default: drafft's Twilio keys and Messaging Service live there, next to its EU users.
   // TWILIO_REGION overrides it (us1, au1). A key and a service only work on their own region's host.
   const host = regionHosts[(optionalEnv("TWILIO_REGION") ?? "ie1").toLowerCase()] ?? regionHosts.ie1;
-  const res = await fetch(`https://${host}/2010-04-01/Accounts/${account}/Messages.json`, {
-    method: "POST",
-    headers: { authorization: `Basic ${auth}`, "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ To: to, Body: body, MessagingServiceSid: env("TWILIO_MESSAGING_SERVICE_SID") }),
+  await viaProvider("twilio", async () => {
+    const res = await fetch(`https://${host}/2010-04-01/Accounts/${account}/Messages.json`, {
+      method: "POST",
+      signal: AbortSignal.timeout(10_000),
+      headers: { authorization: `Basic ${auth}`, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ To: to, Body: body, MessagingServiceSid: env("TWILIO_MESSAGING_SERVICE_SID") }),
+    });
+    await checkResponse("twilio", res, "twilio");
   });
-  if (!res.ok) throw new Error(`twilio ${res.status}: ${await res.text()}`);
 }

@@ -79,8 +79,8 @@ The app-side list lives in `drafft/TODO.md`.
 
 ## Robustness
 
-- [ ] **Dead-letter alert.** Outbox rows with `attempts >= 10` and no `delivered_at` need an alert
-      (pg_cron job posting to Slack or email) and a replay procedure.
+- [x] **Dead-letter alert.** Retry budgets per event, circuit breakers per provider, alerts to
+      SUPPORT_INBOX (`ops-alert`) and replay or discard from sophros (migration 20260928000121).
 - [ ] **Orphan uploads.** A ticket used but never registered leaves an object in R2: lifecycle rule or a
       weekly sweep of keys absent from `profile_media`.
 - [ ] **Chat attachments.** Checked silently after delivery (`chat-media`), never removed; not deleted when

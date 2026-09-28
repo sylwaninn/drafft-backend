@@ -171,7 +171,7 @@ select ok(not (select alex from ids) = any (pg_temp.deck_ids('{}')), 'blocked pe
 reset role;
 select ok(not has_function_privilege('anon', 'public.discover(jsonb, int)', 'execute'),
   'anonymous callers cannot use RPCs');
-select ok(not has_function_privilege('authenticated', 'public.ack_event(bigint)', 'execute'),
+select ok(not has_function_privilege('authenticated', 'public.ack_event(bigint, text[])', 'execute'),
   'only the server acks events');
 select ok(not has_table_privilege('authenticated', 'public.wallets', 'update'),
   'wallets are not writable by clients');

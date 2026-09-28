@@ -114,6 +114,21 @@ Deno.test("db-events: the right secret gets past the check", async () => {
   assertEquals(await status("db-events", { body: "{", headers }), 400);
 });
 
+const alert = JSON.stringify({ id: 1, kind: "daily", incident: null, payload: {} });
+
+Deno.test("ops-alert: no secret header → 401", async () => {
+  assertEquals(await status("ops-alert", { body: alert }), 401);
+});
+
+Deno.test("ops-alert: wrong secret → 401", async () => {
+  assertEquals(await status("ops-alert", { body: alert, headers: { "x-webhook-secret": "not-the-secret" } }), 401);
+});
+
+Deno.test("ops-alert: the right secret gets past the check", async () => {
+  const headers = { "x-webhook-secret": ENV.DB_EVENTS_SECRET };
+  assertEquals(await status("ops-alert", { body: "{", headers }), 400);
+});
+
 Deno.test("revenuecat-webhook: no Authorization → 401", async () => {
   assertEquals(await status("revenuecat-webhook", { body: "{}" }), 401);
 });
