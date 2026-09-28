@@ -165,70 +165,64 @@ const copy: Record<Notice, Record<Language, Copy>> = {
       note: "Bedankt dat je het vroeg.",
     },
   },
-  // A support request, received: its reference follows the body.
+  // A support request, received: its reference follows the body. Fixed text, nothing the form typed: the
+  // signed-out form mails any address, so it must not carry someone else's words.
   supportReceived: {
     en: {
       subject: "We got your message",
       title: "Message received",
-      body:
-        "Thanks for writing to us about: {topic}. We'll reply to this address, usually within 2 working days. Your reference:",
+      body: "Thanks for writing to us. We'll reply to this address, usually within 2 working days. Your reference:",
       note: "Keep this reference if you write to us again.",
     },
     fr: {
       subject: "Nous avons bien reçu ton message",
       title: "Message reçu",
       body:
-        "Merci de nous avoir écrit au sujet de : {topic}. Nous te répondrons à cette adresse, en général sous 2 jours ouvrés. Ta référence :",
+        "Merci de nous avoir écrit. Nous te répondrons à cette adresse, en général sous 2 jours ouvrés. Ta référence :",
       note: "Garde cette référence si tu nous écris de nouveau.",
     },
     es: {
       subject: "Hemos recibido tu mensaje",
       title: "Mensaje recibido",
       body:
-        "Gracias por escribirnos sobre: {topic}. Te responderemos a esta dirección, normalmente en 2 días laborables. Tu referencia:",
+        "Gracias por escribirnos. Te responderemos a esta dirección, normalmente en 2 días laborables. Tu referencia:",
       note: "Guarda esta referencia si vuelves a escribirnos.",
     },
     de: {
       subject: "Wir haben deine Nachricht erhalten",
       title: "Nachricht erhalten",
       body:
-        "Danke für deine Nachricht zum Thema: {topic}. Wir antworten dir an diese Adresse, meist innerhalb von 2 Werktagen. Deine Referenz:",
+        "Danke für deine Nachricht. Wir antworten dir an diese Adresse, meist innerhalb von 2 Werktagen. Deine Referenz:",
       note: "Bewahre diese Referenz auf, falls du uns noch einmal schreibst.",
     },
     it: {
       subject: "Abbiamo ricevuto il tuo messaggio",
       title: "Messaggio ricevuto",
       body:
-        "Grazie per averci scritto riguardo a: {topic}. Ti risponderemo a questo indirizzo, di solito entro 2 giorni lavorativi. Il tuo riferimento:",
+        "Grazie per averci scritto. Ti risponderemo a questo indirizzo, di solito entro 2 giorni lavorativi. Il tuo riferimento:",
       note: "Conserva questo riferimento se ci scrivi di nuovo.",
     },
     pt: {
       subject: "Recebemos a tua mensagem",
       title: "Mensagem recebida",
       body:
-        "Agradecemos a tua mensagem sobre: {topic}. Vamos responder para este endereço, normalmente em 2 dias úteis. A tua referência:",
+        "Agradecemos a tua mensagem. Vamos responder para este endereço, normalmente em 2 dias úteis. A tua referência:",
       note: "Guarda esta referência se nos voltares a escrever.",
     },
     nl: {
       subject: "We hebben je bericht ontvangen",
       title: "Bericht ontvangen",
-      body:
-        "Bedankt voor je bericht over: {topic}. We antwoorden naar dit adres, meestal binnen 2 werkdagen. Je referentie:",
+      body: "Bedankt voor je bericht. We antwoorden naar dit adres, meestal binnen 2 werkdagen. Je referentie:",
       note: "Bewaar deze referentie als je ons opnieuw schrijft.",
     },
   },
 };
 
-/** `reference` and `topic`: the support acknowledgement only. */
-export function renderNotice(
-  kind: Notice,
-  lang: Language,
-  vars: { reference?: string; topic?: string } = {},
-): Rendered {
+/** `reference`: the support acknowledgement only. */
+export function renderNotice(kind: Notice, lang: Language, vars: { reference?: string } = {}): Rendered {
   const c = copy[kind][lang];
-  const body = c.body.replace("{topic}", vars.topic ?? "");
-  const htmlBody = escape(c.body).replace("{topic}", `<strong>${escape(vars.topic ?? "")}</strong>`);
-  const rows = [title(c.title), paragraph(htmlBody)];
+  const body = c.body;
+  const rows = [title(c.title), paragraph(escape(c.body))];
   if (vars.reference) rows.push(`<tr><td style="padding-bottom:24px">${codeBox(vars.reference)}</td></tr>`);
   rows.push(small(c.note, color.mute));
   const text = [c.title, "", body, ...(vars.reference ? ["", vars.reference] : []), "", c.note].join("\n");

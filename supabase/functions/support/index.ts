@@ -2,7 +2,9 @@
 // Every "Get help" and "Contact us" form in the app. Signed in, the reply goes to the account's email;
 // signed out (a sign-up or a reset that got stuck), to the email typed in the form. The request is stored
 // (private.support_requests, for the dashboard), then db-events emails the person their reference and the
-// team a copy. Limits (create_support_request): 5 an hour per person, 200 an hour signed out.
+// team a copy. The acknowledgement is a fixed text with the reference, never what was typed.
+// Limits (create_support_request): 5 an hour per account; signed out, 3 an hour and 5 a day per address and
+// 200 an hour in all. No captcha yet: the signed-out form stands on these limits alone.
 import { HttpError, json, readJson, serve } from "../_shared/http.ts";
 import { admin } from "../_shared/supabase.ts";
 
