@@ -134,8 +134,8 @@ select throws_ok(format('select public.swipe(%L, %L)', (select maya from ids), '
   'no super likes left', 'super like needs a balance');
 
 select pg_temp.login((select leo from ids));
-select is((select count(*) from public.liked_me() c, ids where (c ->> 'id')::uuid = ids.alex), 1::bigint,
-  'the like shows in their Likes');
+select is((select count(*) from public.liked_me()), 1::bigint,
+  'the like shows in their Likes (blurred without drafft tempo: tests/database/blurred_likes.test.sql)');
 select is(public.swipe((select alex from ids), 'like') ->> 'matched', 'true', 'mutual like is a match');
 select is((select count(*) from public.my_matches()), 1::bigint, 'match is listed');
 
