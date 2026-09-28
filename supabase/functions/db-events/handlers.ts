@@ -162,10 +162,11 @@ async function toTeam(
 
 /** Stream ban on or off from the account's current hold. Deleted since: the account and its chats are gone. */
 async function syncChatHold(userId: string) {
-  const { data, error } = await admin.from("profiles").select("moderation").eq("id", userId).maybeSingle();
+  const { data, error } = await admin.from("profiles").select("moderation, deleted_at").eq("id", userId)
+    .maybeSingle();
   if (error) throw new Error(`profile ${userId}: ${error.message}`);
   if (!data) return;
-  await setChatHeld(userId, data.moderation !== null);
+  await setChatHeld(userId, data.moderation !== null || data.deleted_at !== null);
 }
 
 export const handlers: Record<string, Handler> = {
@@ -246,13 +247,33 @@ export const handlers: Record<string, Handler> = {
     }
   },
 
-  // Unmatch or block: the channel disappears for both.
+  // Unmatch, block, report, or a deleted account kept for safety: the chat disappears for both and nobody
+  // can write in it, but it is kept, never deleted, so the team can still read it in sophros (server side,
+  // with the secret). Both members leave the channel (it leaves their channel lists, and members only can
+  // read a messaging channel), then it is frozen (no message or reaction from anyone). Both calls are
+  // idempotent. No channel yet (nobody wrote) or an erased account (the channel went with it): nothing to do.
   async "match.ended"(p: { matchId: string }) {
+    const { data: match, error } = await admin.from("matches").select("user_a, user_b").eq("id", p.matchId)
+      .maybeSingle();
+    if (error) throw new Error(`match ${p.matchId}: ${error.message}`);
+    if (!match) return;
+    const channel = stream().channel("messaging", p.matchId);
     try {
-      await viaProvider("stream", () => stream().channel("messaging", p.matchId).delete());
+      await viaProvider("stream", async () => {
+        await channel.removeMembers([match.user_a, match.user_b]);
+        await channel.updatePartial({ set: { frozen: true } });
+      });
     } catch (error) {
       if (!String(error).includes("does not exist")) throw error;
     }
+  },
+
+  // An account kept after its owner deleted it (retain_deleted_account): banned from chat for good, and every
+  // Stream token issued so far revoked, so the app still holding one can't connect. Its channels were frozen
+  // by match.ended. Never in Stream (never opened the chat): the ban creates the user, the revoke then holds.
+  async "account.soft_deleted"(p: { userId: string }, ctx) {
+    await ctx.once("ban", () => setChatHeld(p.userId, true));
+    await ctx.once("revoke", () => viaProvider("stream", () => stream().revokeUserToken(p.userId, new Date())));
   },
 
   "session.proposed": (p, ctx) => sessionEvent(p, "proposed", ctx),
@@ -376,8 +397,8 @@ export const handlers: Record<string, Handler> = {
   // lifted the person is emailed that they're back. The current state decides, the payload says where it
   // came from. No token yet (Simulator, an old app): device-check sets the bits at the next launch.
   async "account.moderation"(p: { userId: string; previous: string | null }, ctx) {
-    const { data: profile, error } = await admin.from("profiles").select("moderation, language").eq("id", p.userId)
-      .maybeSingle();
+    const { data: profile, error } = await admin.from("profiles").select("moderation, language, deleted_at")
+      .eq("id", p.userId).maybeSingle();
     if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
     // Deleted since: the bits set earlier stay, which is the point.
     if (!profile) return;
@@ -385,7 +406,8 @@ export const handlers: Record<string, Handler> = {
 
     // Chats read-only while held, writable again once lifted (a hold on an already paused profile
     // doesn't change `paused`, so profile.paused alone would miss it).
-    await setChatHeld(p.userId, state !== null);
+    // An account kept after deletion stays banned (account.soft_deleted).
+    await setChatHeld(p.userId, state !== null || profile.deleted_at !== null);
 
     if (deviceCheckConfigured() && !ctx.done("devicecheck")) {
       const held = (s: string | null) => s === "review" || s === "selfie";
