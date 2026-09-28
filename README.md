@@ -103,6 +103,14 @@ entitlement. Only the project's store environment counts (`purchase_environment`
 `too_many_requests` (1 call per 5 s, 30 per hour and account), 503 `sync_not_configured` (secrets missing),
 503 `sync_unavailable` (RevenueCat unreachable; the webhook still credits).
 
+Support form (`POST /support { topic, message, language, email?, context?, turnstileToken? }` → `{ reference }`):
+signed in, the reply goes to the account's email and no captcha is asked. Signed out, `turnstileToken` (a
+Cloudflare Turnstile token for `getdrafft.com`, at most 2048 characters) is checked server side against
+Siteverify with the `TURNSTILE_SECRET_KEY` function secret. Error codes: `captcha_required` (400, no token),
+`captcha_failed` (403, refused by Cloudflare or issued for another hostname), `captcha_not_configured` (500,
+hosted project without the secret: signed-out requests are refused and logged; locally the check is skipped with
+a warning), plus `invalid_topic`, `invalid_message`, `invalid_email` (400) and `too_many_requests` (429).
+
 Auth emails: Supabase Auth sends none itself. Its Send Email hook calls `auth-email`, which picks the
 person's language (`profiles.language`, set at sign-up from the app's `language` metadata) and sends through
 Resend: a 6-digit code to confirm sign-up, a new email or a password change (the app types it in), and a
@@ -217,7 +225,9 @@ or `functions deploy` by hand.
    DeviceCheck; the team comes from `APNS_TEAM_ID`), `DEVICECHECK_ENVIRONMENT=production` (Apple's environment
    is chosen by the project, never by the app), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key:
    virtual and VoIP numbers get no code), `SUPPORT_INBOX` (the team's copy of support requests, reports and
-   export requests). Unset, each feature is skipped and logged. The Vault secret `identity_hash_key` is
+   export requests), `TURNSTILE_SECRET_KEY` (the Turnstile widget's secret key: required in both projects, the
+   signed-out support form is refused without it and `scripts/ci/env-parity.sh` flags a project missing it).
+   Otherwise unset, each feature is skipped and logged. The Vault secret `identity_hash_key` is
    created by migration `20260927000004`: never delete or rotate it, every ban and hold mark would be lost.
    The team acts through sophros (`admin_*` functions, audited in `private.admin_audit`).
 
