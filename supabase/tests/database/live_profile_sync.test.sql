@@ -19,26 +19,29 @@ create function pg_temp.events(p_user uuid) returns bigint language sql as $$
   select count(*) from realtime.messages where topic = 'user:' || p_user and event = 'profile' and private;
 $$;
 
-create function pg_temp.last_fields(p_user uuid) returns jsonb language sql as $$
-  select payload -> 'fields' from realtime.messages
-  where topic = 'user:' || p_user and event = 'profile' order by inserted_at desc, id desc limit 1;
+-- Every message of one transaction shares inserted_at and ids are random uuids: look a message up by its
+-- fields rather than by order.
+create function pg_temp.sent(p_user uuid, p_fields jsonb) returns boolean language sql as $$
+  select exists (select from realtime.messages
+    where topic = 'user:' || p_user and event = 'profile' and private and payload -> 'fields' = p_fields);
 $$;
 
 select is(pg_temp.events((select ana from ids)), 0::bigint, 'creating the profile sends nothing');
 
 update public.profiles set paused = not paused where id = (select ana from ids);
-select is(pg_temp.last_fields((select ana from ids)), '["paused"]'::jsonb, 'a pause names the field');
+select ok(pg_temp.sent((select ana from ids), '["paused"]'::jsonb), 'a pause names the field');
 
 update public.profiles set language = 'fr', notify_likes = not notify_likes where id = (select ana from ids);
-select is(pg_temp.last_fields((select ana from ids)), '["language", "notify_likes"]'::jsonb,
+select ok(pg_temp.sent((select ana from ids), '["language", "notify_likes"]'::jsonb),
   'language and settings are named together, sorted');
 
 update public.profiles set bio = 'Morning runs', neighborhood = 'Croix-Rousse' where id = (select ana from ids);
-select is(pg_temp.last_fields((select ana from ids)), '["bio", "neighborhood"]'::jsonb, 'card fields too');
+select ok(pg_temp.sent((select ana from ids), '["bio", "neighborhood"]'::jsonb), 'card fields too');
 
 select is(
   (select payload - 'fields' - 'event' - 'private' - 'id' from realtime.messages
-   where topic = 'user:' || (select ana from ids) and event = 'profile' order by inserted_at desc, id desc limit 1),
+   where topic = 'user:' || (select ana from ids) and event = 'profile'
+     and payload -> 'fields' = '["bio", "neighborhood"]'::jsonb),
   '{}'::jsonb, 'the payload carries names, not values');
 
 select is(pg_temp.events((select ana from ids)), 3::bigint, 'one event per update');
