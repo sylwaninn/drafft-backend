@@ -4,6 +4,8 @@
 #   db_events_secret      DB_EVENTS_SECRET from supabase/functions/.env.<environment>
 #   purchase_environment  the store environment whose purchases count (apply_purchase_event):
 #                         SANDBOX on staging, PRODUCTION on production (also the default when unset)
+#   media_base_url        MEDIA_PUBLIC_URL, where the media Worker serves signed links (when set)
+#   media_signing_key     MEDIA_SIGNING_KEY, the key those links are signed with (when set)
 # Creates them or replaces their value. Prints nothing secret.
 #
 #   scripts/sync-vault.sh staging
@@ -34,6 +36,16 @@ secret=$(printf %s "$line" | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]+$//;
 [ -n "$secret" ] || { echo "DB_EVENTS_SECRET is empty in $file: set it (openssl rand -hex 32)." >&2; exit 1; }
 case "$secret" in *"'"*) echo "DB_EVENTS_SECRET can't contain a quote." >&2; exit 1 ;; esac
 
+# Another variable of the same file, same rules; empty when absent.
+value_of() {
+  grep -E "^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=" "$file" | tail -n 1 \
+    | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/' || true
+}
+media_url=$(value_of MEDIA_PUBLIC_URL)
+media_key=$(value_of MEDIA_SIGNING_KEY)
+case "$media_url$media_key" in *"'"*) echo "MEDIA_PUBLIC_URL and MEDIA_SIGNING_KEY can't contain a quote." >&2; exit 1 ;; esac
+[ -n "$media_key" ] || echo "No MEDIA_SIGNING_KEY in $file: media links stay unsigned (public bucket only)." >&2
+
 upsert() { # name value
   printf "select case when exists (select 1 from vault.secrets where name = '%s')
     then (select vault.update_secret(id, '%s') from vault.secrets where name = '%s')::text
@@ -46,6 +58,8 @@ trap 'rm -f "$sql"' EXIT
   upsert edge_functions_url "https://$ref.supabase.co/functions/v1"
   upsert db_events_secret "$secret"
   upsert purchase_environment "$purchases"
+  [ -z "$media_url" ] || upsert media_base_url "$media_url"
+  [ -z "$media_key" ] || upsert media_signing_key "$media_key"
 } > "$sql"
 
 # On every exit, errors included: remove the SQL file and never leave the CLI linked to production.

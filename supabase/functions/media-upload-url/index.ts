@@ -1,11 +1,12 @@
 // POST /media-upload-url { purpose, contentType, byteSize }
-//   → { key, uploadUrl, headers, publicUrl, expiresIn }
+//   → { key, uploadUrl, headers, url, publicUrl, expiresIn }
 //
 // The app compresses on device first (photos resized, video to 720p MP4, voice to AAC), then PUTs the
 // bytes straight to R2 with a background URLSession. Nothing goes through this server but the URL.
 // Profile media is then registered with the add_profile_media RPC, which queues moderation.
 import { HttpError, json, readJson, serve } from "../_shared/http.ts";
-import { presignPut, publicUrl } from "../_shared/r2.ts";
+import { signedMediaUrl } from "../_shared/media_url.ts";
+import { presignPut } from "../_shared/r2.ts";
 import { admin, requireUser } from "../_shared/supabase.ts";
 
 const MB = 1024 * 1024;
@@ -55,12 +56,16 @@ serve(async (req) => {
   const key = `u/${user.id}/${rule.folder}/${crypto.randomUUID()}.${ext}`;
   const expiresIn = 600;
   const uploadUrl = await presignPut(key, contentType, byteSize, expiresIn);
+  // The uploader's own link to the object (the bucket is private: signed, about an hour).
+  const url = await signedMediaUrl(key);
 
   return json({
     key,
     uploadUrl,
     headers: { "content-type": contentType, "content-length": String(byteSize) },
-    publicUrl: publicUrl(key),
+    url,
+    // Same as url, for apps from before the bucket went private.
+    publicUrl: url,
     expiresIn,
   });
 });

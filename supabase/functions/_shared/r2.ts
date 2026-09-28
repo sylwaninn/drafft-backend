@@ -1,5 +1,5 @@
-// Cloudflare R2 through its S3-compatible API. Objects are public through the CDN domain
-// (MEDIA_PUBLIC_URL) under unguessable keys; writes need a presigned URL from media-upload-url.
+// Cloudflare R2 through its S3-compatible API. The bucket is private: reads go through the media Worker
+// with signed URLs (media_url.ts); writes need a presigned URL from media-upload-url.
 import { AwsClient } from "npm:aws4fetch@1";
 import { env, optionalEnv } from "./env.ts";
 import { ProviderError, reachedProvider, transientStatus, viaProvider } from "./providers.ts";
@@ -40,10 +40,6 @@ export function assertSafeKey(key: string): string {
 
 function objectUrl(key: string): URL {
   return new URL(`${bucketUrl()}/${assertSafeKey(key).split("/").map(encodeURIComponent).join("/")}`);
-}
-
-export function publicUrl(key: string): string {
-  return `${env("MEDIA_PUBLIC_URL")}/${assertSafeKey(key)}`;
 }
 
 /**

@@ -1,0 +1,45 @@
+// drafft media Worker: serves the private R2 bucket through signed, short-lived URLs (src/index.ts).
+// Deploy: see the pull request that added it ("Deployment guide"), or:
+//   npx wrangler@4 deploy --env staging      (media-staging.getdrafft.com, bucket drafft-media-staging)
+//   npx wrangler@4 deploy --env production   (media.getdrafft.com, bucket drafft-media)
+// Secret, per environment, equal to MEDIA_SIGNING_KEY of that environment's Edge Functions, Vault
+// (media_signing_key) and sophros:
+//   npx wrangler@4 secret put MEDIA_SIGNING_KEY --env staging|production
+{
+  "name": "drafft-media",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  // Only the custom domains below: no workers.dev URL, no preview URLs (the Cache API only works on
+  // a custom domain anyway).
+  "workers_dev": false,
+  "preview_urls": false,
+  "env": {
+    "staging": {
+      "name": "drafft-media-staging",
+      "routes": [
+        { "pattern": "media-staging.getdrafft.com", "custom_domain": true }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "drafft-media-staging",
+          "jurisdiction": "eu"
+        }
+      ],
+      "images": { "binding": "IMAGES" }
+    },
+    "production": {
+      "name": "drafft-media",
+      "routes": [{ "pattern": "media.getdrafft.com", "custom_domain": true }],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "drafft-media",
+          "jurisdiction": "eu"
+        }
+      ],
+      "images": { "binding": "IMAGES" }
+    }
+  }
+}
