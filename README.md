@@ -13,7 +13,7 @@ iPhone ── PostgREST RPCs ─────────────▶ Postgres
    │   media-upload-url, chat-media,    │                                 └─ R2: moderation check, deletions
    │   delete-account, device-check,    │
    │   support, app-config, stream-token│
-   ├── PUT (presigned) ─▶ R2 ◀── CDN (media.getdrafft.com) ◀── image/video GETs
+   ├── PUT (presigned) ─▶ R2 (private) ◀── media Worker + CDN (media.getdrafft.com) ◀── signed GETs
    └── Stream Chat SDK ─▶ Stream (EU)
 ```
 
@@ -95,7 +95,7 @@ Edge Functions (signed in unless noted):
 | `phone-code` | texts a code to verify a number: email confirmed, limits per number, account and IP, Twilio Lookup (mobile lines only, fails closed) |
 | `purchase-sync` | credits a purchase or restore straight away from RevenueCat (see Purchases below) |
 | `support` | public: every "Get help" and "Contact us" form, signed in or not (`{ reference }`) |
-| `app-config` | public: `mediaUrl`, where media keys are served from |
+| `app-config` | public: `mediaUrl`, where media keys are served from (links themselves come signed) |
 | `stream-token` | a Stream Chat token (for the chat, not wired in the app yet) |
 
 Purchases: `POST /functions/v1/purchase-sync` (signed in, body `{ "transaction_id": "<App Store transaction id>" }`
@@ -225,8 +225,12 @@ or `functions deploy` by hand.
 5. Auth: Apple (bundle id `so.drafft.app`) and Google (iOS + web client ids) in the dashboard. Send Email hook
    (HTTPS) to `auth-email`: its secret into `SEND_EMAIL_HOOK_SECRET`, with `RESEND_API_KEY` and `EMAIL_FROM`,
    then the secrets as in step 4 before enabling it.
-6. R2 bucket `drafft-media` with a custom domain (`media.getdrafft.com`) and Cloudflare image transformations
-   enabled on that zone. The app requests sizes with `/cdn-cgi/image/width=800,quality=80/<key>`.
+6. R2 bucket `drafft-media`, private, served only by the media Worker (`cloudflare/media-worker`) on
+   `media.getdrafft.com`: signed links of about an hour (`?exp=…&sig=…`, optional `&w=` among 160, 320,
+   640, 1080), issued by the database (cards, `media_urls`) and the Edge Functions for what the caller may
+   see. `MEDIA_SIGNING_KEY` (`openssl rand -hex 32`, one per environment) is the same in the function
+   secrets, the Vault (`media_signing_key`, by `scripts/sync-vault.sh`), the Worker and sophros;
+   `MEDIA_PUBLIC_URL` is the Worker's domain.
 7. Stream app in the EU region, APNs `.p8` key uploaded in its push settings (chat pushes come from Stream).
 8. Moderation and support secrets: `DEVICECHECK_KEY_ID` and `DEVICECHECK_PRIVATE_KEY` (an Apple key with
    DeviceCheck; the team comes from `APNS_TEAM_ID`), `DEVICECHECK_ENVIRONMENT=production` (Apple's environment
@@ -257,6 +261,7 @@ secrets are still set by hand, always naming the project: `deploy.sh <env> --sec
 | Edge Functions secrets | `functions/.env.production` | `functions/.env.staging` |
 | R2 bucket (EU jurisdiction) | `drafft-media` | `drafft-media-staging` |
 | Public media URL (until the domain) | `pub-f4b77604ea6f42188c3ba8da914a6a16.r2.dev` | `pub-2877e6f189f0420785f5cd685f44f789.r2.dev` |
+| Media Worker (signed links) | `drafft-media`, `media.getdrafft.com` | `drafft-media-staging`, `media-staging.getdrafft.com` |
 | Stream | app `drafft` (EU) | app `drafft-staging` (EU) |
 | RevenueCat | project `drafft` (`proj3dc1aebd`) | project `drafft staging` (`proje5eb803d`), same catalog |
 | APNs, Rekognition | shared (same bundle id, same key) | shared |
@@ -276,7 +281,8 @@ Setting it up once:
    project configuration) with `REVENUECAT_PROJECT_ID=proje5eb803d` for `purchase-sync`. Then
    `scripts/deploy.sh staging --secrets`. Wrangler needs `--jurisdiction eu` to see either bucket.
 4. `scripts/sync-vault.sh staging`: the database's Vault secrets (`edge_functions_url`, `db_events_secret`
-   from `DB_EVENTS_SECRET`, `purchase_environment`), so database events reach the functions. Run it again whenever `DB_EVENTS_SECRET`
+   from `DB_EVENTS_SECRET`, `purchase_environment`, `media_base_url` and `media_signing_key` from
+   `MEDIA_PUBLIC_URL` and `MEDIA_SIGNING_KEY`), so database events reach the functions. Run it again whenever `DB_EVENTS_SECRET`
    changes, in either environment.
 5. Auth on the branch: Apple and Google (same client ids as production), Send Email hook to its `auth-email`
    (its own secret and Resend key).
