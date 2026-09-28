@@ -5,6 +5,20 @@
 import { env, optionalEnv } from "./env.ts";
 import type { Rendered } from "./emails.ts";
 
+/** The domain, trimmed, lowercased and without the final dot DNS allows ("a@Example.COM." is example.com). */
+function domainOf(address: string): string {
+  const at = address.lastIndexOf("@");
+  return address.slice(at + 1).trim().toLowerCase().replace(/\.+$/, "");
+}
+
+/** Reserved names never receive mail (RFC 2606, 6761): demo and test accounts use them. The top-level
+ * domains test, example, invalid and localhost (and those names on their own, `a@localhost`), and
+ * example.com, .net, .org with their subdomains. */
+export function isReservedAddress(address: string): boolean {
+  const domain = domainOf(address);
+  return /(^|\.)(test|example|invalid|localhost)$/.test(domain) || /(^|\.)example\.(com|net|org)$/.test(domain);
+}
+
 /** `idempotencyKey`: the same key within 24 h sends once (Resend), so a retried hook doesn't send twice.
  * `replyTo`: where a reply goes (the person, on the team's copy of a support request). */
 export async function sendEmail(
@@ -13,9 +27,9 @@ export async function sendEmail(
   idempotencyKey?: string,
   replyTo?: string,
 ): Promise<void> {
-  // Reserved top-level domains never receive mail (RFC 2606, 6761): demo and test accounts use them.
-  if (/\.(test|example|invalid|localhost)$/i.test(to.trim())) {
-    console.log(`mailer: ${to} is a reserved domain, not sent: ${email.subject}`);
+  if (isReservedAddress(to)) {
+    // Never the subject or the body: an auth email's subject holds its code.
+    console.log(`mailer: reserved domain ${domainOf(to)}, not sent`);
     return;
   }
   const from = env("EMAIL_FROM");
