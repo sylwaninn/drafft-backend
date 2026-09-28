@@ -18,45 +18,69 @@ export function verificationSms(lang: Language, code: string): string {
   return verification[lang](code);
 }
 
-/** The countries the app offers at the phone step (PhoneCountry.all): nothing else is texted, so a bot
- * can't run up the bill on premium numbers elsewhere. Twilio's geo permissions say the same. */
-const allowedPrefixes = ["+33", "+32", "+41", "+352", "+44", "+34", "+39", "+49", "+1"];
-
-export function isAllowedNumber(e164: string): boolean {
-  return /^\+[1-9]\d{6,14}$/.test(e164) && allowedPrefixes.some((p) => e164.startsWith(p));
+/** A verification number: E.164, any country. Which lines get a code is Twilio Lookup's answer. */
+export function isE164(value: string): boolean {
+  return /^\+[1-9]\d{6,14}$/.test(value);
 }
 
-/** Lines that never get a code: virtual and VoIP numbers (made in seconds, the usual way back after a
- * ban), and lines that can't take an SMS anyway. */
-const refusedLineTypes = new Set([
-  "nonFixedVoip",
-  "fixedVoip",
-  "tollFree",
-  "premium",
-  "sharedCost",
-  "uan",
-  "voicemail",
-  "pager",
-  "landline",
-]);
+/** The only line type that gets a code: a mobile line. Everything else is refused, `unknown` and a
+ * missing type included: premium and shared-cost numbers (SMS pumping), virtual and VoIP numbers (made in
+ * seconds, the usual way back after a ban), and lines that can't take an SMS anyway. */
+const acceptedLineTypes = new Set(["mobile"]);
 
-/** Twilio Lookup v2 (Line Type Intelligence, a few cents each), only at a phone verification. Lookup
- * runs in Twilio's US1 region, so it has its own US1 API key (TWILIO_LOOKUP_API_KEY_SID and _SECRET).
- * Unset (locally), unknown type, or Lookup down: the code goes out; this filters, it doesn't gate. */
-export async function isRefusedLine(e164: string): Promise<boolean> {
-  const sid = optionalEnv("TWILIO_LOOKUP_API_KEY_SID"), secret = optionalEnv("TWILIO_LOOKUP_API_KEY_SECRET");
-  if (!sid || !secret) return false;
+/** What Lookup says about a number: `ok` (a mobile line), `invalid` (not a real number), `refused` (any
+ * other line type), `unavailable` (Lookup down, too slow or not configured on a hosted project). */
+export type LineCheck = "ok" | "invalid" | "refused" | "unavailable";
+
+export interface LookupOptions {
+  /** TWILIO_LOOKUP_API_KEY_SID and _SECRET: Lookup runs in Twilio's US1 region, with its own US1 key. */
+  sid: string | undefined;
+  secret: string | undefined;
+  /** SUPABASE_URL: https means a hosted project, where a missing key fails closed. */
+  supabaseUrl: string;
+  fetch?: typeof fetch;
+}
+
+/** Twilio Lookup v2 (Line Type Intelligence, a few cents each), before every verification SMS. It fails
+ * closed: without an answer, no code goes out. Only locally (no key, not https) is it skipped. */
+export async function checkLine(e164: string, options: LookupOptions): Promise<LineCheck> {
+  if (!options.sid || !options.secret) {
+    if (options.supabaseUrl.startsWith("https://")) {
+      console.error("twilio lookup: TWILIO_LOOKUP_API_KEY_SID/_SECRET not set, verification SMS refused");
+      return "unavailable";
+    }
+    console.warn("twilio lookup: no key, line check skipped (local only)");
+    return "ok";
+  }
   try {
-    const res = await fetch(
+    const res = await (options.fetch ?? fetch)(
       `https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(e164)}?Fields=line_type_intelligence`,
-      { headers: { authorization: `Basic ${btoa(`${sid}:${secret}`)}` }, signal: AbortSignal.timeout(4000) },
+      {
+        headers: { authorization: `Basic ${btoa(`${options.sid}:${options.secret}`)}` },
+        signal: AbortSignal.timeout(4000),
+      },
     );
+    // Lookup answers 404 for a number it can't parse at all.
+    if (res.status === 404) {
+      await res.body?.cancel();
+      return "invalid";
+    }
     if (!res.ok) throw new Error(`lookup ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const body = await res.json() as { line_type_intelligence?: { type?: string | null } | null };
-    return refusedLineTypes.has(body.line_type_intelligence?.type ?? "");
+    const body = await res.json() as {
+      valid?: boolean;
+      line_type_intelligence?: { type?: string | null; error_code?: number | null } | null;
+    };
+    if (body.valid === false) return "invalid";
+    const lti = body.line_type_intelligence;
+    // Lookup answered, but without the line type (its own error): nothing known, so nothing sent.
+    if (!lti || lti.error_code) {
+      console.error("twilio lookup: no line type", lti?.error_code);
+      return "unavailable";
+    }
+    return acceptedLineTypes.has(lti.type ?? "") ? "ok" : "refused";
   } catch (error) {
     console.error("twilio lookup", error);
-    return false;
+    return "unavailable";
   }
 }
 

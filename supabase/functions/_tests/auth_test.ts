@@ -179,7 +179,14 @@ Deno.test("auth-sms: a valid signature gets past the check", async () => {
 });
 
 // Called by the app with the person's access token (requireUser).
-const userFunctions = ["chat-media", "delete-account", "device-check", "media-upload-url", "stream-token"];
+const userFunctions = [
+  "chat-media",
+  "delete-account",
+  "device-check",
+  "media-upload-url",
+  "phone-code",
+  "stream-token",
+];
 
 for (const name of userFunctions) {
   Deno.test(`${name}: no token → 401`, async () => {
