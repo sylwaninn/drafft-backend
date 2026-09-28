@@ -12,9 +12,12 @@ insert into auth.users (id, email, aud, role, instance_id) values
 create function pg_temp.sent(p_user text) returns bigint language sql as $$
   select count(*) from realtime.messages where topic = 'user:' || p_user and event = 'wallet';
 $$;
+-- The message sent after the snapshot in `seen` (every message of a transaction shares inserted_at, and
+-- ids are random uuids, so order can't tell them apart).
+create temp table seen (id uuid);
 create function pg_temp.last(p_user text) returns jsonb language sql as $$
   select payload from realtime.messages where topic = 'user:' || p_user and event = 'wallet'
-    order by inserted_at desc, id desc limit 1;
+    and id not in (select id from seen);
 $$;
 create function pg_temp.w(p_user text) returns public.wallets language sql as $$
   select * from public.wallets where user_id = p_user::uuid;
@@ -23,6 +26,7 @@ $$;
 -- Broadcast on every change, with the whole balance.
 select lives_ok($$ select pg_temp.sent('33333333-3333-4333-8333-333333333331') $$, 'realtime.messages is readable');
 create temp table n0 as select pg_temp.sent('33333333-3333-4333-8333-333333333331') as n;
+insert into seen select id from realtime.messages;
 update public.wallets set super_likes = 4 where user_id = '33333333-3333-4333-8333-333333333331';
 select is(pg_temp.sent('33333333-3333-4333-8333-333333333331'), (select n + 1 from n0), 'a wallet change is broadcast');
 select is((pg_temp.last('33333333-3333-4333-8333-333333333331') ->> 'super_likes')::int, 4,
