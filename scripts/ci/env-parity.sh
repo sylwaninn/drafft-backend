@@ -74,8 +74,18 @@ done
 [ "$secrets_staging" = "$secrets_production" ] \
   || fail "secret names differ: $(diff <(echo "$secrets_staging") <(echo "$secrets_production") | grep '^[<>]' | tr '\n' ' ')"
 
-[ "$schema_staging" = "$schema_production" ] \
-  || fail "database objects differ (< staging, > production): $(diff <(echo "$schema_staging") <(echo "$schema_production") | grep '^[<>]' | tr '\n' ' ')"
+# Between a merge and the next release tag, objects only on staging are expected (production runs the new
+# migrations at the tag). Objects only on production, or a changed signature (both sides), stay an error.
+schema_diff=$(diff <(echo "$schema_staging") <(echo "$schema_production") | grep '^[<>]' || true)
+if [ "$allow_behind" = --allow-prod-behind ]; then
+  staging_only=$(grep '^<' <<<"$schema_diff" || true)
+  production_only=$(grep '^>' <<<"$schema_diff" || true)
+  [ -z "$staging_only" ] || echo "note: production doesn't have these database objects yet: $(echo "$staging_only" | tr '\n' ' ')"
+  [ -z "$production_only" ] \
+    || fail "database objects only on production (< staging, > production): $(echo "$schema_diff" | tr '\n' ' ')"
+else
+  [ -z "$schema_diff" ] || fail "database objects differ (< staging, > production): $(echo "$schema_diff" | tr '\n' ' ')"
+fi
 
 [ $status -eq 0 ] && echo "env-parity: staging and production match the repository."
 exit $status
