@@ -2,8 +2,8 @@
 
 How drafft picks the cards in someone's deck, and what happens from a swipe to a match. Everything below
 lives in Postgres: `public.discover`, `private.eligible`, `public.swipe` and their neighbours in
-`supabase/migrations/` (latest versions: `20260926000001_pause_freezes_account.sql` and
-`20260926000002_discover_ranking.sql`). Tests: `supabase/tests/database/{core,discover,pause}.test.sql`.
+`supabase/migrations/` (latest versions: `20260926000001_pause_freezes_account.sql`,
+`20260926000002_discover_ranking.sql` and `20260928000061_pause_discover_only.sql`). Tests: `supabase/tests/database/{core,discover,pause}.test.sql`.
 
 ## The deck in one call
 
@@ -142,17 +142,25 @@ moves when the person:
 
 ## Pause
 
-A paused profile (`profiles.paused`, set by the app) is frozen until it resumes:
+A paused profile (`profiles.paused`, set by the app) is out of discovery until it resumes. Only
+discovery is frozen: the person keeps living with their current matches.
 
-- **The owner** gets `paused` from `discover`, `swipe`, `undo_last_swipe`, `start_boost` and every session
-  action. Swipes and sessions are guarded at the table (triggers), so no path gets around it. Chats turn
-  read-only: `db-events` bans the person in Stream on `profile.paused` and lifts the ban on resume;
-  `stream-token` sets it again at launch, and `media-upload-url` refuses chat uploads (403 `paused`).
-  Reading, editing the profile, blocking, reporting, unmatching and deleting the account still work.
-  An account on hold from the team (`moderation`) also can't report, add profile media or register a push
-  token (`moderated`); it can still export its data and delete the account.
+- **The owner** gets `paused` from `discover`, `swipe` (like, super like, pass), `undo_last_swipe` and
+  `start_boost`. Swipes are guarded at the table (trigger), so no path gets around it; answering a like
+  from the Likes tab is a swipe, so it waits too. Everything else still works: proposing, countering,
+  accepting, declining and cancelling sessions with current matches, writing in chats and sending chat
+  media, receiving match notifications, editing the profile and photos, blocking, reporting, unmatching
+  and deleting the account.
 - **Everyone else**: the person leaves decks and Likes tabs, and a swipe on them fails with `not_found`.
-  Their matches and chats stay; they can still be written to.
+  Their matches, sessions and chats stay.
+
+A hold set by the team (`profiles.moderation`: review, selfie, banned) is stricter and forces `paused`
+on: every action answers `moderated`, including sessions (`sessions_pause_guard` trigger, now checking
+holds only), reporting, adding profile media and registering a push token (it can still export its data
+and delete the account), and chats turn read-only. `db-events` bans the person in Stream while a hold is on
+(`account.moderation`, and again on `profile.paused` from the current hold) and lifts the ban when it
+ends; `stream-token` sets it again at launch, and `media-upload-url` refuses chat uploads (403
+`moderated`). A voluntary pause never bans in Stream.
 
 ## Blocks and reports
 
@@ -172,8 +180,8 @@ Errors come back from PostgREST with a stable code in `hint`.
 | --- | --- | --- |
 | `location_required` | `discover` | No location on file: ask for it, then `set_location` |
 | `onboarding_required` | `discover`, `swipe`, `undo_last_swipe`, `start_boost`, `report_user` | The caller hasn't finished onboarding |
+| `paused` | `discover`, `swipe`, `undo_last_swipe`, `start_boost` | The caller's profile is paused |
 | `moderated` | `discover`, `swipe`, `undo_last_swipe`, `start_boost`, sessions, `report_user`, `add_profile_media`, `register_push_token` | The caller's account is on hold |
-| `paused` | `discover`, `swipe`, `undo_last_swipe`, `start_boost`, sessions | The caller's profile is paused |
 | `not_found` | `swipe` | Target unavailable: not onboarded, paused, or blocked |
 | `not_eligible` | `swipe` | Like refused: the person is under 18, or their preferences leave the caller out |
 | `already_swiped` | `swipe` | This person was swiped already |
