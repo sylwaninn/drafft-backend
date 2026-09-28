@@ -22,12 +22,27 @@ function bucketUrl(): string {
   return `${base}/${env("R2_BUCKET")}`;
 }
 
+/**
+ * Refuses a key that could point outside its own path once turned into a URL: URL parsing resolves
+ * `.` and `..` segments, so a key under the caller's prefix could still reach another object. Keys come
+ * from media-upload-url (`u/<user>/<folder>/<uuid>.<ext>`) and the database checks their shape too;
+ * this is the last guard before a request reaches the bucket.
+ */
+export function assertSafeKey(key: string): string {
+  if (typeof key !== "string" || key.length === 0 || key.length > 512) throw new Error("R2: invalid object key");
+  for (const segment of key.split("/")) {
+    // `%2e` counts as a dot for URL parsers too.
+    if (segment === "" || /^(\.|%2e){1,2}$/i.test(segment)) throw new Error("R2: invalid object key");
+  }
+  return key;
+}
+
 function objectUrl(key: string): URL {
-  return new URL(`${bucketUrl()}/${key.split("/").map(encodeURIComponent).join("/")}`);
+  return new URL(`${bucketUrl()}/${assertSafeKey(key).split("/").map(encodeURIComponent).join("/")}`);
 }
 
 export function publicUrl(key: string): string {
-  return `${env("MEDIA_PUBLIC_URL")}/${key}`;
+  return `${env("MEDIA_PUBLIC_URL")}/${assertSafeKey(key)}`;
 }
 
 /**
