@@ -24,6 +24,8 @@ import {
   language,
   likeReceived,
   matchCreated,
+  type ModerationPush,
+  moderationPush,
   photoRefused,
   pushTitle,
   sessionAutoCancelled,
@@ -444,7 +446,7 @@ export const handlers: Record<string, Handler> = {
   // A hold changed. The iPhone's DeviceCheck bits follow (bit0 closed, bit1 on hold), and when the hold is
   // lifted the person is emailed that they're back. The current state decides, the payload says where it
   // came from. No token yet (Simulator, an old app): device-check sets the bits at the next launch.
-  async "account.moderation"(p: { userId: string; previous: string | null }, ctx) {
+  async "account.moderation"(p: { userId: string; state?: string | null; previous: string | null }, ctx) {
     const { data: profile, error } = await admin.from("profiles").select("moderation, language, deleted_at")
       .eq("id", p.userId).maybeSingle();
     if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
@@ -476,6 +478,8 @@ export const handlers: Record<string, Handler> = {
       }
       await ctx.record("devicecheck");
     }
+
+    await pushModeration(ctx, p, state, profile.language);
 
     if (state === null && p.previous) {
       const email = await accountEmail(p.userId);
@@ -669,6 +673,41 @@ export const handlers: Record<string, Handler> = {
     });
   },
 };
+
+/** Moderation news the person waits for, pushed: a hold lifted (reopened after a ban, a selfie approved,
+ * or a review cleared), a selfie asked for, or asked again after one wasn't enough. Never a new
+ * restriction (review, ban): the app's own screen says those. Only while the state is still the one this
+ * event is about: a later change speaks for itself. The open app hides it (its screen already changed). */
+async function pushModeration(
+  ctx: EventContext,
+  p: { userId: string; state?: string | null; previous: string | null },
+  state: string | null,
+  lang: string | null,
+) {
+  if (p.state !== undefined && p.state !== state) return;
+  let kind: ModerationPush | null = null;
+  if (state === null && p.previous) {
+    if (p.previous === "banned") kind = "reopened";
+    else if (p.previous === "review" && await reviewWasSelfie(p.userId)) kind = "selfieApproved";
+    else kind = "restored";
+  } else if (state === "selfie") {
+    kind = p.previous === "review" && await reviewWasSelfie(p.userId) ? "selfieRetry" : "selfieRequested";
+  }
+  if (!kind) return;
+  await ctx.push("push", p.userId, {
+    title: pushTitle,
+    body: moderationPush[kind][language(lang)],
+    data: { kind: "moderation" },
+    // One moderation push at a time: a newer state replaces the older one on the lock screen.
+    collapseId: `moderation-${p.userId}`,
+  });
+}
+
+async function reviewWasSelfie(userId: string): Promise<boolean> {
+  const result = await admin.rpc("review_was_selfie", { p_user: userId });
+  check(result, "review was selfie");
+  return result.data === true;
+}
 
 /** The refusal push, in the person's language. The app shows its own banner when it's open (and hides this
  * push there). Returns the language, or null when the account is gone. */
