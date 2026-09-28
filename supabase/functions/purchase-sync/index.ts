@@ -1,4 +1,6 @@
-// POST /purchase-sync → the caller's wallet (super_likes, boosts, boost_ends_at, premium_until, weekly_boost_at)
+// POST /purchase-sync { transaction_id? } → { wallet, transaction: { id, credited } | null }
+// wallet: super_likes, boosts, boost_ends_at, premium_until, weekly_boost_at. transaction: the status of the
+// store transaction the app asks about (its App Store transaction id), so the app trusts the server's answer.
 // Called by the app right after a purchase or a restore: reads the caller's purchases from RevenueCat
 // (REST API v2, REVENUECAT_SECRET_KEY and REVENUECAT_PROJECT_ID) and applies them in Postgres
 // (apply_purchase_sync), so the credit doesn't wait for the webhook. Each consumable is credited once per
@@ -12,6 +14,7 @@ import { readState, RevenueCatError } from "./revenuecat.ts";
 serve(async (req) => {
   if (req.method !== "POST") throw new HttpError(405, "method_not_allowed");
   const user = await requireUser(req);
+  const transactionId = await readTransactionId(req);
 
   const secretKey = optionalEnv("REVENUECAT_SECRET_KEY");
   const projectId = optionalEnv("REVENUECAT_PROJECT_ID");
@@ -34,7 +37,29 @@ serve(async (req) => {
     throw new HttpError(503, "sync_unavailable");
   }
 
-  const { data, error } = await admin.rpc("apply_purchase_sync", { p_user: user.id, p_state: state });
+  const { data, error } = await admin.rpc("apply_purchase_sync", {
+    p_user: user.id,
+    p_state: state,
+    p_transaction: transactionId,
+  });
   if (error) throw new Error(`apply_purchase_sync ${user.id}: ${error.message}`);
   return json(data);
 });
+
+/** The optional `transaction_id` of the body; an empty body asks about no transaction. */
+async function readTransactionId(req: Request): Promise<string | null> {
+  const text = await req.text();
+  if (!text.trim()) return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new HttpError(400, "invalid_json");
+  }
+  const id = (body as { transaction_id?: unknown } | null)?.transaction_id;
+  if (id === undefined || id === null) return null;
+  if (typeof id !== "string" || !/^[A-Za-z0-9._:-]{1,128}$/.test(id)) {
+    throw new HttpError(400, "invalid_transaction_id");
+  }
+  return id;
+}
