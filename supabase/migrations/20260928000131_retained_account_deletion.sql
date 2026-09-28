@@ -54,6 +54,8 @@ create table private.deleted_identities (
   primary key (kind, hash, user_id)
 );
 
+create index deleted_identities_user_idx on private.deleted_identities (user_id);
+
 create table private.account_links (
   user_id uuid not null references public.profiles (id) on delete cascade,
   deleted_user_id uuid not null references public.profiles (id) on delete cascade,
