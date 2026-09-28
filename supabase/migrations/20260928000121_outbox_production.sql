@@ -464,6 +464,7 @@ create table private.ops_alerts (
 );
 
 create index ops_alerts_unsent_idx on private.ops_alerts (id) where sent_at is null;
+create index ops_alerts_incident_idx on private.ops_alerts (incident_id);
 
 -- The outbox right now, without any personal data.
 create function private.ops_state()
