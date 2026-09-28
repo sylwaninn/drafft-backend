@@ -433,6 +433,10 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 [functions.db-events]
 verify_jwt = false
 
+# Outbox alerts to SUPPORT_INBOX, posted by the database (shared secret, like db-events).
+[functions.ops-alert]
+verify_jwt = false
+
 # Called by RevenueCat, authenticated with the Authorization header value set in its webhook settings.
 [functions.revenuecat-webhook]
 verify_jwt = false
