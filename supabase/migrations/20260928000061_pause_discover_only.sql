@@ -7,21 +7,7 @@
 -- Holds set by the team (`moderation` review, selfie, banned) keep freezing everything: sessions are
 -- still refused with `moderated` here, and db-events keeps chats read-only while a hold is on.
 
-create function private.require_unheld(p_user uuid)
-returns void
-language plpgsql
-stable
-security definer
-set search_path = ''
-as $$
-begin
-  if exists (select 1 from public.profiles where id = p_user and moderation is not null) then
-    perform private.fail('moderated', 'your account is on hold');
-  end if;
-end;
-$$;
-
-revoke all on function private.require_unheld(uuid) from public, anon, authenticated;
+-- The hold check is private.require_not_held (20260928000041).
 
 -- Sessions: whoever acts must not be on hold; a pause no longer matters. Server-side writes (no
 -- auth.uid()) are not concerned. The trigger keeps its name (sessions_pause_guard).
@@ -32,7 +18,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  perform private.require_unheld((select auth.uid()));
+  perform private.require_not_held((select auth.uid()));
   return new;
 end;
 $$;
