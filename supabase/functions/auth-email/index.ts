@@ -1,10 +1,8 @@
 // POST /auth-email: Supabase Auth's Send Email hook. Auth sends no email itself: it calls this for each one
 // and we send it, in the person's language (profiles.language, which the sign-up sets from the app).
 // Signed with the hook's secret (Standard Webhooks, SEND_EMAIL_HOOK_SECRET: `v1,whsec_…` from Auth > Hooks).
-// The reset link goes through Auth's /verify, then back to the app (drafft://auth-callback/reset). The
-// other emails carry a 6-digit code the app types in (verifyOTP).
+// Every email carries a 6-digit code the app types in (verifyOTP), a password reset included: no link.
 import { type AuthEmail, renderAuthEmail } from "../_shared/emails.ts";
-import { env, optionalEnv } from "../_shared/env.ts";
 import { hookError, hookOk, verifyHook } from "../_shared/hook.ts";
 import { sendEmail } from "../_shared/mailer.ts";
 import { admin } from "../_shared/supabase.ts";
@@ -51,16 +49,14 @@ Deno.serve(async (req) => {
     const lang = language(profile?.language ?? user.user_metadata?.language);
 
     let to = user.email;
-    let vars: { link?: string; code?: string; email?: string };
-    if (kind === "reset") {
-      vars = { link: verifyLink(data.token_hash, type, data.redirect_to) };
-    } else if (kind === "newEmail") {
+    let vars: { code?: string; email?: string };
+    if (kind === "newEmail") {
       // One code, to the new address (double_confirm_changes is off): whichever token Auth filled in.
       if (!user.new_email) throw new Error("email_change without new_email");
       to = user.new_email;
       vars = { code: data.token || data.token_new, email: user.new_email };
     } else {
-      // Sign-up and reauthentication: a code the app types in.
+      // Sign-up, password reset and reauthentication: a code the app types in.
       vars = { code: data.token };
     }
 
@@ -72,11 +68,3 @@ Deno.serve(async (req) => {
     return hookError(500, "email not sent");
   }
 });
-
-/** Auth's own verify endpoint: it checks the token, then redirects to the app with the session. */
-function verifyLink(tokenHash: string, type: string, redirectTo: string): string {
-  // Locally SUPABASE_URL is the Docker-internal address: AUTH_PUBLIC_URL is the one a phone can open.
-  const base = optionalEnv("AUTH_PUBLIC_URL") ?? env("SUPABASE_URL");
-  const params = new URLSearchParams({ token: tokenHash, type, redirect_to: redirectTo });
-  return `${base}/auth/v1/verify?${params}`;
-}

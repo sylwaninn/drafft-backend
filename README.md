@@ -36,7 +36,7 @@ Principles:
 ```
 supabase/
   migrations/   foundation, profiles, social, sessions, events, purchases, media review, weekly boost, notification settings
-  functions/    stream-token, media-upload-url, chat-media, db-events, delete-account, device-check, support, revenuecat-webhook, purchase-sync, stream-webhook, app-config, auth-email, auth-sms, _shared/
+  functions/    stream-token, media-upload-url, chat-media, db-events, delete-account, device-check, support, revenuecat-webhook, purchase-sync, phone-code, stream-webhook, app-config, auth-email, auth-sms, _shared/
   tests/        pgTAP (supabase test db)
   seed.sql      local Vault secrets
 docs/matching.md    Discover and matching: eligibility, ranking, likes, boosts, pause, error codes
@@ -86,6 +86,7 @@ Edge Functions (signed in unless noted):
 | `chat-media` | silent check of a photo or video sent in a chat (`{ flagged }`, nothing changes for either person) |
 | `delete-account` | deletes the account, its chat history, media and selfies |
 | `device-check` | the iPhone's DeviceCheck token, at each launch and sign-in |
+| `phone-code` | texts a code to verify a number: email confirmed, limits per number, account and IP, Twilio Lookup (mobile lines only, fails closed) |
 | `purchase-sync` | credits a purchase or restore straight away from RevenueCat (see Purchases below) |
 | `support` | public: every "Get help" and "Contact us" form, signed in or not (`{ reference }`) |
 | `app-config` | public: `mediaUrl`, where media keys are served from |
@@ -223,8 +224,8 @@ or `functions deploy` by hand.
 7. Stream app in the EU region, APNs `.p8` key uploaded in its push settings (chat pushes come from Stream).
 8. Moderation and support secrets: `DEVICECHECK_KEY_ID` and `DEVICECHECK_PRIVATE_KEY` (an Apple key with
    DeviceCheck; the team comes from `APNS_TEAM_ID`), `DEVICECHECK_ENVIRONMENT=production` (Apple's environment
-   is chosen by the project, never by the app), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key:
-   virtual and VoIP numbers get no code), `SUPPORT_INBOX` (the team's copy of support requests, reports and
+   is chosen by the project, never by the app), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key,
+   required: every verification SMS goes to a mobile line Lookup accepted, and none goes out without it), `SUPPORT_INBOX` (the team's copy of support requests, reports and
    export requests), `TURNSTILE_SECRET_KEY` (the Turnstile widget's secret key: required in both projects, the
    signed-out support form is refused without it and `scripts/ci/env-parity.sh` flags a project missing it).
    Otherwise unset, each feature is skipped and logged. The Vault secret `identity_hash_key` is
@@ -271,8 +272,8 @@ Setting it up once:
 4. `scripts/sync-vault.sh staging`: the database's Vault secrets (`edge_functions_url`, `db_events_secret`
    from `DB_EVENTS_SECRET`, `purchase_environment`), so database events reach the functions. Run it again whenever `DB_EVENTS_SECRET`
    changes, in either environment.
-5. Auth on the branch: redirect URLs `drafft://auth-callback` and `drafft://auth-callback/reset`, Apple and
-   Google (same client ids as production), Send Email hook to its `auth-email` (its own secret and Resend key).
+5. Auth on the branch: Apple and Google (same client ids as production), Send Email hook to its `auth-email`
+   (its own secret and Resend key).
 6. Stream staging app (EU), configured by script like production, `--env-file=supabase/functions/.env.<env>`:
    `stream-settings.ts` (app settings, grants), `stream-push.ts` (APNs providers from `APNS_*`),
    `stream-webhook.ts` (`SUPABASE_URL` of the same environment, required). `stream-diff.ts` compares the two apps.
