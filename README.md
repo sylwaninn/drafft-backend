@@ -10,8 +10,9 @@ iPhone ── PostgREST RPCs ─────────────▶ Postgres
    │      Realtime (user:<id> topic) ◀──┤  triggers ─▶ outbox ─pg_net─▶ db-events (Edge Function)
    │                                    │                                 ├─ Stream: channels, openers, session messages
    ├── Edge Functions ──────────────────┤                                 ├─ APNs: match, like, session pushes
-   │   stream-token, media-upload-url,  │                                 └─ R2: moderation check, deletions
-   │   delete-account                   │
+   │   media-upload-url, chat-media,    │                                 └─ R2: moderation check, deletions
+   │   delete-account, device-check,    │
+   │   support, app-config, stream-token│
    ├── PUT (presigned) ─▶ R2 ◀── CDN (media.getdrafft.com) ◀── image/video GETs
    └── Stream Chat SDK ─▶ Stream (EU)
 ```
@@ -21,18 +22,21 @@ Principles:
 - **One round trip per screen.** Cards are denormalized on write (`profile_cards`), so reading a profile is
   a primary-key lookup. Discover returns a full batch of cards in one call.
 - **Writes through RPCs.** Clients can only read their own rows and update whitelisted profile columns. Every
-  other write is a `security definer` function that validates input. `anon` can call nothing.
+  other write is a `security definer` function that validates input. `anon` executes no database function;
+  it reads `sports` and calls the public Edge Functions `app-config` and `support`.
 - **Side effects never get lost.** Triggers write to `private.outbox` in the same transaction; pg_net posts
   after commit; pg_cron retries with backoff until `db-events` acks. Handlers are idempotent.
 - **Privacy.** Locations are in `private` (not exposed), snapped to ~1 km, and only rounded distances leave
-  the database. Birthdates never reach cards. Media stays invisible until moderation approves it.
+  the database. Birthdates never reach cards. Profile photos and videos stay invisible until moderation
+  approves them; the voice intro isn't moderated and reaches cards as soon as it's set, and chat photos and
+  videos are delivered first, then checked silently (`chat-media`).
 
 ## Layout
 
 ```
 supabase/
   migrations/   foundation, profiles, social, sessions, events, purchases, media review, weekly boost, notification settings
-  functions/    stream-token, media-upload-url, db-events, delete-account, revenuecat-webhook, stream-webhook, app-config, auth-email, auth-sms, _shared/
+  functions/    stream-token, media-upload-url, chat-media, db-events, delete-account, device-check, support, revenuecat-webhook, stream-webhook, app-config, auth-email, auth-sms, _shared/
   tests/        pgTAP (supabase test db)
   seed.sql      local Vault secrets
 docs/matching.md    Discover and matching: eligibility, ranking, likes, boosts, pause, error codes
@@ -52,10 +56,13 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 | Likes, matches | `liked_me`, `my_matches`, `get_cards(p_ids, p_known)`, `unmatch` |
 | Sessions | `propose_session`, `respond_session`, `counter_session`, `cancel_session`, `upcoming_sessions` |
 | Safety | `block_user`, `unblock_user`, `blocked_users`, `report_user`, `report_app_open(p_install, p_device)` (each time the app comes to the front: install id, model, iOS, app version, locale, time zone; the IP and country come from the request) |
+| Moderation | `request_media_review(p_media)` (a second look at a refused photo), `submit_selfie(p_path)` (after uploading the selfie to the private Storage bucket `verification-selfies`, in the person's own folder, while a selfie is asked) |
+| Your data | `request_data_export()` (one open request at a time; the team sends the export) |
 | Push | `register_push_token`, `unregister_push_token`; `PATCH /rest/v1/profiles` with `language` (en, fr, es, de, it, pt, nl) and the settings `notify_matches`, `notify_likes`, `notify_messages` (mirrored to Stream), `notify_message_previews`, `notify_reactions`, `notify_session_evening`, `notify_session_hour_before`, `notify_weekly_boost` (the app reads them back at launch) |
 
 Realtime: subscribe to the private broadcast channel `user:<your id>`. Events: `like`, `match`,
-`match_ended`, `session`, `media`, `wallet` (weekly boost credited: new `boosts` balance).
+`match_ended`, `session`, `media`, `wallet` (weekly boost credited: new `boosts` balance), `moderation`
+(the account's hold changed: `{ state }`, null once lifted).
 
 Reactions: the app sends the emoji itself as the Stream reaction type (`enforce_unique`: one per person per
 message) and never on its own messages. Stream's webhook (`scripts/stream-webhook.ts`) calls `stream-webhook`,
@@ -66,7 +73,17 @@ drafft tempo's weekly boost: subscribing credits one straight away, then `privat
 (pg_cron, every 15 min) adds one each week on `wallets.weekly_boost_at` while premium, and pushes
 "Your weekly boost is here" (`kind: weekly_boost`) unless `notify_weekly_boost` is off.
 
-Edge Functions: `stream-token`, `media-upload-url`, `delete-account`, `app-config` (public: `mediaUrl`, where media keys are served from).
+Edge Functions (signed in unless noted):
+
+| Function | Use |
+| --- | --- |
+| `media-upload-url` | a presigned R2 upload URL for a photo, video or voice intro |
+| `chat-media` | silent check of a photo or video sent in a chat (`{ flagged }`, nothing changes for either person) |
+| `delete-account` | deletes the account, its chat history, media and selfies |
+| `device-check` | the iPhone's DeviceCheck token, at each launch and sign-in |
+| `support` | public: every "Get help" and "Contact us" form, signed in or not (`{ reference }`) |
+| `app-config` | public: `mediaUrl`, where media keys are served from |
+| `stream-token` | a Stream Chat token (for the chat, not wired in the app yet) |
 
 Auth emails: Supabase Auth sends none itself. Its Send Email hook calls `auth-email`, which picks the
 person's language (`profiles.language`, set at sign-up from the app's `language` metadata) and sends through
@@ -75,8 +92,8 @@ link to reset a forgotten password.
 
 Verification SMS: same for the phone step (sign-up and You, a phone change): the Send SMS hook calls
 `auth-sms`, which texts the code through Twilio in the person's language, only to the countries the app
-offers. Locally the SMS lands in Mailpit too. Locally
-they land in Mailpit (http://127.0.0.1:55424).
+offers. Locally both land in Mailpit (http://127.0.0.1:55424), unless `EMAIL_REAL=true` or `SMS_REAL=true`
+in `.env.local` sends them for real.
 
 ## sophros, the team's dashboard
 
@@ -99,15 +116,18 @@ framed in the person's language, with Reply-To SUPPORT_INBOX. The mailer never s
 ## Local development
 
 ```sh
-cp supabase/.env.example supabase/.env
-cp supabase/functions/.env.example supabase/functions/.env   # fill Stream keys to test chat
+cp supabase/.env.example supabase/.env   # Apple and Google values for config.toml, optional
 supabase start            # ports 55420-55429, so it runs next to other Supabase projects
-supabase test db          # 37 pgTAP tests
-supabase functions serve --env-file supabase/functions/.env
+supabase test db          # 217 pgTAP tests (supabase/tests/database)
+scripts/local-env.sh      # once: functions/.env.local from .env.staging with local values; yours to edit after
+supabase functions serve --env-file supabase/functions/.env.local
+# in the app repository: scripts/local-backend.sh (--device for an iPhone on the same Wi-Fi)
 ```
 
-Local media: point `R2_ENDPOINT` at the local Storage S3 API (`http://host.docker.internal:55421/storage/v1/s3`,
-`R2_REGION=local`, keys from `supabase status`) and create a public `drafft-media` bucket.
+Without `functions/.env.staging` (fully offline): copy `supabase/functions/.env.example` to
+`supabase/functions/.env.local` instead, point `R2_ENDPOINT` at the local Storage S3 API
+(`http://host.docker.internal:55421/storage/v1/s3`, `R2_REGION=local`, keys from `supabase status`) and create
+a public `drafft-media` bucket.
 
 Update the CLI (`brew upgrade supabase`): the Postgres image bundled with CLI 2.90 (17.6.1.106) crashes when
 a role calls a function it has no EXECUTE on from psql. Tests check privileges with `has_function_privilege`
@@ -115,15 +135,8 @@ for that reason. Through the API the same call correctly returns 42501.
 
 ### Local database, staging services
 
-The app's **Drafft Local** scheme ("drafft local") runs on this local Supabase while chat, media, pushes,
-moderation and purchases go through the staging services:
-
-```sh
-supabase start
-scripts/local-env.sh     # once: functions/.env.local from .env.staging with local values; yours to edit after
-supabase functions serve --env-file supabase/functions/.env.local
-# in the app repository: scripts/local-backend.sh (--device for an iPhone on the same Wi-Fi)
-```
+The app's **Drafft Local** scheme ("drafft local") runs on this local Supabase, started as above, while
+chat, media, pushes, moderation and purchases go through the staging services.
 
 In `.env.local`, `EMAIL_REAL=true` / `SMS_REAL=true` send auth emails (Resend, your own key if you set one)
 and SMS (Twilio) for real instead of to Mailpit. The script never rewrites the file once it exists.
@@ -163,14 +176,22 @@ doubles the walk when filters are narrow; see [docs/matching.md](docs/matching.m
 
 ## Production setup
 
+Done once already; kept for the record, not to replay. Production changes only through CI: a `v*` tag runs
+`scripts/deploy.sh production` in `.github/workflows/backend.yml` (migrations and functions, after the checks),
+which links the CLI back to staging afterwards. Never `supabase link` the production project and `db push`
+or `functions deploy` by hand.
+
 1. Supabase project `wrcpgnqwjmnirjfxpcux`, **West EU (Ireland)**; compute Small or larger and PITR before the public launch.
-2. `supabase link --project-ref <ref> && supabase db push`.
-3. `echo production | scripts/sync-vault.sh production` (Vault secrets, from `functions/.env.production`).
-4. `supabase secrets set --env-file supabase/functions/.env.production` (see `functions/.env.example`),
-   **without** `MODERATION_MODE`. Then `supabase functions deploy`.
+2. Migrations and Edge Functions: a `v*` tag (see Staging). `scripts/deploy.sh production` by hand is a
+   fallback only, from that tag's checkout: it asks to type `production`.
+3. `scripts/sync-vault.sh production` (Vault secrets, from `functions/.env.production`; it asks to type
+   `production`).
+4. Function secrets: `supabase secrets set --project-ref wrcpgnqwjmnirjfxpcux --env-file supabase/functions/.env.production`
+   (see `functions/.env.example`), **without** `MODERATION_MODE`. Always with `--project-ref`: the CLI stays
+   linked to staging, so without it the production secrets would land in staging.
 5. Auth: Apple (bundle id `so.drafft.app`) and Google (iOS + web client ids) in the dashboard. Send Email hook
    (HTTPS) to `auth-email`: its secret into `SEND_EMAIL_HOOK_SECRET`, with `RESEND_API_KEY` and `EMAIL_FROM`,
-   then `deploy.sh production --secrets` before enabling it.
+   then the secrets as in step 4 before enabling it.
 6. R2 bucket `drafft-media` with a custom domain (`media.getdrafft.com`) and Cloudflare image transformations
    enabled on that zone. The app requests sizes with `/cdn-cgi/image/width=800,quality=80/<key>`.
 7. Stream app in the EU region, APNs `.p8` key uploaded in its push settings (chat pushes come from Stream).
@@ -180,20 +201,20 @@ doubles the walk when filters are narrow; see [docs/matching.md](docs/matching.m
    virtual and VoIP numbers get no code), `SUPPORT_INBOX` (the team's copy of support requests, reports and
    export requests). Unset, each feature is skipped and logged. The Vault secret `identity_hash_key` is
    created by migration `20260927000004`: never delete or rotate it, every ban and hold mark would be lost.
-   The team acts with `set_moderation(user, 'review' | 'selfie' | 'banned' | null, note)` and
-   `review_media(media, approved)`, service role only.
+   The team acts through sophros (`admin_*` functions, audited in `private.admin_audit`).
 
 ## Staging
 
 A persistent Supabase branch named `staging` of `drafft-backend` (its own database, Auth, Storage, Edge
 Functions, keys and URL), fed with the same migrations. The app's **Drafft Staging** scheme points at it
-(`drafft β` on the home screen, same bundle id as production). Everything goes to staging first:
-`scripts/deploy.sh staging`, check, then `scripts/deploy.sh production`.
+(`drafft β` on the home screen, same bundle id as production). Everything goes to staging first: a merge
+to `main` deploys it, then a `v*` tag deploys to production (below).
 
 GitHub Actions (`.github/workflows/backend.yml`) does it on its own: every pull request is checked
 (Deno type checks, database tests), a push to `main` deploys to staging, and a `v*` tag deploys to
 production (the `production` environment only accepts `v*` tags). Migrations and functions only:
-secrets are still set by hand with `deploy.sh <env> --secrets`.
+secrets are still set by hand, always naming the project: `deploy.sh <env> --secrets` or
+`supabase secrets set --project-ref <ref> --env-file supabase/functions/.env.<env>`.
 
 | | Production | Staging |
 |---|---|---|
