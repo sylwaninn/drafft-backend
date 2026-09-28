@@ -3,7 +3,7 @@
 How drafft picks the cards in someone's deck, and what happens from a swipe to a match. Everything below
 lives in Postgres: `public.discover`, `private.eligible`, `public.swipe` and their neighbours in
 `supabase/migrations/` (latest versions: `20260926000001_pause_freezes_account.sql`,
-`20260926000002_discover_ranking.sql` and `20260928000061_pause_discover_only.sql`). Tests: `supabase/tests/database/{core,discover,pause}.test.sql`.
+`20260926000002_discover_ranking.sql`, `20260928000061_pause_discover_only.sql` and `20260928000201_likes_left.sql`). Tests: `supabase/tests/database/{core,discover,pause}.test.sql`.
 
 ## The deck in one call
 
@@ -117,7 +117,8 @@ moves when the person:
   and their preferences include the liker's gender (`not_eligible`). Answering someone who already liked
   you is always possible. A pass is never checked.
 - **Likes**: 20 per rolling 24 hours for free accounts (`daily_like_limit`), unlimited with drafft tempo.
-  Super likes and passes don't count.
+  Super likes and passes don't count. `likes_left()` returns what's left (`left`, `limit`, `nextAt`: when the oldest like
+  of the window stops counting), or `unlimited`, for the app to show.
 - **Super likes**: spend one from `wallets.super_likes` (`no_super_likes` at zero). They can carry a note
   (140 characters), shown on the card in the other person's deck and posted in the chat if they match.
 - **Openers**: a like or super like can carry the first message (text, icebreaker reply, photo reply, or a
