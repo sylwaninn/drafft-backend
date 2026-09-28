@@ -8,6 +8,11 @@ table without RLS, a new unindexed foreign key or a new exposed SECURITY DEFINER
 
     supabase db advisors --local --level info -o json | python3 scripts/ci/advisors.py
     python3 scripts/ci/advisors.py --write-baseline < advisors.json   # after reviewing each one
+    python3 scripts/ci/advisors.py --fixed-in staging.json --released-baseline old.json < production.json
+
+--fixed-in <advisors json> --released-baseline <baseline json>: a finding the baseline no longer accepts is
+only a note when the released baseline (production's code) still accepted it and the other database
+(staging) no longer has it: a migration fixed it and production hasn't run it yet. Anything else fails.
 """
 import json
 import pathlib
@@ -51,6 +56,14 @@ def main() -> int:
 
     accepted = json.loads(BASELINE.read_text())
     new = [f for f in current if f["cache_key"] not in accepted]
+    if "--fixed-in" in sys.argv:
+        other = pathlib.Path(sys.argv[sys.argv.index("--fixed-in") + 1]).read_text()
+        still = {f["cache_key"] for f in findings(other)}
+        released = json.loads(pathlib.Path(sys.argv[sys.argv.index("--released-baseline") + 1]).read_text().strip() or "{}")
+        fixed = [f for f in new if f["cache_key"] not in still and f["cache_key"] in released]
+        for f in fixed:
+            print(f"note: fixed by a migration not run here yet: [{f['level']}] {f['name']}: {f['detail']}")
+        new = [f for f in new if f not in fixed]
     for f in new:
         print(f"error: [{f['level']}] {f['name']}: {f['detail']}\n  fix: {f['remediation']}")
     gone = sorted(set(accepted) - {f["cache_key"] for f in current})
