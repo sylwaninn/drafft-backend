@@ -9,6 +9,7 @@
   "authenticated_security_definer_function_executable_public_discover_p_filters jsonb, p_limit integer": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_get_cards_p_ids uuid[], p_known jsonb": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_liked_me_p_limit integer, p_before timestamp with time zone": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
+  "authenticated_security_definer_function_executable_public_media_urls_p_keys text[]": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_my_matches_": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_propose_session_p_match uuid, p_proposal jsonb": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_register_push_token_p_token text, p_environment text": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
