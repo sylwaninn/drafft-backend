@@ -1,4 +1,4 @@
--- The app's rules enforced by the database (20260928000002): onboarding before Discover, swipes and boosts,
+-- The app's rules enforced by the database (20260928000041): onboarding before Discover, swipes and boosts,
 -- likes only to people who want to see the liker, reports from onboarded accounts with no hold and a daily
 -- limit, and no new media or push token for an account on hold.
 begin;

@@ -10,7 +10,7 @@ declare
 begin
   insert into auth.users (id, email, aud, role, instance_id)
   values (v_id, p_email, 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000');
-  -- Onboarded: reports need it (20260928000002).
+  -- Onboarded: reports need it (20260928000041).
   update public.profiles set name = p_name, onboarded_at = now() where id = v_id;
   return v_id;
 end $$;
