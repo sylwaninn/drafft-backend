@@ -1,10 +1,12 @@
 // POST /device-check { token, environment } → 204
-// The app sends a fresh DeviceCheck token at each launch and sign-in (never on the Simulator). The token
+// The app sends a fresh DeviceCheck token at each launch and sign-in (never on the Simulator). Apple's
+// environment is the project's (DEVICECHECK_ENVIRONMENT): the app's `environment` is only logged when it
+// differs, so a client can't steer its token to the other Apple environment. The token
 // is kept for db-events, which sets the iPhone's bits when a hold changes. An account closed or on hold
 // opening the app sets them again; a new account on an iPhone where one was closed goes to review, on one
 // where an account is on hold owes a selfie, once.
 // The answer never says what was found.
-import { deviceCheckConfigured, type DeviceEnvironment, queryBits, updateBits } from "../_shared/devicecheck.ts";
+import { deviceCheckConfigured, deviceCheckEnvironment, queryBits, updateBits } from "../_shared/devicecheck.ts";
 import { HttpError, readJson, serve } from "../_shared/http.ts";
 import { admin, check, must, requireUser } from "../_shared/supabase.ts";
 
@@ -14,7 +16,11 @@ serve(async (req) => {
   if (typeof token !== "string" || token.length < 20 || token.length > 8192) {
     throw new HttpError(400, "invalid_token");
   }
-  const env: DeviceEnvironment = environment === "development" ? "development" : "production";
+  const env = deviceCheckEnvironment();
+  if (environment !== undefined && environment !== env) {
+    // A development build on a production project (or the reverse): Apple will refuse its token.
+    console.warn(`device-check: ${user.id} sent a ${String(environment).slice(0, 20)} token, ${env} used`);
+  }
   const next = must(
     await admin.rpc("record_device_check", { p_user: user.id, p_token: token, p_environment: env }),
     "record device check",
@@ -41,8 +47,9 @@ serve(async (req) => {
       }
     }
   } catch (error) {
-    // Apple down or a stale token: the next launch sends a fresh one. Never block the person on it.
-    console.error("device-check", error);
+    // Apple down, a stale token or one from the other environment: the next launch sends a fresh one.
+    // Never block the person on it, but keep Apple's answer in the logs.
+    console.error(`device-check: Apple refused ${next} for ${user.id} (${env})`, error);
   }
   return new Response(null, { status: 204 });
 });
