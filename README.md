@@ -25,7 +25,13 @@ Principles:
   other write is a `security definer` function that validates input. `anon` executes no database function;
   it reads `sports` and calls the public Edge Functions `app-config` and `support`.
 - **Side effects never get lost.** Triggers write to `private.outbox` in the same transaction; pg_net posts
-  after commit; pg_cron retries with backoff until `db-events` acks. Handlers are idempotent.
+  after commit; pg_cron retries with exponential backoff and jitter, within a budget per event (~24 h,
+  `private.outbox_policies`), until `db-events` acks. A provider that's down (Stream, APNs, Resend, Twilio,
+  R2) opens its circuit breaker: its events wait without spending attempts. Stale pushes are skipped. An
+  event out of budget lands in the dead-letter queue, alerts the team (`ops-alert`: one email per incident, a
+  reminder after an hour, a daily summary) and waits for an admin to replay or discard it in sophros.
+  Handlers are idempotent and record each side effect done (`steps`), so a retry or replay runs only what's
+  missing.
 - **Privacy.** Locations are in `private` (not exposed), snapped to ~1 km, and only rounded distances leave
   the database. Birthdates never reach cards. Profile photos and videos stay invisible until moderation
   approves them; the voice intro isn't moderated and reaches cards as soon as it's set, and chat photos and
@@ -36,7 +42,7 @@ Principles:
 ```
 supabase/
   migrations/   foundation, profiles, social, sessions, events, purchases, media review, weekly boost, notification settings
-  functions/    stream-token, media-upload-url, chat-media, db-events, delete-account, device-check, support, revenuecat-webhook, purchase-sync, phone-code, stream-webhook, app-config, auth-email, auth-sms, _shared/
+  functions/    stream-token, media-upload-url, chat-media, db-events, ops-alert, delete-account, device-check, support, revenuecat-webhook, purchase-sync, phone-code, stream-webhook, app-config, auth-email, auth-sms, _shared/
   tests/        pgTAP (supabase test db)
   seed.sql      local Vault secrets
 docs/matching.md    Discover and matching: eligibility, ranking, likes, boosts, pause, error codes
