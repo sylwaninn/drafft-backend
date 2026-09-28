@@ -2,6 +2,7 @@
 // (MEDIA_PUBLIC_URL) under unguessable keys; writes need a presigned URL from media-upload-url.
 import { AwsClient } from "npm:aws4fetch@1";
 import { env, optionalEnv } from "./env.ts";
+import { ProviderError, reachedProvider, transientStatus, viaProvider } from "./providers.ts";
 
 let aws: AwsClient | undefined;
 
@@ -62,26 +63,38 @@ export async function presignPut(key: string, contentType: string, byteSize: num
   return signed.url;
 }
 
+/** A request to the bucket. A network failure is the "r2" provider's; any answer means it's up. */
+async function r2(url: URL, init?: RequestInit): Promise<Response> {
+  const res = await viaProvider("r2", () => client().fetch(url, init));
+  if (transientStatus(res.status)) throw r2Error(init?.method ?? "GET", url.pathname, res.status);
+  reachedProvider("r2");
+  return res;
+}
+
+function r2Error(method: string, key: string, status: number): ProviderError {
+  return new ProviderError("r2", transientStatus(status), `R2 ${method} ${key}: ${status}`, status);
+}
+
 /** Size in bytes, or null when the object doesn't exist. */
 export async function headObject(key: string): Promise<number | null> {
-  const res = await client().fetch(objectUrl(key), { method: "HEAD" });
+  const res = await r2(objectUrl(key), { method: "HEAD" });
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`R2 HEAD ${key}: ${res.status}`);
+  if (!res.ok) throw r2Error("HEAD", key, res.status);
   return Number(res.headers.get("content-length") ?? 0);
 }
 
 /** The object's bytes, or null when it doesn't exist. */
 export async function getObject(key: string): Promise<Uint8Array | null> {
-  const res = await client().fetch(objectUrl(key));
+  const res = await r2(objectUrl(key));
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`R2 GET ${key}: ${res.status}`);
+  if (!res.ok) throw r2Error("GET", key, res.status);
   return new Uint8Array(await res.arrayBuffer());
 }
 
 export async function deleteObject(key: string): Promise<void> {
-  const res = await client().fetch(objectUrl(key), { method: "DELETE" });
+  const res = await r2(objectUrl(key), { method: "DELETE" });
   // 204 when deleted, 404 when already gone: both mean done.
-  if (!res.ok && res.status !== 404) throw new Error(`R2 DELETE ${key}: ${res.status}`);
+  if (!res.ok && res.status !== 404) throw r2Error("DELETE", key, res.status);
 }
 
 /** Every key under a prefix (paginated ListObjectsV2). */

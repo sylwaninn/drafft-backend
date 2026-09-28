@@ -3,6 +3,7 @@
 import { StreamChat } from "npm:stream-chat@9";
 import { env } from "./env.ts";
 import { admin, must } from "./supabase.ts";
+import { viaProvider } from "./providers.ts";
 
 let client: StreamChat | undefined;
 
@@ -10,6 +11,11 @@ let client: StreamChat | undefined;
 export function stream(): StreamChat {
   client ??= StreamChat.getInstance(env("STREAM_API_KEY"), env("STREAM_API_SECRET"));
   return client;
+}
+
+/** Tests only: a stand-in for the Stream client. */
+export function useStreamClientForTests(fake: unknown) {
+  client = fake as StreamChat;
 }
 
 /**
@@ -29,14 +35,14 @@ export async function ensureChannel(matchId: string) {
     members: [match.user_a, match.user_b],
     created_by_id: match.user_a,
   });
-  await channel.create();
+  await viaProvider("stream", () => channel.create());
   return { channel, members: [match.user_a, match.user_b] as string[] };
 }
 
 /** Stream needs the users to exist before they join a channel. */
 export async function ensureUsers(ids: string[]) {
   const profiles = must(await admin.from("profiles").select("id, name").in("id", ids), "profiles");
-  await stream().upsertUsers(profiles.map((p) => ({ id: p.id, name: p.name })));
+  await viaProvider("stream", () => stream().upsertUsers(profiles.map((p) => ({ id: p.id, name: p.name }))));
 }
 
 /** Server-side author of moderation actions (bans). Never gets a token: stream-token signs profile ids only. */
@@ -49,12 +55,14 @@ const SYSTEM_USER = "drafft";
  */
 export async function setChatHeld(userId: string, held: boolean) {
   await ensureUsers([userId]);
-  if (held) {
-    await stream().upsertUser({ id: SYSTEM_USER, name: "drafft", role: "admin" });
-    await stream().banUser(userId, { banned_by_id: SYSTEM_USER, reason: "hold" });
-  } else {
-    await stream().unbanUser(userId);
-  }
+  await viaProvider("stream", async () => {
+    if (held) {
+      await stream().upsertUser({ id: SYSTEM_USER, name: "drafft", role: "admin" });
+      await stream().banUser(userId, { banned_by_id: SYSTEM_USER, reason: "hold" });
+    } else {
+      await stream().unbanUser(userId);
+    }
+  });
 }
 
 /**
@@ -66,7 +74,7 @@ export async function sendOnce(
   message: { id: string; user_id: string; text: string; drafft?: Record<string, unknown> },
 ) {
   try {
-    await channel.sendMessage(message as Parameters<typeof channel.sendMessage>[0]);
+    await viaProvider("stream", () => channel.sendMessage(message as Parameters<typeof channel.sendMessage>[0]));
   } catch (error) {
     if (String(error).includes("already exists")) return;
     throw error;

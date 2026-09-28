@@ -4,6 +4,7 @@
 // then, which only delivers to the Resend account's own address).
 import { env, optionalEnv } from "./env.ts";
 import type { Rendered } from "./emails.ts";
+import { checkResponse, viaProvider } from "./providers.ts";
 
 /** The domain, trimmed, lowercased and without the final dot DNS allows ("a@Example.COM." is example.com). */
 function domainOf(address: string): string {
@@ -37,39 +38,46 @@ export async function sendEmail(
   const mailpit = optionalEnv("EMAIL_REAL") === "true" ? undefined : optionalEnv("MAILPIT_URL");
   if (mailpit) {
     const { name, address } = parseFrom(from);
-    const res = await fetch(`${mailpit}/api/v1/send`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        From: { Email: address, Name: name },
-        To: [{ Email: to }],
-        ...(replyTo ? { ReplyTo: [{ Email: replyTo }] } : {}),
-        Subject: email.subject,
-        HTML: email.html,
-        Text: email.text,
-      }),
+    await viaProvider("resend", async () => {
+      const res = await fetch(`${mailpit}/api/v1/send`, {
+        method: "POST",
+        signal: AbortSignal.timeout(15_000),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          From: { Email: address, Name: name },
+          To: [{ Email: to }],
+          ...(replyTo ? { ReplyTo: [{ Email: replyTo }] } : {}),
+          Subject: email.subject,
+          HTML: email.html,
+          Text: email.text,
+        }),
+      });
+      await checkResponse("resend", res, "mailpit");
     });
-    if (!res.ok) throw new Error(`mailpit ${res.status}: ${await res.text()}`);
     return;
   }
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env("RESEND_API_KEY")}`,
-      "content-type": "application/json",
-      ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
-    },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      ...(replyTo ? { reply_to: replyTo } : {}),
-      subject: email.subject,
-      html: email.html,
-      text: email.text,
-    }),
+  // Resend is the "resend" provider of the outbox's circuit breakers (Mailpit stands in for it locally).
+  await viaProvider("resend", async () => {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      signal: AbortSignal.timeout(15_000),
+      headers: {
+        authorization: `Bearer ${env("RESEND_API_KEY")}`,
+        "content-type": "application/json",
+        ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
+      },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        ...(replyTo ? { reply_to: replyTo } : {}),
+        subject: email.subject,
+        html: email.html,
+        text: email.text,
+      }),
+    });
+    await checkResponse("resend", res, "resend");
   });
-  if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
 }
 
 function parseFrom(from: string): { name: string; address: string } {

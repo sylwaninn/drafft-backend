@@ -3,6 +3,7 @@
 import { importPKCS8, SignJWT } from "npm:jose@6";
 import { env, optionalEnv } from "./env.ts";
 import { admin, must } from "./supabase.ts";
+import { ProviderError, reachedProvider, transientStatus } from "./providers.ts";
 
 let cached: { jwt: string; at: number } | undefined;
 
@@ -28,7 +29,12 @@ export interface Push {
   collapseId?: string;
 }
 
-/** Sends to every device of a person. Tokens Apple reports as dead are removed. */
+/**
+ * Sends to every device of a person. Tokens Apple reports as dead are removed. Each device is tried on its
+ * own: one that fails doesn't stop the others. When APNs is down for every device (5xx, 429, network), a
+ * transient ProviderError asks for a retry; when some got it, the others are logged, not retried, so a retry
+ * never pushes twice to a device already served (and a late push is worse than none).
+ */
 export async function pushToUser(userId: string, push: Push): Promise<void> {
   if (!optionalEnv("APNS_KEY_ID")) {
     console.warn(`APNs not configured, skipped push to ${userId}: ${push.title}`);
@@ -45,26 +51,40 @@ export async function pushToUser(userId: string, push: Push): Promise<void> {
     ...push.data,
   });
 
-  await Promise.all(tokens.map(async ({ token, environment }) => {
-    const host = environment === "production" ? "api.push.apple.com" : "api.sandbox.push.apple.com";
-    const res = await fetch(`https://${host}/3/device/${token}`, {
-      method: "POST",
-      headers: {
-        authorization: `bearer ${jwt}`,
-        "apns-topic": env("APNS_BUNDLE_ID"),
-        "apns-push-type": "alert",
-        "apns-priority": "10",
-        ...(push.collapseId ? { "apns-collapse-id": push.collapseId } : {}),
-      },
-      body: payload,
-    });
-    if (res.ok) return;
-    const reason = (await res.json().catch(() => ({})) as { reason?: string }).reason;
-    if (res.status === 410 || reason === "BadDeviceToken" || reason === "DeviceTokenNotForTopic") {
-      await admin.from("push_tokens").delete().eq("token", token);
-      return;
-    }
-    // A failed push is logged, not retried: a late "it's a match" is worse than none.
-    console.error(`APNs ${res.status} ${reason ?? ""} for user ${userId}`);
-  }));
+  const outcomes = await Promise.all(
+    tokens.map(async ({ token, environment }): Promise<"sent" | "down" | "refused"> => {
+      const host = environment === "production" ? "api.push.apple.com" : "api.sandbox.push.apple.com";
+      let res: Response;
+      try {
+        res = await fetch(`https://${host}/3/device/${token}`, {
+          method: "POST",
+          signal: AbortSignal.timeout(10_000),
+          headers: {
+            authorization: `bearer ${jwt}`,
+            "apns-topic": env("APNS_BUNDLE_ID"),
+            "apns-push-type": "alert",
+            "apns-priority": "10",
+            ...(push.collapseId ? { "apns-collapse-id": push.collapseId } : {}),
+          },
+          body: payload,
+        });
+      } catch (error) {
+        console.error(`APNs unreachable for user ${userId}: ${error}`);
+        return "down";
+      }
+      if (res.ok) return "sent";
+      const reason = (await res.json().catch(() => ({})) as { reason?: string }).reason;
+      if (res.status === 410 || reason === "BadDeviceToken" || reason === "DeviceTokenNotForTopic") {
+        await admin.from("push_tokens").delete().eq("token", token);
+        return "refused";
+      }
+      console.error(`APNs ${res.status} ${reason ?? ""} for user ${userId}`);
+      return transientStatus(res.status) ? "down" : "refused";
+    }),
+  );
+
+  if (outcomes.includes("sent") || outcomes.includes("refused")) reachedProvider("apns");
+  if (outcomes.every((o) => o === "down")) {
+    throw new ProviderError("apns", true, `APNs down for every device of user ${userId}`);
+  }
 }
