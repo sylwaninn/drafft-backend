@@ -40,6 +40,12 @@ secrets_staging=""
 secrets_production=""
 schema_staging=""
 schema_production=""
+advisors_staging=$(mktemp)
+# The baseline production's code shipped with (last v* tag); none: every finding stays an error.
+released_baseline=$(mktemp)
+trap 'rm -f "$advisors_staging" "$released_baseline"; relink_staging' EXIT
+tag=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+{ [ -n "$tag" ] && git show "$tag:supabase/advisors-baseline.json" 2>/dev/null; } > "$released_baseline" || echo "{}" > "$released_baseline"
 for env in staging production; do
   ref=$STAGING_REF; [ $env = production ] && ref=$PRODUCTION_REF
   link "$env" "$ref"
@@ -68,7 +74,14 @@ for env in staging production; do
       from pg_proc p where p.pronamespace = 'public'::regnamespace order by 1" -o csv 2>/dev/null | tail -n +2)
   if [ $env = staging ]; then schema_staging=$shape; else schema_production=$shape; fi
 
-  supabase db advisors --linked --level info -o json 2>/dev/null | python3 scripts/ci/advisors.py | sed "s/^/$env: /" || fail "$env has advisor findings the baseline doesn't accept"
+  # Behind, production may still have findings that a migration fixed on staging and removed from the
+  # baseline: a note while staging no longer has them and the released baseline accepted them. One on both,
+  # or new on production, stays an error.
+  fixed_in=()
+  if [ $env = production ] && [ "$allow_behind" = --allow-prod-behind ]; then fixed_in=(--fixed-in "$advisors_staging" --released-baseline "$released_baseline"); fi
+  advisors_json=$(supabase db advisors --linked --level info -o json 2>/dev/null)
+  [ $env = staging ] && echo "$advisors_json" > "$advisors_staging"
+  echo "$advisors_json" | python3 scripts/ci/advisors.py ${fixed_in[@]+"${fixed_in[@]}"} | sed "s/^/$env: /" || fail "$env has advisor findings the baseline doesn't accept"
 done
 
 [ "$secrets_staging" = "$secrets_production" ] \

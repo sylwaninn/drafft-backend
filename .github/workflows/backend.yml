@@ -96,6 +96,8 @@ jobs:
     environment: staging
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # env-parity reads the last release tag's advisors baseline
       - uses: supabase/setup-cli@v1
         with:
           version: ${{ env.SUPABASE_CLI }}
