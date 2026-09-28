@@ -173,9 +173,10 @@ const handlers: Record<string, Handler> = {
     notify: boolean;
     chatFrom: string | null;
   }) {
-    if (p.chatFrom) {
-      const { channel } = await ensureChannel(p.matchId);
-      await sendOnce(channel, {
+    // An ended match has no chat to write in (ensureChannel never reopens it): the push alone.
+    const opened = p.chatFrom ? await ensureChannel(p.matchId) : null;
+    if (p.chatFrom && opened) {
+      await sendOnce(opened.channel, {
         id: `session-${p.sessionId}-cancelled`,
         user_id: p.chatFrom,
         text: "Cancelled the session",
