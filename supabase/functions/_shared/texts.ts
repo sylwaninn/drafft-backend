@@ -143,6 +143,58 @@ export const photoRefused: Record<Language, string> = {
   nl: "Een van je foto's is niet goedgekeurd. Tik om te zien waarom.",
 };
 
+/** Moderation news the person is waiting for: a hold lifted, a selfie asked for, judged. Never a new
+ * restriction (review, ban): those are said by the app's own screen, not pushed. */
+export type ModerationPush = "restored" | "reopened" | "selfieApproved" | "selfieRequested" | "selfieRetry";
+
+export const moderationPush: Record<ModerationPush, Record<Language, string>> = {
+  restored: {
+    en: "Your account is open again. Everything is in order.",
+    fr: "Ton compte est de nouveau ouvert. Tout est en ordre.",
+    es: "Tu cuenta vuelve a estar abierta. Todo está en orden.",
+    de: "Dein Konto ist wieder offen. Alles ist in Ordnung.",
+    it: "Il tuo account è di nuovo attivo. È tutto in ordine.",
+    pt: "A tua conta está novamente aberta. Está tudo em ordem.",
+    nl: "Je account is weer open. Alles is in orde.",
+  },
+  reopened: {
+    en: "We've looked again and reopened your account. Welcome back.",
+    fr: "Nous avons réexaminé ton compte et l'avons rouvert. Content de te revoir.",
+    es: "Hemos vuelto a revisar tu cuenta y la hemos reabierto. Qué bien tenerte de vuelta.",
+    de: "Wir haben dein Konto noch einmal geprüft und wieder geöffnet. Schön, dass du wieder da bist.",
+    it: "Abbiamo riesaminato il tuo account e l'abbiamo riaperto. Che bello rivederti.",
+    pt: "Voltámos a analisar a tua conta e reabrimo-la. Que bom ver-te de volta.",
+    nl: "We hebben je account opnieuw bekeken en weer geopend. Fijn dat je er weer bent.",
+  },
+  selfieApproved: {
+    en: "Your selfie is verified. Your account is open again.",
+    fr: "Ton selfie est validé. Ton compte est de nouveau ouvert.",
+    es: "Tu selfie está verificado. Tu cuenta vuelve a estar abierta.",
+    de: "Dein Selfie ist bestätigt. Dein Konto ist wieder offen.",
+    it: "Il tuo selfie è verificato. Il tuo account è di nuovo attivo.",
+    pt: "A tua selfie foi validada. A tua conta está novamente aberta.",
+    nl: "Je selfie is bevestigd. Je account is weer open.",
+  },
+  selfieRequested: {
+    en: "We need a quick selfie to confirm it's you. Tap to take it.",
+    fr: "Nous avons besoin d'un selfie rapide pour confirmer que c'est bien toi. Touche pour le prendre.",
+    es: "Necesitamos un selfie rápido para confirmar que eres tú. Toca para hacerlo.",
+    de: "Wir brauchen ein kurzes Selfie, um zu bestätigen, dass du es bist. Tippe, um es aufzunehmen.",
+    it: "Ci serve un selfie veloce per confermare che sei tu. Tocca per scattarlo.",
+    pt: "Precisamos de uma selfie rápida para confirmar que és tu. Toca para a tirar.",
+    nl: "We hebben een snelle selfie nodig om te bevestigen dat jij het bent. Tik om hem te maken.",
+  },
+  selfieRetry: {
+    en: "We couldn't confirm it's you from your selfie. Tap to take a new one.",
+    fr: "Ton selfie ne nous a pas permis de confirmer que c'est bien toi. Touche pour en prendre un nouveau.",
+    es: "No hemos podido confirmar que eres tú con tu selfie. Toca para hacer otro.",
+    de: "Wir konnten mit deinem Selfie nicht bestätigen, dass du es bist. Tippe, um ein neues aufzunehmen.",
+    it: "Non siamo riusciti a confermare che sei tu dal tuo selfie. Tocca per scattarne uno nuovo.",
+    pt: "Não conseguimos confirmar que és tu com a tua selfie. Toca para tirar uma nova.",
+    nl: "We konden met je selfie niet bevestigen dat jij het bent. Tik om een nieuwe te maken.",
+  },
+};
+
 /** "Maya reacted ❤️ to: “See you at 7?”", or without the message (previews off, or not text). */
 export function reaction(lang: Language, name: string, emoji: string, text?: string): string {
   if (!text) {

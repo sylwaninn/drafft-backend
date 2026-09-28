@@ -368,6 +368,32 @@ Deno.test("account.moderation: a replay after the email does not email again", a
   assertEquals(calls("ack_event").length, 1);
 });
 
+Deno.test("account.moderation: news the person waits for is pushed, a new restriction never", async () => {
+  const pushed = async (state: string | null, previous: string | null, selfie = false) => {
+    reset();
+    people();
+    (world.tables.profiles[0] as Row).moderation = state;
+    world.rpcResults.review_was_selfie = selfie;
+    await runEvent({ id: 12, event: "account.moderation", payload: { userId: ana, state, previous } });
+    return world.pushes.length > 0;
+  };
+  assertEquals(await pushed(null, "review", true), true, "selfie approved");
+  assertEquals(await pushed(null, "banned"), true, "reopened");
+  assertEquals(await pushed("selfie", null), true, "selfie asked");
+  assertEquals(await pushed("selfie", "review", true), true, "selfie asked again");
+  assertEquals(await pushed("review", null), false, "under review");
+  assertEquals(await pushed("review", "selfie"), false, "selfie sent");
+  assertEquals(await pushed("banned", "review"), false, "closed");
+});
+
+Deno.test("account.moderation: no push once the state has moved on", async () => {
+  reset();
+  people();
+  (world.tables.profiles[0] as Row).moderation = "banned";
+  await runEvent({ id: 13, event: "account.moderation", payload: { userId: ana, state: null, previous: "review" } });
+  assertEquals(world.pushes, []);
+});
+
 Deno.test("session.accepted: no push about a session already past", async () => {
   reset();
   people();
