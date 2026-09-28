@@ -1,8 +1,8 @@
--- Deleting an account (20260928000131, 20260928000132): a reported, held or banned one is kept for members'
--- safety (hidden, signed out, everything retained, the reason recorded); any other is erased, as before.
+-- Deleting an account (20260928000131, 20260928000132): one banned, held or under an open report is kept for
+-- members' safety (hidden, signed out, everything retained, the reason recorded); any other is erased, as before.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(41);
+select plan(46);
 
 create function pg_temp.person(p_email text) returns uuid language plpgsql as $$
 declare
@@ -43,11 +43,28 @@ select is(private.retention_basis((select di from ids)), null, 'never reported n
 select is(private.retention_basis((select bo from ids)) ->> 'basis', 'report', 'reported (open report): kept for the report');
 select is(private.retention_basis((select ed from ids)) ->> 'basis', 'ban', 'banned: kept for the ban');
 update public.reports set handled_at = now() where reported = (select bo from ids);
-select is(private.retention_basis((select bo from ids)) ->> 'basis', 'report', 'a closed report still counts');
+select is(private.retention_basis((select bo from ids)), null, 'a closed report no longer keeps the account');
+update public.reports set handled_at = null where reported = (select bo from ids);
 update public.profiles set moderation = 'review' where id = (select di from ids);
+select is(private.retention_basis((select di from ids)) ->> 'basis', 'hold', 'a hold in force: kept for the hold');
 update public.profiles set moderation = null where id = (select di from ids);
-select is(private.retention_basis((select di from ids)) ->> 'basis', 'hold', 'a hold lifted since still counts');
+select is(private.retention_basis((select di from ids)), null, 'a hold lifted since no longer keeps the account');
 delete from private.moderation_log where user_id = (select di from ids);
+
+-- MARK: Conversations of an erased account (decision 5.4)
+
+insert into public.matches (user_a, user_b) select least(di, ed), greatest(di, ed) from ids;
+insert into public.matches (user_a, user_b) select least(di, ana), greatest(di, ana) from ids;
+select is(public.deleted_account_chats((select di from ids)) -> 'keep',
+  (select jsonb_build_array(jsonb_build_object('match', m.id, 'other', ed)) from public.matches m, ids
+   where m.user_a = least(di, ed) and m.user_b = greatest(di, ed)),
+  'a conversation with a banned member keeps its messages');
+select is(public.deleted_account_chats((select di from ids)) -> 'erase',
+  (select jsonb_build_array(m.id) from public.matches m, ids where m.user_a = least(di, ana) and m.user_b = greatest(di, ana)),
+  'any other conversation is erased');
+select is(public.deleted_account_chats((select cy from ids)) -> 'keep', '[]'::jsonb,
+  'nobody banned or held on the other side: nothing kept');
+delete from public.matches where (select di from ids) in (user_a, user_b);
 
 -- MARK: Erased (not reported, not held)
 
@@ -146,6 +163,8 @@ select is((select count(*) from public.profiles where id = (select di from ids))
 
 -- MARK: Grants
 
+select ok(not has_function_privilege('authenticated', 'public.deleted_account_chats(uuid)', 'execute'),
+  'the app cannot list who is held behind a conversation');
 select ok(not has_function_privilege('authenticated', 'public.retain_deleted_account(uuid)', 'execute')
   and not has_function_privilege('anon', 'public.retain_deleted_account(uuid)', 'execute')
   and has_function_privilege('service_role', 'public.retain_deleted_account(uuid)', 'execute'),

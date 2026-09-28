@@ -1,10 +1,16 @@
--- Deleting an account that was reported or held keeps it, for members' safety (decisions 2.2 and 4.12).
+-- Deleting an account under an open report, a hold or a ban keeps it, for members' safety (decisions 2.2,
+-- 4.12 and 5.3).
 --
 -- delete-account asks public.retain_deleted_account first. The account is kept (a soft delete) when it is:
 --   ban     banned (profiles.moderation = 'banned');
---   hold    on hold now (review, selfie), or held at any time before (private.moderation_log);
---   report  reported at least once, the report open or closed (public.reports.reported).
--- Anything else is erased completely, as before (delete-account deletes the Auth user, every table cascades).
+--   hold    on hold now (review, selfie: profiles.moderation);
+--   report  reported, the report still open (public.reports, handled_at null).
+-- A hold lifted or a report closed stays in the history (and in the record's refs when the account is kept
+-- for another reason), but no longer keeps the account on its own (decision 5.3): a member cleared by the
+-- team is not treated as reported any more.
+-- Anything else is erased completely, as before (delete-account deletes the Auth user, every table cascades),
+-- except the conversations whose other member is banned or on hold at that moment: their messages stay, for
+-- the team (decision 5.4, public.deleted_account_chats).
 --
 -- A kept account:
 --   - disappears for everyone: paused for good (Discover, Likes, swipes, boosts already skip paused
@@ -60,7 +66,8 @@ create index account_links_deleted_idx on private.account_links (deleted_user_id
 
 -- MARK: Deleting
 
--- Why an account must be kept, or null when it can be erased.
+-- Why an account must be kept, or null when it can be erased: a ban or a hold in force, or a report still
+-- open. `refs` also lists the account's closed reports and past holds, as history for the team.
 create function private.retention_basis(p_user uuid)
 returns jsonb
 language sql
@@ -70,6 +77,7 @@ set search_path = ''
 as $$
   with facts as (
     select p.moderation,
+      exists (select 1 from public.reports r where r.reported = p.id and r.handled_at is null) as open_report,
       coalesce((select jsonb_agg(r.id order by r.created_at) from public.reports r where r.reported = p.id), '[]') as reports,
       coalesce((select jsonb_agg(l.id order by l.created_at) from private.moderation_log l
         where l.user_id = p.id and l.state is not null), '[]') as holds
@@ -77,15 +85,16 @@ as $$
   )
   select jsonb_build_object(
       'basis', case when moderation = 'banned' then 'ban'
-                    when moderation is not null or jsonb_array_length(holds) > 0 then 'hold'
+                    when moderation is not null then 'hold'
                     else 'report' end,
       'refs', jsonb_build_object('moderation', moderation, 'reports', reports, 'holds', holds))
   from facts
-  where moderation is not null or jsonb_array_length(reports) > 0 or jsonb_array_length(holds) > 0;
+  where moderation is not null or open_report;
 $$;
 
 -- delete-account (service role), before erasing anything. Keeps the account and answers
--- {"retained": true, "basis": …} when it was reported or held, else {"retained": false} and changes nothing.
+-- {"retained": true, "basis": …} when it is banned, held or under an open report, else {"retained": false}
+-- and changes nothing.
 -- Idempotent: an account already kept answers retained again.
 create function public.retain_deleted_account(p_user uuid)
 returns jsonb
@@ -145,6 +154,29 @@ begin
   perform private.emit('account.soft_deleted', jsonb_build_object('userId', p_user));
   return jsonb_build_object('retained', true, 'basis', v_why ->> 'basis');
 end;
+$$;
+
+-- delete-account (service role), for an account being erased: which of its conversations keep their
+-- messages (decision 5.4). A conversation whose other member is banned or on hold right now is kept, for the
+-- team; every other one is erased with the account, as before.
+-- {"keep": [{"match": id, "other": user id}], "erase": [match ids]}.
+create function public.deleted_account_chats(p_user uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select jsonb_build_object(
+    'keep', coalesce(jsonb_agg(jsonb_build_object('match', c.id, 'other', c.other) order by c.id)
+      filter (where c.held), '[]'),
+    'erase', coalesce(jsonb_agg(c.id order by c.id) filter (where not c.held), '[]'))
+  from (
+    select m.id, o.id as other, o.moderation is not null as held
+    from public.matches m
+    join public.profiles o on o.id = case when m.user_a = p_user then m.user_b else m.user_a end
+    where p_user in (m.user_a, m.user_b)
+  ) c;
 $$;
 
 -- A kept account stays paused whatever happens to its hold: lifting one gives back the owner's own pause
@@ -246,5 +278,6 @@ create trigger staff_live_deleted_accounts after update of deleted_at on public.
   for each statement execute function private.staff_queue_changed('accounts');
 
 revoke all on function private.retention_basis(uuid), public.retain_deleted_account(uuid),
-  private.soft_deleted_guard(), private.link_deleted_account() from public, anon, authenticated;
-grant execute on function public.retain_deleted_account(uuid) to service_role;
+  public.deleted_account_chats(uuid), private.soft_deleted_guard(), private.link_deleted_account()
+  from public, anon, authenticated;
+grant execute on function public.retain_deleted_account(uuid), public.deleted_account_chats(uuid) to service_role;
