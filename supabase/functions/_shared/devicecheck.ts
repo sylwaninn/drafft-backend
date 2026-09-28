@@ -4,6 +4,9 @@
 //
 // Signed like APNs (ES256 .p8), with a key that has DeviceCheck enabled: DEVICECHECK_KEY_ID,
 // DEVICECHECK_PRIVATE_KEY, and the team in APNS_TEAM_ID. Unset (locally): nothing is sent to Apple.
+//
+// Apple's environment is the project's, never the app's word: DEVICECHECK_ENVIRONMENT (`production` or
+// `development`), `production` when unset on a hosted project, `development` locally.
 import { importPKCS8, SignJWT } from "npm:jose@6";
 import { env, optionalEnv } from "./env.ts";
 
@@ -13,6 +16,18 @@ let cached: { jwt: string; at: number } | undefined;
 
 export function deviceCheckConfigured(): boolean {
   return !!optionalEnv("DEVICECHECK_KEY_ID") && !!optionalEnv("DEVICECHECK_PRIVATE_KEY");
+}
+
+/** The project's DeviceCheck environment. Locally SUPABASE_URL is plain http (Docker's kong). */
+export function deviceCheckEnvironment(): DeviceEnvironment {
+  const fallback: DeviceEnvironment = env("SUPABASE_URL").startsWith("http://") ? "development" : "production";
+  const value = optionalEnv("DEVICECHECK_ENVIRONMENT");
+  if (value === undefined) return fallback;
+  if (value === "production" || value === "development") return value;
+  console.error(
+    `devicecheck: DEVICECHECK_ENVIRONMENT=${value} is neither production nor development, ${fallback} used`,
+  );
+  return fallback;
 }
 
 async function authToken(): Promise<string> {
@@ -43,8 +58,14 @@ export async function queryBits(
 ): Promise<{ bit0: boolean; bit1: boolean; lastUpdate?: string }> {
   const res = await call(environment, "query_two_bits", { device_token: token });
   const text = await res.text();
-  if (!res.ok) throw new Error(`devicecheck query ${res.status}: ${text.slice(0, 200)}`);
-  if (!text.trim().startsWith("{")) return { bit0: false, bit1: false };
+  if (!res.ok) throw new Error(`devicecheck query ${environment} ${res.status}: ${text.slice(0, 200)}`);
+  if (!text.trim().startsWith("{")) {
+    // Anything else than "never set" is logged: an answer read as "no bits" must not hide a problem.
+    if (!/failed to find bit state/i.test(text)) {
+      console.warn(`devicecheck query ${environment}: unexpected answer, read as no bits: ${text.slice(0, 200)}`);
+    }
+    return { bit0: false, bit1: false };
+  }
   const bits = JSON.parse(text) as { bit0?: boolean; bit1?: boolean; last_update_time?: string };
   return { bit0: !!bits.bit0, bit1: !!bits.bit1, lastUpdate: bits.last_update_time };
 }
@@ -59,5 +80,7 @@ export async function updateBits(
   const next = { bit0: change.bit0 ?? current.bit0, bit1: change.bit1 ?? current.bit1 };
   if (next.bit0 === current.bit0 && next.bit1 === current.bit1) return;
   const res = await call(environment, "update_two_bits", { device_token: token, ...next });
-  if (!res.ok) throw new Error(`devicecheck update ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    throw new Error(`devicecheck update ${environment} ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
 }
