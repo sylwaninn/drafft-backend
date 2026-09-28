@@ -5,7 +5,7 @@
 import { env, optionalEnv } from "../_shared/env.ts";
 import { pushToUser } from "../_shared/apns.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
-import { sendEmail } from "../_shared/mailer.ts";
+import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
 import { renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/notices.ts";
 import { HttpError, json, readJson, safeEqual, serve } from "../_shared/http.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
@@ -49,8 +49,19 @@ async function accountEmail(userId: string): Promise<string | null> {
   return data.user?.email || null;
 }
 
-/** The team's copy, to SUPPORT_INBOX. Unset (locally): logged only. */
-async function toTeam(subject: string, lines: [string, string][], key: string, replyTo?: string) {
+/** The team's copy, to SUPPORT_INBOX. Unset (locally): logged only. `from`: the address of whoever it is
+ * about; a reserved one (a test or demo account) gets no team copy, like it gets no email itself. */
+async function toTeam(
+  subject: string,
+  lines: [string, string][],
+  key: string,
+  from: string | null,
+  replyTo?: string,
+) {
+  if (from && isReservedAddress(from)) {
+    console.log(`db-events: test account, team email skipped: ${subject}`);
+    return;
+  }
   const inbox = optionalEnv("SUPPORT_INBOX");
   if (!inbox) {
     console.warn(`db-events: SUPPORT_INBOX not set, team email skipped: ${subject}`);
@@ -299,6 +310,7 @@ const handlers: Record<string, Handler> = {
       ],
       `support-team-${request.reference}`,
       request.email,
+      request.email,
     );
   },
 
@@ -342,22 +354,33 @@ const handlers: Record<string, Handler> = {
       reported_hold: string | null;
     }[];
     if (!report) return;
-    await toTeam(`[report] ${report.reason}`, [
-      ["Reported account", report.reported],
-      ["Reported by", report.reporter ?? "(deleted account)"],
-      ["Details", report.details || "(none)"],
-      ["Account now", report.reported_hold ?? "not on hold"],
-    ], `report-${p.id}`);
+    const reporterEmail = report.reporter ? await accountEmail(report.reporter) : null;
+    await toTeam(
+      `[report] ${report.reason}`,
+      [
+        ["Reported account", report.reported],
+        ["Reported by", report.reporter ?? "(deleted account)"],
+        ["Details", report.details || "(none)"],
+        ["Account now", report.reported_hold ?? "not on hold"],
+      ],
+      `report-${p.id}`,
+      reporterEmail,
+    );
   },
 
   // You > Your data > Email me my export: the team prepares it (no automatic export yet).
   async "export.requested"(p: { id: number; userId: string }) {
     const email = await accountEmail(p.userId);
-    await toTeam("[data export] request", [
-      ["Account", p.userId],
-      ["Email", email ?? "(none)"],
-      ["Promised", "a download link by email, usually within 24 hours (the app says so)"],
-    ], `export-${p.id}`);
+    await toTeam(
+      "[data export] request",
+      [
+        ["Account", p.userId],
+        ["Email", email ?? "(none)"],
+        ["Promised", "a download link by email, usually within 24 hours (the app says so)"],
+      ],
+      `export-${p.id}`,
+      email,
+    );
   },
 
   // A hold was lifted after a selfie check: the selfies go (bucket verification-selfies). Held again
