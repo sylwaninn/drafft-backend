@@ -12,12 +12,18 @@ export function stream(): StreamChat {
   return client;
 }
 
-/** Creates the match channel if needed (idempotent), and returns it. */
+/**
+ * Creates the match channel if needed (idempotent), and returns it. Null when the match has ended (unmatch,
+ * block) or is gone (a deleted account): events are retried and arrive out of order, so a late
+ * `match.created` or `session.*` must not bring back a channel that `match.ended` deleted. The match is read
+ * here, at delivery, never taken from the payload.
+ */
 export async function ensureChannel(matchId: string) {
-  const match = must(
-    await admin.from("matches").select("user_a, user_b").eq("id", matchId).single(),
-    `match ${matchId}`,
-  );
+  const { data: match, error } = await admin.from("matches").select("user_a, user_b, ended_at").eq("id", matchId)
+    .maybeSingle();
+  // An error is not "gone": throw, and the outbox retries.
+  if (error) throw new Error(`match ${matchId}: ${error.message}`);
+  if (!match || match.ended_at) return null;
   await ensureUsers([match.user_a, match.user_b]);
   const channel = stream().channel("messaging", matchId, {
     members: [match.user_a, match.user_b],

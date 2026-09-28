@@ -76,9 +76,12 @@ const handlers: Record<string, Handler> = {
     });
   },
 
-  // Chat channel, then the openers each person attached to their like, then a push to both.
+  // Chat channel, then the openers each person attached to their like, then a push to both. Ended or gone
+  // by the time it's delivered: nothing (no channel, no opener, no "It's a match").
   async "match.created"(p: { matchId: string; userA: string; userB: string }) {
-    const { channel } = await ensureChannel(p.matchId);
+    const opened = await ensureChannel(p.matchId);
+    if (!opened) return;
+    const { channel } = opened;
     const swipes = must(
       await admin.from("swipes").select("swiper, action, opener, note, created_at")
         .or(`and(swiper.eq.${p.userA},target.eq.${p.userB}),and(swiper.eq.${p.userB},target.eq.${p.userA})`)
@@ -398,7 +401,10 @@ async function sessionEvent(
   status: "proposed" | "accepted" | "declined" | "cancelled",
 ) {
   const actor = status === "proposed" ? p.proposerId : p.actorId;
-  const { channel, members } = await ensureChannel(p.matchId);
+  // The match ended since (unmatch, block) or is gone: no channel to write in, and no push about it.
+  const opened = await ensureChannel(p.matchId);
+  if (!opened) return;
+  const { channel, members } = opened;
   const session = must(
     await admin.from("sessions").select("sport_id, title").eq("id", p.sessionId).single(),
     "session",
