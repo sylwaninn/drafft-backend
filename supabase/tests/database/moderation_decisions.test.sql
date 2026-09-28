@@ -29,7 +29,7 @@ $$;
 
 create function pg_temp.photo(p_user uuid, p_status public.media_status) returns uuid language sql as $$
   insert into public.profile_media (user_id, key, position, width, height, status)
-    values (p_user, 'u/' || p_user || '/p/' || gen_random_uuid() || '.jpg', 0, 800, 1000, p_status) returning id;
+    values (p_user, 'u/' || p_user || '/photos/' || gen_random_uuid() || '.jpg', 0, 800, 1000, p_status) returning id;
 $$;
 
 create function pg_temp.open_flags(p_user uuid) returns bigint language sql as $$
