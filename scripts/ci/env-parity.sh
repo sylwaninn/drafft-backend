@@ -15,6 +15,7 @@ PRODUCTION_REF=wrcpgnqwjmnirjfxpcux
 STAGING_REF=rjlghcuspdtrmbimyioe
 allow_behind=${1:-}
 status=0
+prod_behind=""
 fail() { echo "error: $*"; status=1; }
 quiet() { grep -vE '^(WARN: environment variable|A new version|We recommend|Initialising|Connecting)' || true; }
 
@@ -58,6 +59,7 @@ for env in staging production; do
   if [ -n "$missing" ]; then
     if [ $env = production ] && [ "$allow_behind" = --allow-prod-behind ]; then
       echo "note: production hasn't run yet: $(echo $missing)"
+      prod_behind=1
     else
       fail "$env hasn't run: $(echo $missing)"
     fi
@@ -99,15 +101,30 @@ done
 [ "$secrets_staging" = "$secrets_production" ] \
   || fail "secret names differ: $(diff <(echo "$secrets_staging") <(echo "$secrets_production") | grep '^[<>]' | tr '\n' ' ')"
 
+# The name of a database object without its signature: "function ack_event(p_id bigint)" -> "function ack_event".
+object_name() { sed -E 's/\(.*$//'; }
+
 # Between a merge and the next release tag, objects only on staging are expected (production runs the new
-# migrations at the tag). Objects only on production, or a changed signature (both sides), stay an error.
+# migrations at the tag). An object only on production is a note only while production lags migrations and
+# staging has an object of the same type and name with another signature (a signature replaced by a migration
+# production hasn't run yet). Any other object only on production stays an error.
 schema_diff=$(diff <(echo "$schema_staging") <(echo "$schema_production") | grep '^[<>]' || true)
 if [ "$allow_behind" = --allow-prod-behind ]; then
-  staging_only=$(grep '^<' <<<"$schema_diff" || true)
-  production_only=$(grep '^>' <<<"$schema_diff" || true)
+  staging_only=$(grep '^<' <<<"$schema_diff" | cut -c3- || true)
+  production_only=$(grep '^>' <<<"$schema_diff" | cut -c3- || true)
+  replaced=""
+  if [ -n "$prod_behind" ] && [ -n "$production_only" ]; then
+    staging_names=$(object_name <<<"$schema_staging" | sort -u)
+    replaced=$(while IFS= read -r object; do
+      grep -qxF "$(object_name <<<"$object")" <<<"$staging_names" && printf '%s\n' "$object"
+    done <<<"$production_only" || true)
+  fi
+  orphans=$(grep -vxF -f <(printf '%s\n' "$replaced" | sed '/^$/d') <<<"$production_only" || true)
+  [ -n "$replaced" ] || orphans=$production_only
   [ -z "$staging_only" ] || echo "note: production doesn't have these database objects yet: $(echo "$staging_only" | tr '\n' ' ')"
-  [ -z "$production_only" ] \
-    || fail "database objects only on production (< staging, > production): $(echo "$schema_diff" | tr '\n' ' ')"
+  [ -z "$replaced" ] || echo "note: production still has these signatures, replaced on staging: $(echo "$replaced" | tr '\n' ' ')"
+  [ -z "$orphans" ] \
+    || fail "database objects only on production: $(echo "$orphans" | tr '\n' ' ')"
 else
   [ -z "$schema_diff" ] || fail "database objects differ (< staging, > production): $(echo "$schema_diff" | tr '\n' ' ')"
 fi
