@@ -43,14 +43,15 @@ export async function ensureUsers(ids: string[]) {
 const SYSTEM_USER = "drafft";
 
 /**
- * A paused profile reads its chats but can't write in them (messages, reactions, uploads): a global
- * Stream ban while paused, lifted on resume. Both calls are idempotent.
+ * An account on hold (`profiles.moderation` set by the team) reads its chats but can't write in them
+ * (messages, reactions, uploads): a global Stream ban while held, lifted when the hold is. A voluntary
+ * pause doesn't ban: chats stay writable. Both calls are idempotent.
  */
-export async function setChatPaused(userId: string, paused: boolean) {
+export async function setChatHeld(userId: string, held: boolean) {
   await ensureUsers([userId]);
-  if (paused) {
+  if (held) {
     await stream().upsertUser({ id: SYSTEM_USER, name: "drafft", role: "admin" });
-    await stream().banUser(userId, { banned_by_id: SYSTEM_USER, reason: "paused" });
+    await stream().banUser(userId, { banned_by_id: SYSTEM_USER, reason: "hold" });
   } else {
     await stream().unbanUser(userId);
   }

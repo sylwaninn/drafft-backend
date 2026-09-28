@@ -44,11 +44,12 @@ serve(async (req) => {
   if (!ext) throw new HttpError(400, "unsupported_type");
   if (!Number.isInteger(byteSize) || byteSize <= 0) throw new HttpError(400, "invalid_size");
   if (byteSize > rule.maxBytes) throw new HttpError(413, "too_large", `Up to ${rule.maxBytes / MB} MB`);
-  // A paused profile can't write in chats (Stream ban), so no chat uploads either. Profile media stays open.
+  // An account on hold can't write in chats (Stream ban), so no chat uploads either. A voluntary pause
+  // keeps chats writable, uploads included. Profile media stays open.
   if (purpose.startsWith("chat_")) {
-    const { data, error } = await admin.from("profiles").select("paused").eq("id", user.id).maybeSingle();
+    const { data, error } = await admin.from("profiles").select("moderation").eq("id", user.id).maybeSingle();
     if (error) throw new Error(`profile ${user.id}: ${error.message}`);
-    if (data?.paused) throw new HttpError(403, "paused");
+    if (data?.moderation) throw new HttpError(403, "moderated");
   }
 
   const key = `u/${user.id}/${rule.folder}/${crypto.randomUUID()}.${ext}`;

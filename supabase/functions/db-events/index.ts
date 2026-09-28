@@ -10,7 +10,7 @@ import { renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/no
 import { HttpError, json, readJson, safeEqual, serve } from "../_shared/http.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
-import { ensureChannel, ensureUsers, sendOnce, setChatPaused, stream } from "../_shared/stream.ts";
+import { ensureChannel, ensureUsers, sendOnce, setChatHeld, stream } from "../_shared/stream.ts";
 import { admin, check, must } from "../_shared/supabase.ts";
 import { language, weeklyBoost } from "../_shared/texts.ts";
 
@@ -68,6 +68,14 @@ async function toTeam(
     return;
   }
   await sendEmail(inbox, renderTeamEmail(subject, lines), key, replyTo);
+}
+
+/** Stream ban on or off from the account's current hold. Deleted since: the account and its chats are gone. */
+async function syncChatHold(userId: string) {
+  const { data, error } = await admin.from("profiles").select("moderation").eq("id", userId).maybeSingle();
+  if (error) throw new Error(`profile ${userId}: ${error.message}`);
+  if (!data) return;
+  await setChatHeld(userId, data.moderation !== null);
 }
 
 const handlers: Record<string, Handler> = {
@@ -221,14 +229,11 @@ const handlers: Record<string, Handler> = {
     await stream().setPushPreferences([{ user_id: p.userId, chat_level: p.messages ? "all" : "none" }]);
   },
 
-  // Paused or resumed: chats become read-only, or writable again. The current state decides, not the
-  // payload, so a pause and a resume arriving out of order still end right.
+  // Paused or resumed. A voluntary pause keeps chats writable; only a hold makes them read-only. The
+  // current hold decides, not the payload, so this also lifts a ban left by an older pause (which used to
+  // ban) and events arriving out of order still end right.
   async "profile.paused"(p: { userId: string }) {
-    const { data, error } = await admin.from("profiles").select("paused").eq("id", p.userId).maybeSingle();
-    if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
-    // Deleted since: the account and its chats are gone.
-    if (!data) return;
-    await setChatPaused(p.userId, data.paused);
+    await syncChatHold(p.userId);
   },
 
   // A hold changed. The iPhone's DeviceCheck bits follow (bit0 closed, bit1 on hold), and when the hold is
@@ -241,6 +246,10 @@ const handlers: Record<string, Handler> = {
     // Deleted since: the bits set earlier stay, which is the point.
     if (!profile) return;
     const state = profile.moderation as string | null;
+
+    // Chats read-only while held, writable again once lifted (a hold on an already paused profile
+    // doesn't change `paused`, so profile.paused alone would miss it).
+    await setChatHeld(p.userId, state !== null);
 
     if (deviceCheckConfigured()) {
       const held = (s: string | null) => s === "review" || s === "selfie";
