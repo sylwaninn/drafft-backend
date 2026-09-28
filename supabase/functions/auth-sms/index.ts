@@ -27,6 +27,8 @@ Deno.serve(async (req) => {
   // is still the old one, or empty the first time).
   const raw = sms.phone || user.new_phone || user.phone || "";
   const to = raw.startsWith("+") ? raw : `+${raw}`;
+  // Volume is capped by Auth itself (config.toml: one code every 30 s per account, `sms_sent` per hour for
+  // the project); a per-number daily cap would need its own table, not added yet.
   if (!isAllowedNumber(to)) {
     console.warn(`auth-sms: ${to.slice(0, 4)}… not in the allowed countries`);
     return hookError(400, "This number can't receive codes.");
