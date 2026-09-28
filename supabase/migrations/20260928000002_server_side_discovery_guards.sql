@@ -6,9 +6,9 @@
 --   liker's gender (`not_eligible`), as Discover does. Not needed when they already liked the liker
 --   (answering from the Likes tab). A pass never is: it only hides a card.
 -- - Reports need an onboarded account with no hold (`onboarding_required`, `moderated`), and at most
---   10 in 24 hours (`report_limit`). The automatic hold (someone reported as underage, or by 3 people
---   in 30 days) only counts reports from onboarded accounts with no hold. A paused person can still
---   report (docs/matching.md, Pause).
+--   10 in 24 hours (`report_limit`). A report never holds anyone by itself: it reaches the team, who
+--   decide in sophros (the automatic hold for underage or 3 reporters in 30 days is removed). A paused
+--   person can still report (docs/matching.md, Pause).
 -- - An account on hold can't add profile media or register a push token (`moderated`). A paused one
 --   still can: editing the profile stays open while paused. Data export and deletion stay open to all.
 
@@ -307,33 +307,16 @@ begin
 end;
 $$;
 
--- Every report still reaches the team. Only reports from onboarded accounts with no hold can put
--- someone on hold by themselves.
+-- Every report reaches the team, and only the team puts an account on hold (sophros). No report holds
+-- anyone by itself, whatever its reason or count.
 create or replace function private.on_report()
 returns trigger
 language plpgsql
 security definer
 set search_path = ''
 as $$
-declare
-  v_note text;
 begin
   perform private.emit('report.created', jsonb_build_object('id', new.id));
-  if not exists (
-    select 1 from public.profiles where id = new.reporter and onboarded_at is not null and moderation is null) then
-    return null;
-  end if;
-  if new.reason = 'underage' then
-    v_note := 'reported as underage';
-  elsif (select count(distinct r.reporter) from public.reports r
-         join public.profiles p on p.id = r.reporter
-         where r.reported = new.reported and r.created_at > now() - interval '30 days'
-           and p.onboarded_at is not null and p.moderation is null) >= 3 then
-    v_note := 'reported by 3 people in 30 days';
-  end if;
-  if v_note is not null and exists (select 1 from public.profiles where id = new.reported and moderation is null) then
-    perform public.set_moderation(new.reported, 'review', v_note);
-  end if;
   return null;
 end;
 $$;

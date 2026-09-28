@@ -161,8 +161,8 @@ report always blocks too. Unblocking puts the person back in the blocker's deck 
 forgotten); the old chat stays closed.
 
 Reports need an onboarded account with no hold, and at most 10 in 24 hours per person (`report_limit`).
-Someone reported as underage, or by 3 different people in 30 days, is held for review at once; only
-reports from onboarded accounts with no hold count toward that.
+A report never puts anyone on hold by itself, whatever its reason or how many people send one: every
+report reaches the team, who decide in sophros.
 
 ## Errors
 

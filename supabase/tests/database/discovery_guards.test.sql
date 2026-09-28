@@ -103,15 +103,15 @@ select pg_temp.login((select hugo from ids));
 select throws_ok(format('select public.report_user(%L, %L)', (select tia from ids), 'underage'), 'P0001',
   'your account is on hold', 'no report from an account on hold');
 
--- Reports that don't come from an onboarded account with no hold never hold anyone by themselves.
+-- No report holds anyone by itself: the team decides in sophros.
 reset role;
 insert into public.reports (reporter, reported, reason) select nina, max, 'underage' from ids;
 insert into public.reports (reporter, reported, reason) select hugo, max, 'underage' from ids;
 select is((select moderation::text from public.profiles where id = (select max from ids)), null,
   'underage reports from unqualified accounts hold nobody');
 insert into public.reports (reporter, reported, reason) select tia, max, 'underage' from ids;
-select is((select moderation::text from public.profiles where id = (select max from ids)), 'review',
-  'the same report from an onboarded member still holds at once');
+select is((select moderation::text from public.profiles where id = (select max from ids)), null,
+  'an underage report from an onboarded member holds nobody either');
 select is((select count(*) from public.reports, ids where reported = max), 4::bigint, 'every report is kept for the team');
 
 -- MARK: Account on hold

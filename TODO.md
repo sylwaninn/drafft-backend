@@ -54,8 +54,8 @@ The app-side list lives in `drafft/TODO.md`.
       code), resend interval 30 s, SMS OTP expiry 600 s (the app's `SMS_CODE_LIFETIME`, which
       tells an expired code from a wrong one), SMS rate limit per hour. The app has no switch: it always
       asks for the SMS code, so the hook must be live before any public build.
-- [x] **Reports.** Reviewed and closed in sophros (the team's dashboard); underage or 3 reporters in 30 days
-      already hold the account for review.
+- [x] **Reports.** Reviewed and closed in sophros (the team's dashboard). A report never holds an account by
+      itself: the team decides.
 - [ ] **sophros per environment.** Cloudflare Access applications (staging, production), the staff in
       `private.staff` of each database, the Workers' secrets: see the sophros README.
 - [ ] **Support replies landing back.** Replies written in sophros are emailed (db-events, `support.reply`)
