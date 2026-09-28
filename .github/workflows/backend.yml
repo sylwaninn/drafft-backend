@@ -1,8 +1,12 @@
-# Checks every change; ships main to staging and v* tags to production, then checks for drift.
+# Checks every change; every merge to main ships to staging, then to production as a new version.
 #
-#   pull request      → code, database and migration checks
-#   push to main      → checks, deploy to staging, drift check
-#   push of a v* tag  → checks, deploy to production (the environment only accepts v* tags), drift check
+#   pull request      → title, code, database and migration checks
+#   push to main      → checks, deploy to staging, tag the next version from the pull request title,
+#                       deploy that tag to production, drift check
+#   push of a v* tag  → checks, deploy to production (by hand: redeploy or roll back to a version)
+#
+# Version from the pull request title (scripts/ci/next-version.sh): `type!:` major, `feat` minor,
+# anything else patch.
 #
 # Migrations and Edge Functions only: secrets stay in the local .env files (`deploy.sh <env> --secrets`).
 name: backend
@@ -26,6 +30,20 @@ env:
   SUPABASE_CLI: 2.90.0
 
 jobs:
+  title:
+    name: title (conventional, sets the version bump)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Next version
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: echo "Merging releases $(scripts/ci/next-version.sh "$TITLE")" >> "$GITHUB_STEP_SUMMARY"
+
   code:
     name: code (format, lint, types, shell, workflows, secrets)
     runs-on: ubuntu-latest
@@ -109,6 +127,44 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Drift (production may lag until the next tag)
         run: scripts/ci/env-parity.sh --allow-prod-behind
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+  release:
+    name: release (tag the next version, deploy to production)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [staging]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: write # push the tag
+      pull-requests: read # read the merged pull request's title
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI }}
+      - name: Tag the next version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The merged pull request's title; a commit pushed without one falls back to its subject.
+          title=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0].title // empty')
+          [ -n "$title" ] || title=$(git log -1 --format=%s "$GITHUB_SHA")
+          tag=$(scripts/ci/next-version.sh "$title")
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "$tag"
+          echo "Released $tag: $title" >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy to production
+        # A tag pushed with GITHUB_TOKEN starts no workflow: production ships here, from this commit.
+        run: echo production | scripts/deploy.sh production
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Drift
+        run: scripts/ci/env-parity.sh
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
