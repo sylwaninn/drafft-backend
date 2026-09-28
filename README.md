@@ -175,7 +175,8 @@ doubles the walk when filters are narrow; see [docs/matching.md](docs/matching.m
    enabled on that zone. The app requests sizes with `/cdn-cgi/image/width=800,quality=80/<key>`.
 7. Stream app in the EU region, APNs `.p8` key uploaded in its push settings (chat pushes come from Stream).
 8. Moderation and support secrets: `DEVICECHECK_KEY_ID` and `DEVICECHECK_PRIVATE_KEY` (an Apple key with
-   DeviceCheck; the team comes from `APNS_TEAM_ID`), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key:
+   DeviceCheck; the team comes from `APNS_TEAM_ID`), `DEVICECHECK_ENVIRONMENT=production` (Apple's environment
+   is chosen by the project, never by the app), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key:
    virtual and VoIP numbers get no code), `SUPPORT_INBOX` (the team's copy of support requests, reports and
    export requests). Unset, each feature is skipped and logged. The Vault secret `identity_hash_key` is
    created by migration `20260927000004`: never delete or rotate it, every ban and hold mark would be lost.
@@ -203,7 +204,7 @@ secrets are still set by hand with `deploy.sh <env> --secrets`.
 | Stream | app `drafft` (EU) | app `drafft-staging` (EU) |
 | RevenueCat | project `drafft` (`proj3dc1aebd`) | project `drafft staging` (`proje5eb803d`), same catalog |
 | APNs, Rekognition | shared (same bundle id, same key) | shared |
-| DeviceCheck key | shared (the app picks Apple's development or production DeviceCheck) | shared |
+| DeviceCheck key | shared, `DEVICECHECK_ENVIRONMENT=production` | shared, `DEVICECHECK_ENVIRONMENT` matching how staging builds are installed (`development` from Xcode, `production` from TestFlight) |
 
 Setting it up once:
 
