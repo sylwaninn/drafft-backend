@@ -6,7 +6,7 @@ import { pushToUser } from "../_shared/apns.ts";
 import { HttpError, json, serve } from "../_shared/http.ts";
 import { stream } from "../_shared/stream.ts";
 import { admin } from "../_shared/supabase.ts";
-import { language, reaction } from "../_shared/texts.ts";
+import { language, pushTitle, reaction, someone } from "../_shared/texts.ts";
 
 interface ReactionEvent {
   type: string;
@@ -46,11 +46,12 @@ serve(async (req) => {
   if (!to || !to.notify_messages || !to.notify_reactions) return json({ ok: true });
 
   // The app sends the emoji itself as the reaction type.
+  const lang = language(to.language);
   await pushToUser(author, {
-    title: "drafft",
+    title: pushTitle,
     body: reaction(
-      language(to.language),
-      from?.name || event.user?.name || "Someone",
+      lang,
+      from?.name || event.user?.name || someone[lang],
       r.type,
       to.notify_message_previews ? message.text : undefined,
     ),

@@ -12,7 +12,20 @@ import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
 import { ensureChannel, ensureUsers, sendOnce, setChatHeld, stream } from "../_shared/stream.ts";
 import { admin, check, must } from "../_shared/supabase.ts";
-import { type Language, language, photoRefused, sessionAutoCancelled, weeklyBoost } from "../_shared/texts.ts";
+import {
+  type Language,
+  language,
+  likeReceived,
+  matchCreated,
+  photoRefused,
+  pushTitle,
+  sessionAutoCancelled,
+  sessionChanged,
+  sessionName,
+  someone,
+  superLikeReceived,
+  weeklyBoost,
+} from "../_shared/texts.ts";
 
 interface Event {
   id: number;
@@ -24,19 +37,27 @@ interface Event {
 // deno-lint-ignore no-explicit-any
 type Handler = (payload: any) => Promise<void>;
 
-async function firstName(userId: string): Promise<string> {
+/** The first name shown to others, or null (no name yet, or the account is gone). */
+async function firstName(userId: string): Promise<string | null> {
   const { data, error } = await admin.from("profiles").select("name").eq("id", userId).maybeSingle();
   if (error) throw new Error(`profile ${userId}: ${error.message}`);
-  return data?.name || "Someone";
+  return data?.name || null;
 }
 
 type Setting = "notify_matches" | "notify_likes" | "notify_messages";
 
-/** The person's own notification setting (You › Notifications in the app). On when unknown. */
-async function wants(userId: string, setting: Setting): Promise<boolean> {
-  const { data, error } = await admin.from("profiles").select(setting).eq("id", userId).maybeSingle();
+/**
+ * Who gets a push and in which language: the person's app language (`profiles.language`) when their own
+ * notification setting (You › Notifications in the app) is on. Null: the setting is off, or the account
+ * is gone.
+ */
+async function recipient(userId: string, setting: Setting): Promise<Language | null> {
+  const { data, error } = await admin.from("profiles").select(`language, ${setting}`).eq("id", userId)
+    .maybeSingle();
   if (error) throw new Error(`profile ${userId}: ${error.message}`);
-  return (data as Record<Setting, boolean> | null)?.[setting] ?? true;
+  const row = data as Record<string, unknown> | null;
+  if (!row || row[setting] === false) return null;
+  return language(row.language);
 }
 
 /** The account's email, from Auth. Null when the account is gone. */
@@ -86,10 +107,12 @@ const handlers: Record<string, Handler> = {
     const { data: match, error } = await admin.from("matches").select("id").eq("user_a", a).eq("user_b", b)
       .maybeSingle();
     if (error) throw new Error(`match lookup: ${error.message}`);
-    if (match || !(await wants(p.to, "notify_likes"))) return;
+    if (match) return;
+    const lang = await recipient(p.to, "notify_likes");
+    if (!lang) return;
     await pushToUser(p.to, {
-      title: p.superLike ? "New super like" : "New like",
-      body: p.superLike ? "Someone super liked you. See who." : "Someone likes you. See who.",
+      title: pushTitle,
+      body: (p.superLike ? superLikeReceived : likeReceived)[lang],
       data: { tab: "likes" },
       collapseId: "likes",
     });
@@ -126,22 +149,24 @@ const handlers: Record<string, Handler> = {
         drafft: { type: opener.kind, ...opener },
       });
     }
-    const [nameA, nameB, wantsA, wantsB] = await Promise.all([
+    const [nameA, nameB, langA, langB] = await Promise.all([
       firstName(p.userA),
       firstName(p.userB),
-      wants(p.userA, "notify_matches"),
-      wants(p.userB, "notify_matches"),
+      recipient(p.userA, "notify_matches"),
+      recipient(p.userB, "notify_matches"),
     ]);
     await Promise.all([
-      wantsA && pushToUser(p.userA, {
-        title: "It's a match",
-        body: `You and ${nameB} want to train together.`,
+      langA && pushToUser(p.userA, {
+        title: pushTitle,
+        body: matchCreated(langA, nameB ?? someone[langA]),
         data: { match: p.matchId },
+        collapseId: `match-${p.matchId}`,
       }),
-      wantsB && pushToUser(p.userB, {
-        title: "It's a match",
-        body: `You and ${nameA} want to train together.`,
+      langB && pushToUser(p.userB, {
+        title: pushTitle,
+        body: matchCreated(langB, nameA ?? someone[langB]),
         data: { match: p.matchId },
+        collapseId: `match-${p.matchId}`,
       }),
     ]);
   },
@@ -186,7 +211,7 @@ const handlers: Record<string, Handler> = {
     // Session updates follow the Messages setting, like the other session pushes.
     if (!p.notify) return;
     await pushToUser(p.to, {
-      title: "drafft",
+      title: pushTitle,
       body: sessionAutoCancelled(language(p.language), p.at ? new Date(p.at) : null, p.timezone),
       data: { kind: "session_cancelled", session: p.sessionId },
       // A retried event replaces the push instead of adding a second one.
@@ -463,7 +488,7 @@ const handlers: Record<string, Handler> = {
     if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
     if (!data?.notify_weekly_boost) return;
     await pushToUser(p.userId, {
-      title: "drafft",
+      title: pushTitle,
       body: weeklyBoost[language(data.language)],
       data: { kind: "weekly_boost" },
       collapseId: "weekly-boost",
@@ -479,7 +504,7 @@ async function pushPhotoRefused(userId: string, mediaId: string): Promise<Langua
   if (!data) return null;
   const lang = language(data.language);
   await pushToUser(userId, {
-    title: "drafft",
+    title: pushTitle,
     body: photoRefused[lang],
     data: { kind: "photo_refused", media: mediaId },
     collapseId: `photo-${mediaId}`,
@@ -519,17 +544,18 @@ async function sessionEvent(
   });
 
   const other = members.find((m) => m !== actor);
+  if (!other) return;
   // Session updates are chat activity: they follow the Messages setting, like in the app.
-  if (!other || !(await wants(other, "notify_messages"))) return;
-  const name = await firstName(actor);
-  const what = session.title || `${session.sport_id} session`;
-  const body = {
-    proposed: `${name} proposed: ${what}`,
-    accepted: `${name} accepted: ${what}`,
-    declined: `${name} can't make it: ${what}`,
-    cancelled: `${name} cancelled: ${what}`,
-  }[status];
-  await pushToUser(other, { title: "Session", body, data: { match: p.matchId, session: p.sessionId } });
+  const lang = await recipient(other, "notify_messages");
+  if (!lang) return;
+  const name = (await firstName(actor)) ?? someone[lang];
+  await pushToUser(other, {
+    title: pushTitle,
+    body: sessionChanged(lang, status, name, sessionName(lang, session.title, session.sport_id)),
+    data: { match: p.matchId, session: p.sessionId },
+    // A retried event replaces the push instead of adding a second one.
+    collapseId: `session-${p.sessionId}-${status}`,
+  });
 }
 
 serve(async (req) => {

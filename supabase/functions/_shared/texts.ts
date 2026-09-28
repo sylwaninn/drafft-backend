@@ -1,9 +1,125 @@
 // Push sentences in the app's languages, the same as the app's NotificationText (casual register,
 // European Portuguese, a non-breaking space before ":" in French). `profiles.language` picks one.
+import { sportNames } from "./sports.ts";
+
 export type Language = "en" | "fr" | "es" | "de" | "it" | "pt" | "nl";
 
+const languages: readonly Language[] = ["en", "fr", "es", "de", "it", "pt", "nl"];
+
+/** The person's language from `profiles.language` ("fr", or a tag like "pt-PT"). Anything else: English. */
 export function language(value: unknown): Language {
-  return ["en", "fr", "es", "de", "it", "pt", "nl"].includes(value as string) ? value as Language : "en";
+  if (typeof value !== "string") return "en";
+  const base = value.trim().toLowerCase().split(/[-_]/)[0];
+  return languages.includes(base as Language) ? base as Language : "en";
+}
+
+/** Every push is titled like the app's own notifications (NotificationText.title). */
+export const pushTitle = "drafft";
+
+/** A name for someone whose profile has none (or is gone), inside the sentences below. */
+export const someone: Record<Language, string> = {
+  en: "Someone",
+  fr: "Quelqu'un",
+  es: "Alguien",
+  de: "Jemand",
+  it: "Qualcuno",
+  pt: "Alguém",
+  nl: "Iemand",
+};
+
+/** A like, anonymous on purpose: the Likes tab is where people see who it was. */
+export const likeReceived: Record<Language, string> = {
+  en: "Someone liked your profile",
+  fr: "Quelqu'un a liké ton profil",
+  es: "A alguien le gusta tu perfil",
+  de: "Jemandem gefällt dein Profil",
+  it: "Qualcuno ha messo like al tuo profilo",
+  pt: "Alguém gostou do teu perfil",
+  nl: "Iemand vindt je profiel leuk",
+};
+
+/** A super like, anonymous like a like. */
+export const superLikeReceived: Record<Language, string> = {
+  en: "Someone sent you a super like",
+  fr: "Quelqu'un t'a envoyé un super like",
+  es: "Alguien te ha enviado un superlike",
+  de: "Jemand hat dir einen Super Like geschickt",
+  it: "Qualcuno ti ha mandato un super like",
+  pt: "Alguém enviou-te um super like",
+  nl: "Iemand heeft je een superlike gestuurd",
+};
+
+/** NotificationText .match: "It's a match with Maya! Suggest a first session." */
+export function matchCreated(lang: Language, name: string): string {
+  return {
+    en: `It's a match with ${name}! Suggest a first session.`,
+    fr: `C'est un match avec ${name}\u00A0! Propose-lui une première séance.`,
+    es: `¡Match con ${name}! Proponle una primera sesión.`,
+    de: `Match mit ${name}! Schlag eine erste Session vor.`,
+    it: `Match con ${name}! Proponi una prima sessione.`,
+    pt: `Match com ${name}! Propõe uma primeira sessão.`,
+    nl: `Match met ${name}! Stel een eerste sessie voor.`,
+  }[lang];
+}
+
+/** A session's name in a push: its title, or "<Sport> session" like the app's Session.displayTitle. */
+export function sessionName(lang: Language, title: string | null | undefined, sportId: string): string {
+  if (title?.trim()) return title.trim();
+  const sport = sportNames[sportId]?.[lang] ?? sportId;
+  return {
+    en: `${sport} session`,
+    fr: `Séance ${sport}`,
+    es: `Sesión de ${sport}`,
+    de: `${sport}-Session`,
+    it: `Sessione di ${sport}`,
+    pt: `Sessão de ${sport}`,
+    nl: `${sport}-sessie`,
+  }[lang];
+}
+
+export type SessionChange = "proposed" | "accepted" | "declined" | "cancelled";
+
+/** NotificationText .sessionProposed/.sessionAccepted/.sessionDeclined/.sessionCancelled. */
+export function sessionChanged(lang: Language, change: SessionChange, name: string, session: string): string {
+  const n = name, t = session;
+  return {
+    proposed: {
+      en: `${n} suggested a session: ${t}`,
+      fr: `${n} te propose une séance\u00A0: ${t}`,
+      es: `${n} te propone una sesión: ${t}`,
+      de: `${n} schlägt dir eine Session vor: ${t}`,
+      it: `${n} ti propone una sessione: ${t}`,
+      pt: `${n} propõe-te uma sessão: ${t}`,
+      nl: `${n} stelt een sessie voor: ${t}`,
+    },
+    accepted: {
+      en: `${n} is in: ${t}`,
+      fr: `${n} a accepté\u00A0: ${t}`,
+      es: `${n} ha aceptado: ${t}`,
+      de: `${n} ist dabei: ${t}`,
+      it: `${n} ha accettato: ${t}`,
+      pt: `${n} aceitou: ${t}`,
+      nl: `${n} doet mee: ${t}`,
+    },
+    declined: {
+      en: `${n} can't make it: ${t}`,
+      fr: `${n} ne peut pas venir\u00A0: ${t}`,
+      es: `${n} no puede ir: ${t}`,
+      de: `${n} kann nicht: ${t}`,
+      it: `${n} non può venire: ${t}`,
+      pt: `${n} não pode ir: ${t}`,
+      nl: `${n} kan niet: ${t}`,
+    },
+    cancelled: {
+      en: `${n} cancelled: ${t}`,
+      fr: `${n} a annulé\u00A0: ${t}`,
+      es: `${n} ha cancelado: ${t}`,
+      de: `${n} hat abgesagt: ${t}`,
+      it: `${n} ha annullato: ${t}`,
+      pt: `${n} cancelou: ${t}`,
+      nl: `${n} heeft afgezegd: ${t}`,
+    },
+  }[change][lang];
 }
 
 export const weeklyBoost: Record<Language, string> = {
