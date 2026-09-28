@@ -22,6 +22,9 @@ create table private.session_reminders (
 );
 
 alter table private.session_reminders enable row level security;
+-- Server-only table: no client ever reads or writes it; the cron job runs as the owner, which bypasses RLS.
+create policy session_reminders_server_only on private.session_reminders
+  as restrictive for all to anon, authenticated using (false) with check (false);
 
 -- Upcoming accepted sessions are few; the partial index keeps the minute-by-minute scan cheap.
 create index sessions_accepted_upcoming_idx on public.sessions (chosen_at) where status = 'accepted';

@@ -2,7 +2,7 @@
 -- accepted sessions of an active match, following each person's settings (paused or not).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(10);
+select plan(12);
 
 create function pg_temp.person(p_email text) returns uuid language plpgsql as $$
 declare
@@ -59,5 +59,18 @@ select is(private.session_evening('2026-03-29T05:00:00Z', 'Europe/Paris'), '2026
 select ok(not has_function_privilege('authenticated', 'private.queue_session_reminders()', 'execute'),
   'members cannot queue reminders');
 
+select ok(
+  not has_table_privilege('anon', 'private.session_reminders', 'select, insert, update, delete')
+    or exists (select 1 from pg_policies where schemaname = 'private' and tablename = 'session_reminders'
+      and policyname = 'session_reminders_server_only' and permissive = 'RESTRICTIVE' and qual = 'false'),
+  'anon cannot reach the reminders'
+);
+select ok(
+  (select relrowsecurity from pg_class where oid = 'private.session_reminders'::regclass)
+    and exists (select 1 from pg_policies where schemaname = 'private' and tablename = 'session_reminders'
+      and policyname = 'session_reminders_server_only' and roles @> array['anon', 'authenticated']::name[]
+      and qual = 'false' and with_check = 'false'),
+  'signed-in members cannot reach the reminders either'
+);
 select * from finish();
 rollback;
