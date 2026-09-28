@@ -6,10 +6,13 @@
 --    other finds the row and does nothing. A refund takes the pack back once, and a refund seen before the
 --    purchase records the transaction so it is never credited afterwards.
 -- 2. apply_purchase_event() keeps its idempotence per event id and now credits and refunds consumables
---    through that table. Subscriptions are unchanged: premium_until is copied, never added.
+--    through that table. Subscriptions are unchanged: premium_until is copied, never added. TRANSFER keeps
+--    the handling of 20260928000051 (premium moves, consumables stay with the account that bought them).
 -- 3. purchase_sync_begin() (limits: 1 call per 5 s, 30 per hour and account) and apply_purchase_sync()
 --    back the purchase-sync Edge Function, which reads the caller's RevenueCat state right after a purchase
 --    so the credit doesn't wait for the webhook. premium_until is copied from the drafft_tempo entitlement.
+--    apply_purchase_sync() answers { wallet, transaction: { id, credited } } for the transaction the app
+--    asks about, so the app trusts the server's status rather than its own.
 -- 4. private.purchase_environment(): the store environment of the project (Vault `purchase_environment`),
 --    shared by both paths.
 
@@ -161,6 +164,9 @@ declare
   v_effect text;
   v_environment text := upper(p_event ->> 'environment');
   v_expected text;
+  v_from uuid[];
+  v_to uuid[];
+  v_until timestamptz;
 begin
   if v_id is null or v_type is null then
     perform private.fail('invalid_event', 'event id and type are required');
@@ -186,9 +192,33 @@ begin
   -- Another store environment's purchase: recorded, never credited.
   elsif v_environment is distinct from v_expected then
     v_effect := 'ignored: ' || coalesce(lower(v_environment), 'unknown') || ' event';
+  -- RevenueCat moved the purchases to another App User ID (restore on a new account, default
+  -- "Transfer to new App User ID"): premium follows the subscription. Consumables stay where they are.
+  elsif v_type = 'TRANSFER' then
+    select coalesce(array_agg(w.user_id), '{}') into v_from from public.wallets w
+      where w.user_id::text in (select lower(jsonb_array_elements_text(coalesce(p_event -> 'transferred_from', '[]'))));
+    select coalesce(array_agg(w.user_id), '{}') into v_to from public.wallets w
+      where w.user_id::text in (select lower(jsonb_array_elements_text(coalesce(p_event -> 'transferred_to', '[]'))))
+        and not w.user_id = any (v_from);
+    select max(premium_until) into v_until from public.wallets where user_id = any (v_from);
+    v_user := v_to[1];
+    if cardinality(v_to) = 0 then
+      v_effect := 'ignored: no known transferred_to';
+    else
+      if v_until > now() then
+        update public.wallets
+          set premium_until = greatest(premium_until, v_until),
+              premium_event_at = greatest(premium_event_at, v_event_at)
+          where user_id = any (v_to);
+      end if;
+      update public.wallets set premium_until = null, premium_event_at = greatest(premium_event_at, v_event_at)
+        where user_id = any (v_from) and premium_until is not null;
+      v_effect := 'transfer: premium_until ' || coalesce(v_until::text, 'none') || ' from '
+        || cardinality(v_from) || ' to ' || cardinality(v_to) || ' account(s)';
+    end if;
   elsif v_user is null then
     v_effect := 'ignored: unknown app_user_id ' || coalesce(p_event ->> 'app_user_id', 'null');
-  elsif v_kind is null and v_type <> 'TRANSFER' then
+  elsif v_kind is null then
     v_effect := 'ignored: unknown product ' || coalesce(v_product, 'null');
 
   -- Consumable packs: credit on purchase, take back on refund, once per store transaction.
@@ -213,7 +243,7 @@ begin
       v_effect := case when found then 'premium_until ' || v_expires else 'ignored: older than current state' end;
     end if;
   else
-    -- BILLING_ISSUE, SUBSCRIPTION_PAUSED, TRANSFER…: no wallet change (the expiration events follow).
+    -- BILLING_ISSUE, SUBSCRIPTION_PAUSED…: no wallet change (the expiration events follow).
     v_effect := 'no change';
   end if;
 
@@ -256,8 +286,10 @@ $$;
 --   { "purchases": [{ "transaction_id", "product_id" (store id), "status": "owned" | "refunded", "environment" }],
 --     "premium_expires_at": timestamptz or null (active drafft_tempo entitlement in this environment) }
 -- Consumables are credited or refunded once per transaction (shared with the webhook); premium_until is
--- copied from the entitlement when it is active. Returns the wallet.
-create function public.apply_purchase_sync(p_user uuid, p_state jsonb)
+-- copied from the entitlement when it is active. Returns { wallet, transaction }: transaction is null when
+-- p_transaction is null, else { id, credited }. credited is true when that store transaction of the caller
+-- is a consumable credited and not refunded, or an owned subscription while premium_until is in the future.
+create function public.apply_purchase_sync(p_user uuid, p_state jsonb, p_transaction text default null)
 returns jsonb
 language plpgsql
 security definer
@@ -268,6 +300,7 @@ declare
   v_purchase jsonb;
   v_premium timestamptz := (p_state ->> 'premium_expires_at')::timestamptz;
   v_wallet public.wallets;
+  v_credited boolean;
 begin
   if not exists (select 1 from public.wallets where user_id = p_user) then
     perform private.fail('not_found', 'no wallet for this account');
@@ -291,11 +324,25 @@ begin
   end if;
 
   select * into v_wallet from public.wallets where user_id = p_user;
-  return to_jsonb(v_wallet) - 'user_id' - 'premium_event_at';
+  if p_transaction is not null then
+    v_credited := exists (
+        select 1 from private.purchase_credits
+        where transaction_id = p_transaction and user_id = p_user
+          and credited_at is not null and refunded_at is null)
+      or (v_wallet.premium_until > now() and exists (
+        select 1 from jsonb_array_elements(coalesce(p_state -> 'purchases', '[]')) p
+          join public.store_products sp on sp.product_id = p ->> 'product_id' and sp.kind = 'subscription'
+        where p ->> 'transaction_id' = p_transaction and p ->> 'status' = 'owned'
+          and upper(p ->> 'environment') = v_expected));
+  end if;
+  return jsonb_build_object(
+    'wallet', to_jsonb(v_wallet) - 'user_id' - 'premium_event_at',
+    'transaction', case when p_transaction is null then null
+      else jsonb_build_object('id', p_transaction, 'credited', coalesce(v_credited, false)) end);
 end;
 $$;
 
 revoke execute on function public.purchase_sync_begin(uuid) from public, anon, authenticated;
-revoke execute on function public.apply_purchase_sync(uuid, jsonb) from public, anon, authenticated;
+revoke execute on function public.apply_purchase_sync(uuid, jsonb, text) from public, anon, authenticated;
 grant execute on function public.purchase_sync_begin(uuid) to service_role;
-grant execute on function public.apply_purchase_sync(uuid, jsonb) to service_role;
+grant execute on function public.apply_purchase_sync(uuid, jsonb, text) to service_role;
