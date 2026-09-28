@@ -8,8 +8,10 @@
 -- A URL is signed only for what the caller may see:
 --   - their own media, always;
 --   - someone else's approved profile media (the card only holds approved media), through the card
---     functions below, when that person is onboarded, not paused, not on hold (review, selfie, banned),
---     and neither blocked the other; the viewer must not be on hold either;
+--     functions below, when that person is onboarded, not deleted (an account kept after deletion,
+--     20260928000131), not on hold (review, selfie, banned), and neither blocked the other; the viewer
+--     must not be on hold either. A paused person (decision 3.1: only discovery pauses) is left out of
+--     Discover and Likes by those functions, and their active matches still see their media;
 --   - chat media (`u/<owner>/chat/...`), through media_urls, only between the two members of an
 --     active match, with the same rules.
 -- Otherwise the card still carries its keys but no URL. With the private bucket, a key alone opens
@@ -57,8 +59,8 @@ as $$
   end;
 $$;
 
--- Whether p_viewer may get links to p_owner's media. The single place for these rules: a later state
--- that hides an account (soft delete) belongs here too.
+-- Whether p_viewer may get links to p_owner's media. The single place for these rules. A pause hides
+-- the person from Discover and Likes (those queries skip paused profiles), not from an active match.
 create function private.media_visible(p_owner uuid, p_viewer uuid)
 returns boolean
 language sql
@@ -71,7 +73,11 @@ as $$
     or (
       exists (
         select 1 from public.profiles p
-        where p.id = p_owner and p.onboarded_at is not null and not p.paused and p.moderation is null)
+        where p.id = p_owner and p.onboarded_at is not null and p.moderation is null and p.deleted_at is null
+          and (not p.paused or exists (
+            select 1 from public.matches m
+            where m.user_a = least(p_owner, p_viewer) and m.user_b = greatest(p_owner, p_viewer)
+              and m.ended_at is null)))
       and exists (select 1 from public.profiles v where v.id = p_viewer and v.moderation is null)
       and not private.blocked_between(p_owner, p_viewer)));
 $$;
@@ -303,7 +309,7 @@ as $$
   order by m.created_at desc;
 $$;
 
--- Cards by id: unchanged from 20260924000003 but for the signed card. `p_known` skips cards whose
+-- Cards by id: unchanged from 20260928000131 (never a kept account's card) but for the signed card. `p_known` skips cards whose
 -- version the app holds: it refreshes expired URLs by calling again without that version.
 create or replace function public.get_cards(p_ids uuid[], p_known jsonb default '{}')
 returns setof jsonb
@@ -318,6 +324,7 @@ as $$
   join public.profiles p on p.id = i.id
   join public.profile_cards c on c.user_id = i.id
   where c.version > coalesce((p_known ->> i.id::text)::bigint, 0)
+    and p.deleted_at is null
     and not private.blocked_between((select auth.uid()), i.id)
     and (
       exists (select 1 from public.swipes s where s.swiper = (select auth.uid()) and s.target = i.id)

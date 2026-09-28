@@ -1,8 +1,9 @@
 -- Private media (20260928000141): URLs are signed like the media Worker checks them, and only for what
--- the caller may see (not paused, not on hold, not blocked; chat media for match members only).
+-- the caller may see (not deleted, not on hold, not blocked; paused only to active matches; chat media for
+-- match members only).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(20);
+select plan(25);
 
 -- The same Vault secrets as an environment, for this transaction only.
 delete from vault.secrets where name in ('media_base_url', 'media_signing_key');
@@ -88,7 +89,7 @@ insert into public.blocks (blocker, blocked) select eve, ana from ids;
 set local role authenticated;
 select pg_temp.login((select ana from ids));
 
-select is(pg_temp.photo_url((select cleo from ids)), null, 'no link to a paused person');
+select ok(pg_temp.photo_url((select cleo from ids)) is not null, 'a paused person''s active match still sees her photos');
 select is(pg_temp.photo_url((select dan from ids)), null, 'no link to a banned person');
 select is((select count(*) from public.get_cards(array[(select eve from ids)])), 0::bigint,
   'no card at all across a block');
@@ -113,13 +114,32 @@ select is(public.media_urls(array['u/' || (select ben from ids) || '/chat/c.jpg'
   true, 'chat media of a match');
 select is(public.media_urls(array['u/' || (select ben from ids) || '/photos/1.jpg']), '{}'::jsonb,
   'not their profile media: that goes through their card');
-select is(public.media_urls(array['u/' || (select cleo from ids) || '/chat/c.jpg', 'u/' || (select eve from ids) || '/chat/c.jpg']),
-  '{}'::jsonb, 'no chat media from a paused person or across a block');
+select is(public.media_urls(array['u/' || (select cleo from ids) || '/chat/c.jpg']) ? ('u/' || (select cleo from ids) || '/chat/c.jpg'),
+  true, 'chat media of a paused match');
+select is(public.media_urls(array['u/' || (select eve from ids) || '/chat/c.jpg']), '{}'::jsonb,
+  'no chat media across a block');
 select is(public.media_urls(array['u/' || (select ana from ids) || '/photos/../x.jpg', 'not-a-key']), '{}'::jsonb,
   'malformed keys are ignored');
 select pg_temp.login((select eve from ids));
 select is(public.media_urls(array['u/' || (select ben from ids) || '/chat/c.jpg']), '{}'::jsonb,
   'no chat media outside a match');
+
+-- MARK: Pause outside a match, and deleted accounts
+
+reset role;
+select ok(not private.media_visible((select cleo from ids), (select eve from ids)),
+  'a paused person stays hidden from anyone she has no active match with');
+update public.matches set ended_at = now()
+  where user_a = (select least(ana, cleo) from ids) and user_b = (select greatest(ana, cleo) from ids);
+select ok(not private.media_visible((select cleo from ids), (select ana from ids)),
+  'once the match ends, the pause hides her again');
+update public.profiles set deleted_at = now() where id = (select ben from ids);
+select ok(not private.media_visible((select ben from ids), (select ana from ids)), 'no link to a deleted account');
+set local role authenticated;
+select pg_temp.login((select ana from ids));
+select is((select count(*) from public.get_cards(array[(select ben from ids)])), 0::bigint,
+  'nor its card');
+reset role;
 
 select * from finish();
 rollback;
