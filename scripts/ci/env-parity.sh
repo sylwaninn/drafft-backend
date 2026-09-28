@@ -102,7 +102,8 @@ done
   || fail "secret names differ: $(diff <(echo "$secrets_staging") <(echo "$secrets_production") | grep '^[<>]' | tr '\n' ' ')"
 
 # The name of a database object without its signature: "function ack_event(p_id bigint)" -> "function ack_event".
-object_name() { sed -E 's/\(.*$//'; }
+# The CSV output quotes a line with a comma (several arguments): the quote goes too.
+object_name() { sed -E 's/^"//; s/\(.*$//'; }
 
 # Between a merge and the next release tag, objects only on staging are expected (production runs the new
 # migrations at the tag). An object only on production is a note only while production lags migrations and
