@@ -4,6 +4,7 @@ import { StreamChat } from "npm:stream-chat@9";
 import { env } from "./env.ts";
 import { admin, must } from "./supabase.ts";
 import { viaProvider } from "./providers.ts";
+import { language, messageSent, previewSeparator } from "./texts.ts";
 
 let client: StreamChat | undefined;
 
@@ -39,10 +40,39 @@ export async function ensureChannel(matchId: string) {
   return { channel, members: [match.user_a, match.user_b] as string[] };
 }
 
-/** Stream needs the users to exist before they join a channel. */
+/**
+ * A person's Stream user. Stream sends message pushes itself, from the template in scripts/stream-push.ts:
+ * the user carries its app language and the push sentence in it (`drafft_push`), and whether message
+ * previews are on (`notify_message_previews`, off by default: no text in the push). An upsert replaces the
+ * whole user, so every upsert writes all of it.
+ */
+export function streamUser(
+  p: { id: string; name: string | null; language: unknown; notify_message_previews: boolean },
+) {
+  const lang = language(p.language);
+  return {
+    id: p.id,
+    name: p.name ?? "",
+    language: lang,
+    drafft_push: {
+      message: messageSent[lang],
+      separator: previewSeparator(lang),
+      previews: p.notify_message_previews === true,
+    },
+  };
+}
+
+/**
+ * Stream needs the users to exist before they join a channel. Also called when a name, the app language or
+ * the previews setting changes (db-events `stream.user`), so pushes follow at once.
+ */
 export async function ensureUsers(ids: string[]) {
-  const profiles = must(await admin.from("profiles").select("id, name").in("id", ids), "profiles");
-  await viaProvider("stream", () => stream().upsertUsers(profiles.map((p) => ({ id: p.id, name: p.name }))));
+  const profiles = must(
+    await admin.from("profiles").select("id, name, language, notify_message_previews").in("id", ids),
+    "profiles",
+  );
+  if (profiles.length === 0) return;
+  await viaProvider("stream", () => stream().upsertUsers(profiles.map(streamUser)));
 }
 
 /** Server-side author of moderation actions (bans). Never gets a token: stream-token signs profile ids only. */
@@ -68,13 +98,18 @@ export async function setChatHeld(userId: string, held: boolean) {
 /**
  * Sends a message with a deterministic id, so a retried event doesn't post twice.
  * Stream answers a duplicate id with an error, which is treated as success here.
+ * Without Stream's push: every server message (openers, super like notes, sessions) comes with its own
+ * push from db-events, in the person's language and under their settings.
  */
 export async function sendOnce(
   channel: ReturnType<StreamChat["channel"]>,
   message: { id: string; user_id: string; text: string; drafft?: Record<string, unknown> },
 ) {
   try {
-    await viaProvider("stream", () => channel.sendMessage(message as Parameters<typeof channel.sendMessage>[0]));
+    await viaProvider(
+      "stream",
+      () => channel.sendMessage(message as Parameters<typeof channel.sendMessage>[0], { skip_push: true }),
+    );
   } catch (error) {
     if (String(error).includes("already exists")) return;
     throw error;

@@ -169,6 +169,26 @@ export function reaction(lang: Language, name: string, emoji: string, text?: str
   }[lang];
 }
 
+/**
+ * The pieces of a Stream message push (sent by Stream, from the template in scripts/stream-push.ts), kept on
+ * each person's Stream user so the push is in their app language: "Maya sent you a message" (NotificationText
+ * .message), or with previews on "Maya: See you at 7?" (NotificationText.preview).
+ */
+export const messageSent: Record<Language, string> = {
+  en: "sent you a message",
+  fr: "t'a envoyé un message",
+  es: "te ha enviado un mensaje",
+  de: "hat dir eine Nachricht geschickt",
+  it: "ti ha inviato un messaggio",
+  pt: "enviou-te uma mensagem",
+  nl: "heeft je een bericht gestuurd",
+};
+
+/** Between the name and the message text when previews are on ("Maya : …" in French). */
+export function previewSeparator(lang: Language): string {
+  return lang === "fr" ? "\u00A0: " : ": ";
+}
+
 /** "Tuesday 14 October at 7:00", in the person's language and time zone. */
 function sessionTime(lang: Language, at: Date, timeZone: string): { day: string; time: string } {
   const zone = (() => {
