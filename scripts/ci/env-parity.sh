@@ -40,6 +40,7 @@ secrets_staging=""
 secrets_production=""
 schema_staging=""
 schema_production=""
+deployed_staging=""
 advisors_staging=$(mktemp)
 # The baseline production's code shipped with (last v* tag); none: every finding stays an error.
 released_baseline=$(mktemp)
@@ -63,7 +64,18 @@ for env in staging production; do
   fi
 
   deployed=$(supabase functions list --project-ref "$ref" -o json 2>/dev/null | python3 -c 'import json,sys; print("\n".join(sorted(f["slug"] for f in json.load(sys.stdin))))')
-  [ "$deployed" = "$repo_functions" ] || fail "$env functions differ from the repository: $(diff <(echo "$repo_functions") <(echo "$deployed") | grep '^[<>]' | tr '\n' ' ')"
+  if [ $env = staging ]; then deployed_staging=$deployed; fi
+  functions_diff=$(diff <(echo "$repo_functions") <(echo "$deployed") | grep '^[<>]' || true)
+  if [ $env = production ] && [ "$allow_behind" = --allow-prod-behind ] && [ -n "$functions_diff" ]; then
+    # Behind, production may lack a function of the repository that staging already deploys (a note).
+    # One on production only, or one staging doesn't deploy either, stays an error.
+    not_yet=$(grep '^<' <<<"$functions_diff" | cut -c3- | comm -12 - <(echo "$deployed_staging") || true)
+    unexpected=$(grep -vxF -f <(sed 's/^/< /' <<<"$not_yet") <<<"$functions_diff" || true)
+    [ -z "$not_yet" ] || echo "note: production doesn't deploy these functions yet: $(echo $not_yet)"
+    [ -z "$unexpected" ] || fail "production functions differ from the repository: $(echo "$unexpected" | tr '\n' ' ')"
+  else
+    [ -z "$functions_diff" ] || fail "$env functions differ from the repository: $(echo "$functions_diff" | tr '\n' ' ')"
+  fi
 
   names=$(supabase secrets list --project-ref "$ref" -o json 2>/dev/null | python3 -c 'import json,sys; print("\n".join(sorted(s["name"] for s in json.load(sys.stdin))))')
   if [ $env = staging ]; then secrets_staging=$names; else secrets_production=$names; fi
