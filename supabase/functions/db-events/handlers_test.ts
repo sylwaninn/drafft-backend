@@ -426,3 +426,37 @@ Deno.test("stream.user: an account gone since is acked without touching Stream",
   assertEquals(world.streamUsers, []);
   assertEquals(calls("ack_event").length, 1);
 });
+
+Deno.test("session.reminder: pushed while the session holds, never once it's cancelled", async () => {
+  reset();
+  people();
+  const at = new Date(Date.now() + 3000_000).toISOString();
+  world.tables.profiles[1].notify_session_hour_before = true;
+  world.tables.matches = [{ id: match, user_a: ana, user_b: bo, ended_at: null }];
+  world.tables.sessions = [{
+    id: "s1",
+    match_id: match,
+    status: "accepted",
+    sport_id: "run",
+    title: "",
+    chosen_at: at,
+  }];
+  const payload = { sessionId: "s1", matchId: match, to: bo, kind: "hour", at, timezone: "Europe/Paris" };
+  await runEvent({ id: 11, event: "session.reminder", payload, pushUntil: inAnHour() });
+  assertEquals(world.pushes.map((p) => p.collapse), ["session-reminder-s1-hour"]);
+
+  reset();
+  people();
+  world.tables.matches = [{ id: match, user_a: ana, user_b: bo, ended_at: null }];
+  world.tables.sessions = [{
+    id: "s1",
+    match_id: match,
+    status: "cancelled",
+    sport_id: "run",
+    title: "",
+    chosen_at: at,
+  }];
+  await runEvent({ id: 12, event: "session.reminder", payload, pushUntil: inAnHour() });
+  assertEquals(world.pushes, []);
+  assertEquals(calls("ack_event").length, 1);
+});

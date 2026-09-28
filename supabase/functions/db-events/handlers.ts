@@ -29,6 +29,8 @@ import {
   sessionAutoCancelled,
   sessionChanged,
   sessionName,
+  sessionReminderEvening,
+  sessionReminderHour,
   someone,
   superLikeReceived,
   weeklyBoost,
@@ -112,7 +114,12 @@ async function firstName(userId: string): Promise<string | null> {
   return data?.name || null;
 }
 
-type Setting = "notify_matches" | "notify_likes" | "notify_messages";
+type Setting =
+  | "notify_matches"
+  | "notify_likes"
+  | "notify_messages"
+  | "notify_session_evening"
+  | "notify_session_hour_before";
 
 /**
  * Who gets a push and in which language: the person's app language (`profiles.language`) when their own
@@ -314,6 +321,40 @@ export const handlers: Record<string, Handler> = {
       data: { kind: "session_cancelled", session: p.sessionId },
       // A retried event replaces the push instead of adding a second one.
       collapseId: `session-cancelled-${p.sessionId}`,
+    });
+  },
+
+  // A reminder queued by private.queue_session_reminders (the evening before at 20:00, or an hour before, in
+  // the person's time zone). The state is checked again at send time: a session cancelled, moved or whose
+  // match ended since sends nothing, and a setting turned off since is respected.
+  async "session.reminder"(p: {
+    sessionId: string;
+    matchId: string;
+    to: string;
+    kind: "evening" | "hour";
+    at: string;
+    timezone: string;
+  }, ctx) {
+    if (!ctx.pushFresh) return;
+    const { data: session, error } = await admin.from("sessions")
+      .select("status, chosen_at, sport_id, title, match_id").eq("id", p.sessionId).maybeSingle();
+    if (error) throw new Error(`session ${p.sessionId}: ${error.message}`);
+    if (!session || session.status !== "accepted" || !session.chosen_at) return;
+    if (Date.parse(session.chosen_at as string) !== Date.parse(p.at) || Date.parse(p.at) < Date.now()) return;
+    const { data: match, error: matchError } = await admin.from("matches").select("ended_at")
+      .eq("id", session.match_id as string).maybeSingle();
+    if (matchError) throw new Error(`match ${session.match_id}: ${matchError.message}`);
+    if (!match || match.ended_at) return;
+    const lang = await recipient(p.to, p.kind === "evening" ? "notify_session_evening" : "notify_session_hour_before");
+    if (!lang) return;
+    const name = sessionName(lang, session.title as string | null, session.sport_id as string);
+    await ctx.push("push", p.to, {
+      title: pushTitle,
+      body: p.kind === "evening"
+        ? sessionReminderEvening(lang, name, new Date(p.at), p.timezone)
+        : sessionReminderHour(lang, name),
+      data: { kind: "session_reminder", match: p.matchId, session: p.sessionId },
+      collapseId: `session-reminder-${p.sessionId}-${p.kind}`,
     });
   },
 
@@ -692,7 +733,10 @@ async function sessionEvent(
   await ctx.push("push", other, {
     title: pushTitle,
     body: sessionChanged(lang, status, name, sessionName(lang, session.title, session.sport_id)),
-    data: { match: p.matchId, session: p.sessionId },
+    // A cancel reads like the automatic one (`session.auto_cancelled`) to the app: same kind.
+    data: status === "cancelled"
+      ? { kind: "session_cancelled", match: p.matchId, session: p.sessionId }
+      : { match: p.matchId, session: p.sessionId },
     // A retried event replaces the push instead of adding a second one.
     collapseId: `session-${p.sessionId}-${status}`,
   });

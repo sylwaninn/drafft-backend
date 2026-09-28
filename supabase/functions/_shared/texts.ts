@@ -233,3 +233,30 @@ export function sessionAutoCancelled(lang: Language, at: Date | null, timeZone: 
     nl: `Je sessie op ${day} om ${time} is geannuleerd.`,
   }[lang];
 }
+
+/** NotificationText.reminderEvening: the evening before, with the session's time in the person's zone. */
+export function sessionReminderEvening(lang: Language, session: string, at: Date, timeZone: string): string {
+  const { time } = sessionTime(lang, at, timeZone);
+  return {
+    en: `Tomorrow at ${time}: ${session}. Pack your kit tonight.`,
+    fr: `Demain à ${time}\u00A0: ${session}. Prépare ton sac ce soir.`,
+    es: `Mañana a las ${time}: ${session}. Prepara tu bolsa esta noche.`,
+    de: `Morgen um ${time}: ${session}. Pack heute Abend deine Sachen.`,
+    it: `Domani alle ${time}: ${session}. Prepara la borsa stasera.`,
+    pt: `Amanhã às ${time}: ${session}. Prepara o saco esta noite.`,
+    nl: `Morgen om ${time}: ${session}. Pak vanavond je tas in.`,
+  }[lang];
+}
+
+/** NotificationText.reminderHour. */
+export function sessionReminderHour(lang: Language, session: string): string {
+  return {
+    en: `In an hour: ${session}. See you there!`,
+    fr: `Dans une heure\u00A0: ${session}. À tout à l'heure\u00A0!`,
+    es: `En una hora: ${session}. ¡Nos vemos allí!`,
+    de: `In einer Stunde: ${session}. Bis gleich!`,
+    it: `Tra un'ora: ${session}. A dopo!`,
+    pt: `Daqui a uma hora: ${session}. Até já!`,
+    nl: `Over een uur: ${session}. Tot zo!`,
+  }[lang];
+}

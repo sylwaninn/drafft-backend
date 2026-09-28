@@ -9,6 +9,8 @@ import {
   sessionAutoCancelled,
   sessionChanged,
   sessionName,
+  sessionReminderEvening,
+  sessionReminderHour,
   superLikeReceived,
 } from "./texts.ts";
 import { sportNames } from "./sports.ts";
@@ -72,4 +74,13 @@ Deno.test("message push pieces exist in every language, like NotificationText .m
   assertEquals(messageSent.pt, "enviou-te uma mensagem");
   assertEquals(previewSeparator("fr"), "\u00A0: ");
   assertEquals(previewSeparator("de"), ": ");
+});
+
+Deno.test("session reminders: the app's wording, the time in the person's zone", () => {
+  const at = new Date("2026-10-25T06:00:00Z"); // 7:00 in Paris, the day winter time starts
+  assertEquals(
+    sessionReminderEvening("en", "Sunrise run", at, "Europe/Paris"),
+    "Tomorrow at 7:00: Sunrise run. Pack your kit tonight.",
+  );
+  assertEquals(sessionReminderHour("fr", "Footing"), "Dans une heure : Footing. À tout à l'heure !");
 });
