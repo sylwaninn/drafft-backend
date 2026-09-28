@@ -38,14 +38,16 @@ jobs:
         with:
           deno-version: v2.x
       - name: Format
-        run: deno fmt --check supabase/functions scripts
+        run: deno fmt --check supabase/functions scripts cloudflare
       - name: Lint
-        run: deno lint supabase/functions scripts
+        run: deno lint supabase/functions scripts cloudflare
       - name: Type-check Edge Functions
         working-directory: supabase/functions
         run: deno check ./*/index.ts
       - name: Type-check scripts
         run: deno check scripts/*.ts
+      - name: Media Worker (types, signature and serving tests)
+        run: deno check cloudflare/media-worker/src/*.ts && deno test cloudflare/media-worker
       - name: Unit and Edge Function auth tests (no network)
         working-directory: supabase/functions
         run: deno test --allow-env --allow-read=.
