@@ -53,6 +53,7 @@ const world = {
   rekognition: 0,
   labels: [] as { Name: string; ParentName: string; Confidence: number }[],
   stream: [] as string[],
+  streamUsers: [] as Row[],
 };
 
 function reset() {
@@ -68,6 +69,7 @@ function reset() {
   world.rekognition = 0;
   world.labels = [];
   world.stream = [];
+  world.streamUsers = [];
 }
 
 /** PostgREST filters as supabase-js writes them: `col=eq.value`, and `.or(...)` (all rows). */
@@ -163,14 +165,19 @@ const fakeStream = {
       return Promise.resolve({});
     },
     delete: () => Promise.resolve({}),
-    sendMessage: (m: { id: string }) => {
+    sendMessage: (m: { id: string }, options?: { skip_push?: boolean }) => {
       if (messages.has(m.id)) return Promise.reject(new Error(`StreamChat error: message ${m.id} already exists`));
       messages.add(m.id);
+      // Server messages come with db-events' own push, never Stream's.
+      if (!options?.skip_push) return Promise.reject(new Error(`message ${m.id} sent with Stream's push`));
       world.stream.push(`message ${m.id}`);
       return Promise.resolve({});
     },
   }),
-  upsertUsers: () => Promise.resolve({}),
+  upsertUsers: (users: Row[]) => {
+    world.streamUsers.push(...users);
+    return Promise.resolve({});
+  },
   upsertUser: () => Promise.resolve({}),
   banUser: () => Promise.resolve({}),
   unbanUser: () => Promise.resolve({}),
@@ -386,4 +393,36 @@ Deno.test("an unknown event is acked", async () => {
   reset();
   await runEvent({ id: 10, event: "nothing.here", payload: {} });
   assertEquals(calls("ack_event")[0].args, { p_id: 10, p_providers: [] });
+});
+
+Deno.test("stream.user: Stream's user carries the app language and the previews setting for message pushes", async () => {
+  reset();
+  people();
+  world.tables.profiles[0].notify_message_previews = false;
+  world.tables.profiles[1].notify_message_previews = true;
+  await runEvent({ id: 90, event: "stream.user", payload: { userId: ana } });
+  await runEvent({ id: 91, event: "stream.user", payload: { userId: bo } });
+  assertEquals(world.streamUsers, [
+    {
+      id: ana,
+      name: "Ana",
+      language: "fr",
+      drafft_push: { message: "t'a envoyé un message", separator: "\u00A0: ", previews: false },
+    },
+    {
+      id: bo,
+      name: "Bo",
+      language: "en",
+      drafft_push: { message: "sent you a message", separator: ": ", previews: true },
+    },
+  ]);
+  assertEquals(calls("ack_event").length, 2);
+});
+
+Deno.test("stream.user: an account gone since is acked without touching Stream", async () => {
+  reset();
+  people();
+  await runEvent({ id: 92, event: "stream.user", payload: { userId: match } });
+  assertEquals(world.streamUsers, []);
+  assertEquals(calls("ack_event").length, 1);
 });

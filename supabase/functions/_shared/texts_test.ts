@@ -1,8 +1,10 @@
-import { assertEquals } from "jsr:@std/assert@1";
+import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
   language,
   likeReceived,
   matchCreated,
+  messageSent,
+  previewSeparator,
   reaction,
   sessionAutoCancelled,
   sessionChanged,
@@ -63,4 +65,11 @@ Deno.test("every sentence exists in every language", () => {
     }
     assertEquals(sessionAutoCancelled(l, null, "Europe/Paris").length > 0, true);
   }
+});
+
+Deno.test("message push pieces exist in every language, like NotificationText .message and .preview", () => {
+  for (const l of all) assert(messageSent[l].length > 0);
+  assertEquals(messageSent.pt, "enviou-te uma mensagem");
+  assertEquals(previewSeparator("fr"), "\u00A0: ");
+  assertEquals(previewSeparator("de"), ": ");
 });

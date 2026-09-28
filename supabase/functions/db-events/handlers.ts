@@ -386,6 +386,13 @@ export const handlers: Record<string, Handler> = {
     );
   },
 
+  // Name, app language or message previews changed: Stream's user carries them, so the message pushes Stream
+  // sends are in the person's language and show the text only with previews on. Reads the profile now, so a
+  // late or replayed event still writes the current values.
+  async "stream.user"(p: { userId: string }) {
+    await ensureUsers([p.userId]);
+  },
+
   // Paused or resumed. A voluntary pause keeps chats writable; only a hold makes them read-only. The
   // current hold decides, not the payload, so this also lifts a ban left by an older pause (which used to
   // ban) and events arriving out of order still end right.
