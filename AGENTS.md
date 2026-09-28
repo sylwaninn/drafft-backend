@@ -31,7 +31,8 @@ them; Claude Code loads them through `CLAUDE.md`.
 
 ```sh
 deno fmt --check supabase/functions scripts && deno lint supabase/functions scripts \
-  && (cd supabase/functions && deno check ./*/index.ts) && deno check scripts/*.ts \
+  && (cd supabase/functions && deno check ./*/index.ts && deno test --allow-env --allow-read=.) \
+  && deno check scripts/*.ts \
   && supabase test db && supabase db advisors --local --level info -o json | python3 scripts/ci/advisors.py
 ```
 
