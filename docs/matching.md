@@ -111,6 +111,11 @@ moves when the person:
 `swipe(p_target, p_action, p_opener, p_note)` with `like`, `superlike` or `pass`. Each pair is swiped once
 (`already_swiped`).
 
+- **Onboarding first**: `discover`, `swipe`, `undo_last_swipe` and `start_boost` refuse an account that
+  hasn't finished onboarding (`onboarding_required`). Onboarding is where the 18+ check happens.
+- **Who can be liked**: a like or super like checks the person liked again, as Discover does: 18 or older,
+  and their preferences include the liker's gender (`not_eligible`). Answering someone who already liked
+  you is always possible. A pass is never checked.
 - **Likes**: 20 per rolling 24 hours for free accounts (`daily_like_limit`), unlimited with drafft tempo.
   Super likes and passes don't count.
 - **Super likes**: spend one from `wallets.super_likes` (`no_super_likes` at zero). They can carry a note
@@ -130,8 +135,8 @@ moves when the person:
 `start_boost()` spends one boost from `wallets.boosts` for 30 minutes (`boost_ends_at`).
 
 - Refused while one is running, or at zero (`no_boost`).
-- Refused when nobody could see it: no location, not onboarded, no approved photo (`not_visible`), or
-  paused (`paused`). The boost is kept.
+- Refused when nobody could see it: not onboarded (`onboarding_required`), no location or no approved
+  photo (`not_visible`), or paused (`paused`). The boost is kept.
 - Packs of 1, 5 or 10 are bought in the app (RevenueCat, `apply_purchase_event`). drafft tempo adds one
   a week (`private.credit_weekly_boosts`, see `20260924000011_weekly_boost.sql`).
 
@@ -144,6 +149,8 @@ A paused profile (`profiles.paused`, set by the app) is frozen until it resumes:
   read-only: `db-events` bans the person in Stream on `profile.paused` and lifts the ban on resume;
   `stream-token` sets it again at launch, and `media-upload-url` refuses chat uploads (403 `paused`).
   Reading, editing the profile, blocking, reporting, unmatching and deleting the account still work.
+  An account on hold from the team (`moderation`) also can't report, add profile media or register a push
+  token (`moderated`); it can still export its data and delete the account.
 - **Everyone else**: the person leaves decks and Likes tabs, and a swipe on them fails with `not_found`.
   Their matches and chats stay; they can still be written to.
 
@@ -153,6 +160,10 @@ Blocking hides both people from each other everywhere (deck, Likes, chats) and e
 report always blocks too. Unblocking puts the person back in the blocker's deck (their old swipe is
 forgotten); the old chat stays closed.
 
+Reports need an onboarded account with no hold, and at most 10 in 24 hours per person (`report_limit`).
+A report never puts anyone on hold by itself, whatever its reason or how many people send one: every
+report reaches the team, who decide in sophros.
+
 ## Errors
 
 Errors come back from PostgREST with a stable code in `hint`.
@@ -160,14 +171,18 @@ Errors come back from PostgREST with a stable code in `hint`.
 | Code | From | Meaning |
 | --- | --- | --- |
 | `location_required` | `discover` | No location on file: ask for it, then `set_location` |
+| `onboarding_required` | `discover`, `swipe`, `undo_last_swipe`, `start_boost`, `report_user` | The caller hasn't finished onboarding |
+| `moderated` | `discover`, `swipe`, `undo_last_swipe`, `start_boost`, sessions, `report_user`, `add_profile_media`, `register_push_token` | The caller's account is on hold |
 | `paused` | `discover`, `swipe`, `undo_last_swipe`, `start_boost`, sessions | The caller's profile is paused |
 | `not_found` | `swipe` | Target unavailable: not onboarded, paused, or blocked |
+| `not_eligible` | `swipe` | Like refused: the person is under 18, or their preferences leave the caller out |
 | `already_swiped` | `swipe` | This person was swiped already |
 | `daily_like_limit` | `swipe` | 20 likes in the last 24 hours (free accounts) |
 | `no_super_likes` | `swipe` | No super like left |
 | `cannot_undo` | `undo_last_swipe` | Nothing to undo: none, older than 10 minutes, or it made a match |
 | `no_boost` | `start_boost` | None left, or one is running |
-| `not_visible` | `start_boost` | Nobody would see it: no location, photo, or onboarding |
+| `not_visible` | `start_boost` | Nobody would see it: no location or photo |
+| `report_limit` | `report_user` | 10 reports in the last 24 hours |
 
 ## Performance
 

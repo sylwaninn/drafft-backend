@@ -1,5 +1,5 @@
--- The forms reach the team: support requests (with limits), data exports, reports (and when they hold an
--- account), and the email events for a photo approved on a second look and a hold lifted.
+-- The forms reach the team: support requests (with limits), data exports, reports (which never hold an
+-- account by themselves), and the email events for a photo approved on a second look and a hold lifted.
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(15);
@@ -10,6 +10,8 @@ declare
 begin
   insert into auth.users (id, email, aud, role, instance_id)
   values (v_id, p_email, 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000');
+  -- Reports need an onboarded account (20260928000041).
+  update public.profiles set onboarded_at = now() where id = v_id;
   return v_id;
 end $$;
 
@@ -64,15 +66,15 @@ select public.report_user((select ed from ids), 'fake');
 select pg_temp.login((select cy from ids));
 select public.report_user((select ed from ids), 'harassment');
 reset role;
-select is((select moderation::text from public.profiles where id = (select ed from ids)), 'review',
-  'three people in 30 days: held for review');
+select is((select moderation::text from public.profiles where id = (select ed from ids)), null,
+  'three people in 30 days: still no hold, the team decides');
 
 set local role authenticated;
 select pg_temp.login((select ana from ids));
 select public.report_user((select di from ids), 'underage');
 reset role;
-select is((select note from private.moderation_log where user_id = (select di from ids) order by id desc limit 1),
-  'reported as underage', 'someone reported as underage is held at once');
+select is((select moderation::text from public.profiles where id = (select di from ids)), null,
+  'someone reported as underage is not held by the report');
 
 -- MARK: Emails on good news
 
@@ -84,6 +86,7 @@ select is((select payload ->> 'userId' from private.outbox where event = 'media.
 select is((select review_requested_at from public.profile_media where user_id = (select ana from ids)), null,
   'and leaves the queue');
 
+select public.set_moderation((select di from ids), 'review', 'held by the team');
 select public.set_moderation((select di from ids), null);
 select is((select payload ->> 'previous' from private.outbox where event = 'account.moderation' order by id desc limit 1),
   'review', 'a lifted hold is emailed (db-events)');

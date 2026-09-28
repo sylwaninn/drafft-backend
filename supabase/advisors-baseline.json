@@ -37,7 +37,6 @@
   "unindexed_foreign_keys_public_matches_matches_ended_by_fkey": "Not indexed yet: add an index once a query filters or joins on it, or before the table grows (deletes on the parent scan it).",
   "unindexed_foreign_keys_public_profile_sports_profile_sports_sport_id_fkey": "Not indexed yet: add an index once a query filters or joins on it, or before the table grows (deletes on the parent scan it).",
   "unindexed_foreign_keys_public_reports_reports_reported_fkey": "Not indexed yet: add an index once a query filters or joins on it, or before the table grows (deletes on the parent scan it).",
-  "unindexed_foreign_keys_public_reports_reports_reporter_fkey": "Not indexed yet: add an index once a query filters or joins on it, or before the table grows (deletes on the parent scan it).",
   "unindexed_foreign_keys_public_sessions_sessions_proposer_id_fkey": "Not indexed yet: add an index once a query filters or joins on it, or before the table grows (deletes on the parent scan it).",
   "unindexed_foreign_keys_public_sessions_sessions_replaces_id_fkey": "Not indexed yet: add an index once a query filters or joins on it, or before the table grows (deletes on the parent scan it).",
   "unindexed_foreign_keys_public_sessions_sessions_sport_id_fkey": "Not indexed yet: add an index once a query filters or joins on it, or before the table grows (deletes on the parent scan it)."
