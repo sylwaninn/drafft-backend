@@ -91,9 +91,12 @@ Edge Functions (signed in unless noted):
 | `app-config` | public: `mediaUrl`, where media keys are served from |
 | `stream-token` | a Stream Chat token (for the chat, not wired in the app yet) |
 
-Purchases: `POST /functions/v1/purchase-sync` (signed in, no body), right after a purchase or a restore,
-reads the caller's purchases from RevenueCat's REST API v2 and answers the updated wallet (`super_likes`,
-`boosts`, `boost_ends_at`, `premium_until`, `weekly_boost_at`), so the credit doesn't wait for the webhook.
+Purchases: `POST /functions/v1/purchase-sync` (signed in, body `{ "transaction_id": "<App Store transaction id>" }`
+or empty), right after a purchase or a restore, reads the caller's purchases from RevenueCat's REST API v2 and
+answers `{ wallet, transaction }`: `wallet` is the updated balance (`super_likes`, `boosts`, `boost_ends_at`,
+`premium_until`, `weekly_boost_at`), so the credit doesn't wait for the webhook; `transaction` is
+`{ id, credited }` for the transaction asked about (`null` without one). The app trusts `credited`: true once
+that consumable is credited to the caller and not refunded, or that subscription is owned and premium is active.
 Consumables are credited once per App Store transaction (`private.purchase_credits`, shared with
 `revenuecat-webhook`, which stays the safety net); `premium_until` is copied from the active `drafft_tempo`
 entitlement. Only the project's store environment counts (`purchase_environment`). Errors: 429
