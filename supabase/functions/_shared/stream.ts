@@ -21,7 +21,7 @@ export function useStreamClientForTests(fake: unknown) {
 /**
  * Creates the match channel if needed (idempotent), and returns it. Null when the match has ended (unmatch,
  * block) or is gone (a deleted account): events are retried and arrive out of order, so a late
- * `match.created` or `session.*` must not bring back a channel that `match.ended` deleted. The match is read
+ * `match.created` or `session.*` must not reopen a channel that `match.ended` froze. The match is read
  * here, at delivery, never taken from the payload.
  */
 export async function ensureChannel(matchId: string) {
