@@ -41,3 +41,48 @@ export function reaction(lang: Language, name: string, emoji: string, text?: str
     nl: `${name} reageerde met ${emoji} op: ‘${t}’`,
   }[lang];
 }
+
+/** "Tuesday 14 October at 7:00", in the person's language and time zone. */
+function sessionTime(lang: Language, at: Date, timeZone: string): { day: string; time: string } {
+  const zone = (() => {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone });
+      return timeZone;
+    } catch {
+      return "UTC";
+    }
+  })();
+  const locale = lang === "pt" ? "pt-PT" : lang === "en" ? "en-GB" : lang;
+  const day = new Intl.DateTimeFormat(locale, { timeZone: zone, weekday: "long", day: "numeric", month: "long" })
+    .format(at);
+  const time = new Intl.DateTimeFormat(locale, { timeZone: zone, hour: "numeric", minute: "2-digit" }).format(at);
+  return { day, time };
+}
+
+/**
+ * An upcoming session cancelled on its own (the match ended, an account was banned or deleted). Neutral
+ * on purpose: no name, no reason. Without a single time (a proposal with several options), no date.
+ */
+export function sessionAutoCancelled(lang: Language, at: Date | null, timeZone: string): string {
+  if (!at) {
+    return {
+      en: "Your session was cancelled.",
+      fr: "Ta séance a été annulée.",
+      es: "Tu sesión se ha cancelado.",
+      de: "Deine Session wurde abgesagt.",
+      it: "La tua sessione è stata annullata.",
+      pt: "A tua sessão foi cancelada.",
+      nl: "Je sessie is geannuleerd.",
+    }[lang];
+  }
+  const { day, time } = sessionTime(lang, at, timeZone);
+  return {
+    en: `Your session on ${day} at ${time} was cancelled.`,
+    fr: `Ta séance du ${day} à ${time} a été annulée.`,
+    es: `Tu sesión del ${day} a las ${time} se ha cancelado.`,
+    de: `Deine Session am ${day} um ${time} wurde abgesagt.`,
+    it: `La tua sessione di ${day} alle ${time} è stata annullata.`,
+    pt: `A tua sessão de ${day} às ${time} foi cancelada.`,
+    nl: `Je sessie op ${day} om ${time} is geannuleerd.`,
+  }[lang];
+}

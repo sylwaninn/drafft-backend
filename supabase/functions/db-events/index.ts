@@ -12,7 +12,7 @@ import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
 import { ensureChannel, ensureUsers, sendOnce, setChatHeld, stream } from "../_shared/stream.ts";
 import { admin, check, must } from "../_shared/supabase.ts";
-import { language, weeklyBoost } from "../_shared/texts.ts";
+import { language, sessionAutoCancelled, weeklyBoost } from "../_shared/texts.ts";
 
 interface Event {
   id: number;
@@ -159,6 +159,40 @@ const handlers: Record<string, Handler> = {
   "session.accepted": (p) => sessionEvent(p, "accepted"),
   "session.declined": (p) => sessionEvent(p, "declined"),
   "session.cancelled": (p) => sessionEvent(p, "cancelled"),
+
+  // An upcoming session cancelled with its match or an account (unmatch, block, report, ban, deletion).
+  // Everything comes in the payload: a deleted account can't be read any more. Same neutral push in
+  // every case; the chat card only while the chat exists (a ban).
+  async "session.auto_cancelled"(p: {
+    sessionId: string;
+    matchId: string;
+    to: string;
+    at: string | null;
+    language: string;
+    timezone: string;
+    notify: boolean;
+    chatFrom: string | null;
+  }) {
+    // An ended match has no chat to write in (ensureChannel never reopens it): the push alone.
+    const opened = p.chatFrom ? await ensureChannel(p.matchId) : null;
+    if (p.chatFrom && opened) {
+      await sendOnce(opened.channel, {
+        id: `session-${p.sessionId}-cancelled`,
+        user_id: p.chatFrom,
+        text: "Cancelled the session",
+        drafft: { type: "session", sessionId: p.sessionId, status: "cancelled" },
+      });
+    }
+    // Session updates follow the Messages setting, like the other session pushes.
+    if (!p.notify) return;
+    await pushToUser(p.to, {
+      title: "drafft",
+      body: sessionAutoCancelled(language(p.language), p.at ? new Date(p.at) : null, p.timezone),
+      data: { kind: "session_cancelled", session: p.sessionId },
+      // A retried event replaces the push instead of adding a second one.
+      collapseId: `session-cancelled-${p.sessionId}`,
+    });
+  },
 
   // Moderation gate. Nothing is visible to others until approved.
   async "media.created"(p: { mediaId: string; userId: string; key: string; posterKey?: string }) {
