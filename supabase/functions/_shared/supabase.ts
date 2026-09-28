@@ -6,7 +6,7 @@ import { HttpError } from "./http.ts";
  * The key that bypasses RLS: the `sb_secret_…` key Supabase injects (SUPABASE_SECRET_KEYS, JSON by key
  * name). The legacy service_role key is disabled on both projects; locally, `supabase start` still has it.
  */
-function secretKey(): string {
+export function secretKey(): string {
   const injected = optionalEnv("SUPABASE_SECRET_KEYS");
   if (injected) {
     const keys = JSON.parse(injected) as Record<string, string>;

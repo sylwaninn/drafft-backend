@@ -1,11 +1,11 @@
 // Auth emails in the app's languages (same register as texts.ts: casual, European Portuguese, a
-// non-breaking space before ":" in French). One layout: the drafft wordmark, a title, a line, then a
-// button (reset link) or the code in large digits (codes the app types into 6 boxes).
+// non-breaking space before ":" in French). One layout: the drafft wordmark, a title, a line, then the
+// code in large digits: every auth email carries a 6-digit code the app types into 6 boxes, never a link.
 import type { Language } from "./texts.ts";
 
 export type AuthEmail = "confirm" | "reset" | "newEmail" | "reauth";
 
-type Copy = { subject: string; title: string; body: string; action?: string; note: string; ignore: string };
+type Copy = { subject: string; title: string; body: string; note: string; ignore: string };
 
 const copy: Record<AuthEmail, Record<Language, Copy>> = {
   confirm: {
@@ -61,59 +61,52 @@ const copy: Record<AuthEmail, Record<Language, Copy>> = {
   },
   reset: {
     en: {
-      subject: "Reset your password",
-      title: "New password",
-      body: "Tap the button to choose a new password.",
-      action: "Choose a new password",
-      note: "The link works for 1 hour.",
+      subject: "{code} is your code",
+      title: "Reset your password",
+      body: "To choose a new drafft password, enter this code:",
+      note: "Valid for 1 hour.",
       ignore: "If you didn't ask for this, you can ignore this email: your password stays the same.",
     },
     fr: {
-      subject: "Réinitialise ton mot de passe",
-      title: "Nouveau mot de passe",
-      body: "Appuie sur le bouton pour choisir un nouveau mot de passe.",
-      action: "Choisir un mot de passe",
-      note: "Le lien est valable 1 heure.",
+      subject: "{code} est ton code",
+      title: "Réinitialise ton mot de passe",
+      body: "Pour choisir un nouveau mot de passe drafft, saisis ce code :",
+      note: "Valable 1 heure.",
       ignore: "Si tu n'as rien demandé, ignore cet e-mail : ton mot de passe ne change pas.",
     },
     es: {
-      subject: "Restablece tu contraseña",
-      title: "Nueva contraseña",
-      body: "Pulsa el botón para elegir una contraseña nueva.",
-      action: "Elegir una contraseña",
-      note: "El enlace vale durante 1 hora.",
+      subject: "{code} es tu código",
+      title: "Restablece tu contraseña",
+      body: "Para elegir una nueva contraseña de drafft, introduce este código:",
+      note: "Válido durante 1 hora.",
       ignore: "Si no lo has pedido, ignora este correo: tu contraseña no cambia.",
     },
     de: {
-      subject: "Setze dein Passwort zurück",
-      title: "Neues Passwort",
-      body: "Tippe auf den Button, um ein neues Passwort zu wählen.",
-      action: "Neues Passwort wählen",
-      note: "Der Link ist 1 Stunde gültig.",
+      subject: "{code} ist dein Code",
+      title: "Setze dein Passwort zurück",
+      body: "Um ein neues drafft-Passwort zu wählen, nutze diesen Code:",
+      note: "1 Stunde gültig.",
       ignore: "Wenn du das nicht angefordert hast, ignoriere diese E-Mail: Dein Passwort bleibt gleich.",
     },
     it: {
-      subject: "Reimposta la password",
-      title: "Nuova password",
-      body: "Tocca il pulsante per scegliere una nuova password.",
-      action: "Scegli una password",
-      note: "Il link è valido per 1 ora.",
+      subject: "{code} è il tuo codice",
+      title: "Reimposta la password",
+      body: "Per scegliere una nuova password di drafft, inserisci questo codice:",
+      note: "Valido per 1 ora.",
       ignore: "Se non l'hai chiesto tu, ignora questa email: la tua password non cambia.",
     },
     pt: {
-      subject: "Repõe a tua palavra-passe",
-      title: "Nova palavra-passe",
-      body: "Toca no botão para escolheres uma nova palavra-passe.",
-      action: "Escolher palavra-passe",
-      note: "O link é válido durante 1 hora.",
+      subject: "{code} é o teu código",
+      title: "Repõe a tua palavra-passe",
+      body: "Para escolheres uma nova palavra-passe do drafft, introduz este código:",
+      note: "Válido durante 1 hora.",
       ignore: "Se não pediste isto, ignora este email: a tua palavra-passe mantém-se.",
     },
     nl: {
-      subject: "Stel je wachtwoord opnieuw in",
-      title: "Nieuw wachtwoord",
-      body: "Tik op de knop om een nieuw wachtwoord te kiezen.",
-      action: "Kies een wachtwoord",
-      note: "De link is 1 uur geldig.",
+      subject: "{code} is je code",
+      title: "Stel je wachtwoord opnieuw in",
+      body: "Om een nieuw drafft-wachtwoord te kiezen, gebruik je deze code:",
+      note: "1 uur geldig.",
       ignore: "Heb je dit niet aangevraagd? Negeer deze e-mail: je wachtwoord blijft hetzelfde.",
     },
   },
@@ -233,31 +226,18 @@ export const color = {
 
 export type Rendered = { subject: string; html: string; text: string };
 
-/** A link email (confirm, reset) takes `link`; a code email (newEmail, reauth) takes `code`. */
+/** Every auth email takes the `code`; a new address also its `email`. */
 export function renderAuthEmail(
   kind: AuthEmail,
   lang: Language,
-  vars: { link?: string; code?: string; email?: string },
+  vars: { code?: string; email?: string },
 ): Rendered {
   const c = copy[kind][lang];
   const body = c.body.replace("{email}", vars.email ?? "");
   const htmlBody = escape(c.body).replace("{email}", `<strong>${escape(vars.email ?? "")}</strong>`);
-
-  let main: string;
-  let textMain: string;
-  if (c.action) {
-    if (!vars.link) throw new Error(`${kind}: link missing`);
-    main =
-      `<a href="${escape(vars.link)}" style="display:inline-block;background:${color.primary};color:${color.ink};` +
-      `font-weight:600;font-size:16px;text-decoration:none;padding:14px 24px;border-radius:999px">${
-        escape(c.action)
-      }</a>`;
-    textMain = `${c.action}: ${vars.link}`;
-  } else {
-    if (!vars.code) throw new Error(`${kind}: code missing`);
-    main = codeBox(vars.code);
-    textMain = vars.code;
-  }
+  if (!vars.code) throw new Error(`${kind}: code missing`);
+  const main = codeBox(vars.code);
+  const textMain = vars.code;
 
   const html = layout(lang, c.subject.replace("{code}", vars.code ?? ""), [
     title(c.title),

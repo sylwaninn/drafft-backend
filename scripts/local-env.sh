@@ -8,7 +8,6 @@
 #   SEND_SMS_HOOK_SECRET
 #   MAILPIT_URL              auth emails and SMS go to the local Mailpit...
 #   EMAIL_REAL, SMS_REAL     ...unless set to true: then Resend and Twilio really send (costs money)
-#   AUTH_PUBLIC_URL          links in emails, on this Mac's Wi-Fi address so an iPhone can open them
 # Prints nothing secret.
 #
 #   scripts/local-env.sh                           # then: supabase functions serve --env-file supabase/functions/.env.local
@@ -48,7 +47,6 @@ hook_secret() { awk -v s="[auth.hook.$1]" '$0 == s { on = 1; next } /^\[/ { on =
 email_hook=$(hook_secret send_email)
 sms_hook=$(hook_secret send_sms)
 [ -n "$email_hook" ] && [ -n "$sms_hook" ] || { echo "No send_email/send_sms hook secret in supabase/config.toml." >&2; exit 1; }
-host=$(ipconfig getifaddr en0 2>/dev/null || echo 127.0.0.1)
 
 umask 077
 # noclobber: fails rather than overwrite, even if the file appeared since the check above.
@@ -62,7 +60,6 @@ set -o noclobber
   echo "SEND_EMAIL_HOOK_SECRET=$email_hook"
   echo "SEND_SMS_HOOK_SECRET=$sms_hook"
   echo "MAILPIT_URL=http://host.docker.internal:55424"
-  echo "AUTH_PUBLIC_URL=http://$host:55421"
   echo "EMAIL_REAL=false"
   echo "SMS_REAL=false"
   # Mailpit takes any sender: staging's if it has one, a placeholder otherwise.
