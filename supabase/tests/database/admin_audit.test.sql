@@ -1,4 +1,4 @@
--- sophros' audit log, completed (20260928000003): no TRUNCATE, list reads logged, and chat photo flags and
+-- sophros' audit log, completed (20260928000092): no TRUNCATE, list reads logged, and chat photo flags and
 -- matches in an account for moderators and admins only.
 begin;
 create extension if not exists pgtap with schema extensions;
