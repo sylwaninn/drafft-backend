@@ -61,8 +61,13 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 | Push | `register_push_token`, `unregister_push_token`; `PATCH /rest/v1/profiles` with `language` (en, fr, es, de, it, pt, nl) and the settings `notify_matches`, `notify_likes`, `notify_messages` (mirrored to Stream), `notify_message_previews`, `notify_reactions`, `notify_session_evening`, `notify_session_hour_before`, `notify_weekly_boost` (the app reads them back at launch) |
 
 Realtime: subscribe to the private broadcast channel `user:<your id>`. Events: `like`, `match`,
-`match_ended`, `session`, `media`, `wallet` (weekly boost credited: new `boosts` balance), `moderation`
+`match_ended`, `session`, `media`, `wallet` (any change to your wallet: purchase, refund, weekly boost,
+`start_boost`, super like, undo, premium starting or ending, RevenueCat transfer; the payload is the whole balance:
+`super_likes`, `boosts`, `boost_ends_at`, `premium_until`, `weekly_boost_at`), `moderation`
 (the account's hold changed: `{ state }`, null once lifted).
+
+RevenueCat `TRANSFER` (restore on another drafft account): `premium_until` moves from the `transferred_from`
+accounts to the `transferred_to` ones; consumables already credited stay with the account that bought them.
 
 Reactions: the app sends the emoji itself as the Stream reaction type (`enforce_unique`: one per person per
 message) and never on its own messages. Stream's webhook (`scripts/stream-webhook.ts`) calls `stream-webhook`,
