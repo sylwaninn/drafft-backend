@@ -22,6 +22,7 @@ concurrency:
 
 env:
   # Pinned: `latest` asks GitHub's API for the release and hits its rate limit. Same as local.
+  # drift.yml reads this line: keep it `SUPABASE_CLI: <version>`.
   SUPABASE_CLI: 2.90.0
 
 jobs:

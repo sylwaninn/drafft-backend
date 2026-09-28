@@ -6,8 +6,8 @@
 #   scripts/deploy.sh production [--secrets]
 #   echo production | scripts/deploy.sh production   (no terminal to type the confirmation in)
 #
-# Staging first, always. The CLI stays linked to staging afterwards, so a stray `supabase db push`
-# never lands on production.
+# Staging first, always. The CLI is linked back to staging on the way out, success or failure, so a
+# stray `supabase db push` never lands on production.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,7 +25,16 @@ case "$env" in
     ;;
   *) echo "Usage: $0 staging|production [--secrets]" >&2; exit 64 ;;
 esac
-[ "$ref" != STAGING_REF ] || { echo "Set STAGING_REF in $0 first." >&2; exit 1; }
+# A project ref is 20 lowercase letters: anything else is a placeholder or a typo.
+[[ "$ref" =~ ^[a-z]{20}$ ]] || { echo "Set a valid project ref for $env in $0 first (got '$ref')." >&2; exit 1; }
+
+# Runs on every exit, errors included: never leave the CLI linked to production.
+relink_staging() {
+  [ "$ref" = "$STAGING_REF" ] && return
+  supabase link --project-ref "$STAGING_REF" >/dev/null \
+    || echo "warning: couldn't link the CLI back to staging: run supabase link --project-ref $STAGING_REF" >&2
+}
+trap relink_staging EXIT
 
 supabase link --project-ref "$ref"
 supabase db push
@@ -38,5 +47,4 @@ if [ "${2:-}" = --secrets ]; then
   supabase secrets set --project-ref "$ref" --env-file "supabase/functions/.env.$env"
 fi
 
-[ "$ref" = "$STAGING_REF" ] || supabase link --project-ref "$STAGING_REF"
 echo "Deployed to $env ($ref)."

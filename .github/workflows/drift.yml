@@ -15,9 +15,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Supabase CLI version (the one backend.yml pins)
+        id: cli
+        run: |
+          version=$(sed -nE 's/^[[:space:]]*SUPABASE_CLI:[[:space:]]*([0-9.]+).*/\1/p' .github/workflows/backend.yml)
+          [ -n "$version" ] || { echo "::error::No SUPABASE_CLI in .github/workflows/backend.yml"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: supabase/setup-cli@v1
         with:
-          version: 2.90.0
+          version: ${{ steps.cli.outputs.version }}
       - name: Staging and production match the repository
         run: scripts/ci/env-parity.sh --allow-prod-behind
         env:
