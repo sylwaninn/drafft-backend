@@ -337,10 +337,7 @@ const handlers: Record<string, Handler> = {
     if (!request) return;
     await sendEmail(
       request.email,
-      renderNotice("supportReceived", language(request.language), {
-        reference: request.reference,
-        topic: request.topic,
-      }),
+      renderNotice("supportReceived", language(request.language), { reference: request.reference }),
       `support-ack-${request.reference}`,
     );
     await toTeam(
