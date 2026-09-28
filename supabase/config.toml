@@ -468,6 +468,9 @@ verify_jwt = false
 [functions.device-check]
 verify_jwt = false
 
+[functions.purchase-sync]
+verify_jwt = false
+
 # Also called signed out (a stuck sign-up): the person is read from the token when there is one.
 [functions.support]
 verify_jwt = false

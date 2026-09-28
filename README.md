@@ -36,7 +36,7 @@ Principles:
 ```
 supabase/
   migrations/   foundation, profiles, social, sessions, events, purchases, media review, weekly boost, notification settings
-  functions/    stream-token, media-upload-url, chat-media, db-events, delete-account, device-check, support, revenuecat-webhook, stream-webhook, app-config, auth-email, auth-sms, _shared/
+  functions/    stream-token, media-upload-url, chat-media, db-events, delete-account, device-check, support, revenuecat-webhook, purchase-sync, stream-webhook, app-config, auth-email, auth-sms, _shared/
   tests/        pgTAP (supabase test db)
   seed.sql      local Vault secrets
 docs/matching.md    Discover and matching: eligibility, ranking, likes, boosts, pause, error codes
@@ -86,9 +86,22 @@ Edge Functions (signed in unless noted):
 | `chat-media` | silent check of a photo or video sent in a chat (`{ flagged }`, nothing changes for either person) |
 | `delete-account` | deletes the account, its chat history, media and selfies |
 | `device-check` | the iPhone's DeviceCheck token, at each launch and sign-in |
+| `purchase-sync` | credits a purchase or restore straight away from RevenueCat (see Purchases below) |
 | `support` | public: every "Get help" and "Contact us" form, signed in or not (`{ reference }`) |
 | `app-config` | public: `mediaUrl`, where media keys are served from |
 | `stream-token` | a Stream Chat token (for the chat, not wired in the app yet) |
+
+Purchases: `POST /functions/v1/purchase-sync` (signed in, body `{ "transaction_id": "<App Store transaction id>" }`
+or empty), right after a purchase or a restore, reads the caller's purchases from RevenueCat's REST API v2 and
+answers `{ wallet, transaction }`: `wallet` is the updated balance (`super_likes`, `boosts`, `boost_ends_at`,
+`premium_until`, `weekly_boost_at`), so the credit doesn't wait for the webhook; `transaction` is
+`{ id, credited }` for the transaction asked about (`null` without one). The app trusts `credited`: true once
+that consumable is credited to the caller and not refunded, or that subscription is owned and premium is active.
+Consumables are credited once per App Store transaction (`private.purchase_credits`, shared with
+`revenuecat-webhook`, which stays the safety net); `premium_until` is copied from the active `drafft_tempo`
+entitlement. Only the project's store environment counts (`purchase_environment`). Errors: 429
+`too_many_requests` (1 call per 5 s, 30 per hour and account), 503 `sync_not_configured` (secrets missing),
+503 `sync_unavailable` (RevenueCat unreachable; the webhook still credits).
 
 Auth emails: Supabase Auth sends none itself. Its Send Email hook calls `auth-email`, which picks the
 person's language (`profiles.language`, set at sign-up from the app's `language` metadata) and sends through
@@ -241,7 +254,9 @@ Setting it up once:
    R2 token (bucket `drafft-media-staging`, EU), `R2_BUCKET=drafft-media-staging`,
    `R2_ENDPOINT=https://<account>.eu.r2.cloudflarestorage.com` (EU jurisdiction buckets only answer there),
    `MEDIA_PUBLIC_URL=https://pub-2877e6f189f0420785f5cd685f44f789.r2.dev`, the Stream staging app's keys,
-   and fresh random `DB_EVENTS_SECRET` and `REVENUECAT_WEBHOOK_AUTH` (`openssl rand -hex 32`). Then
+   and fresh random `DB_EVENTS_SECRET` and `REVENUECAT_WEBHOOK_AUTH` (`openssl rand -hex 32`), and
+   `REVENUECAT_SECRET_KEY` (a v2 secret key of `drafft staging`, read-only on customer information and
+   project configuration) with `REVENUECAT_PROJECT_ID=proje5eb803d` for `purchase-sync`. Then
    `scripts/deploy.sh staging --secrets`. Wrangler needs `--jurisdiction eu` to see either bucket.
 4. `scripts/sync-vault.sh staging`: the database's Vault secrets (`edge_functions_url`, `db_events_secret`
    from `DB_EVENTS_SECRET`, `purchase_environment`), so database events reach the functions. Run it again whenever `DB_EVENTS_SECRET`
