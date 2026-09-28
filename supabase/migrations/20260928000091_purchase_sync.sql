@@ -33,6 +33,7 @@ create table private.purchase_credits (
 create index purchase_credits_user_idx on private.purchase_credits (user_id);
 
 create table private.purchase_sync_calls (
+  id bigint generated always as identity primary key,
   user_id uuid not null references public.profiles (id) on delete cascade,
   called_at timestamptz not null default now()
 );
