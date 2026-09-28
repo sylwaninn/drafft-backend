@@ -76,7 +76,7 @@ select is((select count(*) from public.my_matches()), 1::bigint, 'matches stay r
 select pg_temp.login((select dan from ids));
 select throws_ok(format('select public.swipe(%L, %L)', (select pia from ids), 'like'), 'P0001',
   'profile not available', 'nobody can swipe on a paused profile');
-select is((select count(*) from public.liked_me() c, ids where (c ->> 'id')::uuid = ids.pia), 0::bigint,
+select is((select count(*) from public.liked_me()), 0::bigint,
   'their likes leave the Likes tab');
 select pg_temp.login((select ben from ids));
 select lives_ok(format('select public.cancel_session(%L)', (select id from s1)),
