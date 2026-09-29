@@ -95,8 +95,9 @@ The app-side list lives in `drafft/TODO.md`.
 - [x] Terms and sensitive-data consent recorded on the server (`accept_terms`, logged in
       `private.consent_events`, required by `complete_onboarding`). Asking accounts onboarded before at
       their next open is the app's part (`drafft`, `feat/sensitive-data-consent`).
-- [ ] Data export (right of access): an Edge Function that bundles the profile, media keys, swipes,
-      matches, sessions and Stream messages.
+- [x] Data export (right of access): built and emailed automatically (db-events `export.requested`, a
+      link valid 7 days, files deleted after 7 days). Still to do: raise the Storage upload limit in production
+      (dashboard, Storage settings), then `EXPORT_MAX_BYTES`, so videos always fit in the archive.
 - [x] Retention on the privacy policy's schedule (`privacy-purge`, see README "Privacy and data retention"):
       reports, moderation records, the audit log, identity fingerprints, bans, help requests, purchases, dead
       letters (never a failed erasure). Both daily jobs are watched by `ops_check`. Swipes stay for the

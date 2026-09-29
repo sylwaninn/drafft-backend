@@ -63,7 +63,7 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 | Sessions | `propose_session`, `respond_session`, `counter_session`, `cancel_session`, `upcoming_sessions` |
 | Safety | `block_user`, `unblock_user`, `blocked_users`, `report_user`, `report_app_open(p_install, p_device)` (each time the app comes to the front: install id, model, iOS, app version, locale, time zone; the IP and country come from the request) |
 | Moderation | `request_media_review(p_media)` (a second look at a refused photo), `submit_selfie(p_path)` (after uploading the selfie to the private Storage bucket `verification-selfies`, in the person's own folder, while a selfie is asked) |
-| Your data | `request_data_export()` (one open request at a time; the team sends the export) |
+| Your data | `request_data_export()` (one open request at a time; the export is emailed as a link, see Data export below) |
 | Push | `register_push_token`, `unregister_push_token`; `PATCH /rest/v1/profiles` with `language` (en, fr, es, de, it, pt, nl) and the settings `notify_matches`, `notify_likes`, `notify_messages` (mirrored to Stream), `notify_message_previews`, `notify_reactions`, `notify_session_evening`, `notify_session_hour_before`, `notify_weekly_boost` (the app reads them back at launch) |
 
 Terms and consent: gender and the genders someone wants to see can reveal their sexual orientation, lifestyle
@@ -105,7 +105,7 @@ Edge Functions (signed in unless noted):
 | --- | --- |
 | `media-upload-url` | a presigned R2 upload URL for a photo, video or voice intro |
 | `chat-media` | silent check of a photo or video sent in a chat (`{ flagged }`, nothing changes for either person) |
-| `delete-account` | deletes the account, its chats, media and selfies, or keeps it for safety (erased later by db-events `account.purge`) |
+| `delete-account` | deletes the account, its chats, media, selfies and data exports, or keeps it for safety (erased later by db-events `account.purge`) |
 | `device-check` | the iPhone's DeviceCheck token, at each launch and sign-in |
 | `phone-code` | texts a code to verify a number: email confirmed, limits per number, account and IP, Twilio Lookup (mobile lines only, fails closed) |
 | `purchase-sync` | credits a purchase or restore straight away from RevenueCat (see Purchases below) |
@@ -240,6 +240,26 @@ event on its way, or queued in the last week, is not queued again: a failed one 
 was first queued. Stream counts as done only when it says the thing is gone (HTTP 404 or its code 16), a missing
 channel is found with a search that never creates one, and a user deletion (a Stream task) is done only when the
 task completes.
+
+### Data export
+
+You › Privacy & data › Export my data calls `request_data_export()`, which queues `export.requested`
+(migration `20260930000301`). db-events claims the request (`export_begin`: one build at a time, taken back after
+15 minutes), builds a zip (`_shared/export.ts`): `data.json` with everything `export_data(user)` returns (account and
+sign-ins, the profile row with lifestyle, settings, language and consent, sports, prompts, media list, rounded
+location, wallet, likes sent, matches, sessions, blocks, reports made, holds, selfie dates, help requests and
+replies, purchases, devices and IPs, push tokens, earlier requests) plus the messages the person sent (Stream,
+every match, ended ones too), and their own photos, videos, posters and voice intro under `files/` (R2). It
+stores it in the private Storage bucket `data-exports` (`<user id>/<request id>.zip`), emails a signed link valid 7
+days in the person's language (Reply-To SUPPORT_INBOX), and marks the request fulfilled (`export_ready`). Left out
+on purpose: reports about the person (they protect whoever made them), the team's notes and audit log, likes
+received. `data-exports-expire` (hourly) queues `export.expired` 7 days on, which deletes the file;
+`delete-account` deletes the account's folder at once.
+
+The archive must fit the project's Storage upload limit (50 MiB by default): files that would take it over
+`EXPORT_MAX_BYTES` (function secret, 45 MiB by default) are listed in `data.json` (`files.notIncluded`) and the team
+gets a short email to send them another way. It is the only team copy; sophros still lists requests and can
+fulfil one by hand. Raise the Storage upload limit in production, then `EXPORT_MAX_BYTES` with it.
 
 ## Local development
 
