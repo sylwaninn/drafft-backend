@@ -49,7 +49,7 @@ const world = {
   failRead: undefined as string | undefined,
   pushes: [] as { token: string; collapse: string | null }[],
   pushOutcome: {} as Record<string, Outcome>,
-  emails: [] as { to: string; key: string | null }[],
+  emails: [] as { to: string; key: string | null; replyTo?: string | null; subject?: string; text?: string }[],
   emailOutcome: [] as Outcome[],
   rekognition: 0,
   labels: [] as { Name: string; ParentName: string; Confidence: number }[],
@@ -77,6 +77,8 @@ const world = {
   removed: [] as string[],
   /** R2 object sizes by key for reads (a negative one: missing); any other key is 4 bytes. */
   sizes: {} as Record<string, number>,
+  /** Stream messages by id, as getMessage reads them. */
+  messages: {} as Record<string, Row>,
 };
 
 function reset() {
@@ -107,6 +109,7 @@ function reset() {
   world.exports = {};
   world.removed = [];
   world.sizes = {};
+  world.messages = {};
 }
 
 /** PostgREST filters as supabase-js writes them: `col=eq.value`, and `.or(...)` (all rows). */
@@ -216,8 +219,14 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
     const outcome = world.emailOutcome.shift() ?? "ok";
     if (outcome === "network") throw new TypeError("error sending request: connection reset");
     if (outcome === "down") return respond({ message: "service unavailable" }, 503);
-    const body = JSON.parse(text) as { to: string[] };
-    world.emails.push({ to: body.to[0], key: request.headers.get("idempotency-key") });
+    const body = JSON.parse(text) as { to: string[]; reply_to?: string; subject: string; text: string };
+    world.emails.push({
+      to: body.to[0],
+      key: request.headers.get("idempotency-key"),
+      replyTo: body.reply_to ?? null,
+      subject: body.subject,
+      text: body.text,
+    });
     return respond({ id: crypto.randomUUID() });
   }
 
@@ -335,6 +344,10 @@ const fakeStream = {
       world.frozen.filter((c) => c.created_at > after).slice(0, options.limit ?? 30).map((channel) => ({ channel })),
     );
   },
+  getMessage: (id: string) =>
+    world.messages[id]
+      ? Promise.resolve({ message: world.messages[id] })
+      : Promise.reject(Object.assign(new Error(`message ${id} not found`), { status: 404 })),
 };
 
 const { useStreamClientForTests } = await import("../_shared/stream.ts");
@@ -1001,7 +1014,11 @@ Deno.test("export.requested: built, stored, emailed with a 7-day link in the per
       { path: "files/chat/c.jpg", bytes: 4, part: 1 },
     ],
   });
-  assertEquals(world.emails, [{ to: "ana@drafft.so", key: "export-77" }], "no team copy when nothing is left out");
+  assertEquals(
+    world.emails.map(({ to, key }) => ({ to, key })),
+    [{ to: "ana@drafft.so", key: "export-77" }],
+    "no team copy when nothing is left out",
+  );
   assertEquals(steps(40), ["parts=1", "email"]);
   assertEquals(calls("export_stored")[0].args, { p_id: 77, p_paths: [`${ana}/77-1.zip`] });
   assertEquals(calls("export_ready")[0].args, { p_id: 77 });
@@ -1058,7 +1075,11 @@ Deno.test("export.requested: over the limit, split in parts under it, in order, 
     ["files/voice/v.m4a", 2],
   ]);
   assertEquals(exported(paths[1]), { files: ["files/photos/2.jpg", "files/voice/v.m4a"], data: null });
-  assertEquals(world.emails, [{ to: "ana@drafft.so", key: "export-78" }], "one email, no team copy");
+  assertEquals(
+    world.emails.map(({ to, key }) => ({ to, key })),
+    [{ to: "ana@drafft.so", key: "export-78" }],
+    "one email, no team copy",
+  );
   assertEquals(steps(43), ["parts=2", "email"]);
   assertEquals(calls("export_stored")[0].args, { p_id: 78, p_paths: paths });
 });
@@ -1164,4 +1185,75 @@ Deno.test("export.sweep: parts no request refers to are deleted, nothing else", 
     payload: { paths: [`${ana}/90-1.zip`, "../elsewhere/x.zip", `${ana}/notes.txt`] },
   });
   assertEquals(world.removed, [`${ana}/90-1.zip`]);
+});
+
+// MARK: Statements of reasons (20260930000401)
+
+function decision(kind: string, target: string | null = null, details: string | null = "Keep it friendly, please.") {
+  world.rpcResults.moderation_decision = [{
+    user_id: ana,
+    kind,
+    category: "harassment",
+    details,
+    target,
+    language: "fr",
+  }];
+}
+
+Deno.test("moderation.decision: a ban is emailed with its reason and how to contest it, and pushed", async () => {
+  reset();
+  people();
+  decision("account_banned");
+  await runEvent({ id: 50, event: "moderation.decision", payload: { id: 7 }, pushUntil: inAnHour() });
+  assertEquals(world.emails.length, 1);
+  const [email] = world.emails;
+  assertEquals([email.to, email.key, email.replyTo], ["ana@drafft.so", "decision-7", "team@drafft.so"]);
+  assertEquals(email.subject, "Ton compte drafft est fermé");
+  assert(email.text?.includes("Pourquoi\u00A0: harceler, menacer ou insulter quelqu'un."), "the reason, in French");
+  assert(email.text?.includes("Keep it friendly, please."), "the team's note, as written");
+  assert(email.text?.includes("Centre d'aide"), "how to contest it");
+  assertEquals(world.pushes.map((p) => p.collapse), [`moderation-${ana}`]);
+  assertEquals(steps(50), ["email", "push"]);
+});
+
+Deno.test("moderation.decision: a refused photo is emailed only (its push already went)", async () => {
+  reset();
+  people();
+  decision("photo_refused", media, null);
+  await runEvent({ id: 51, event: "moderation.decision", payload: { id: 8 }, pushUntil: inAnHour() });
+  assertEquals(world.emails.map((e) => e.key), ["decision-8"]);
+  assert(!world.emails[0].text?.includes("Un mot de l'équipe"), "no note when the team wrote none");
+  assertEquals(world.pushes, []);
+});
+
+Deno.test("moderation.decision: a removed message is told once Stream shows it removed", async () => {
+  reset();
+  people();
+  decision("message_deleted", `${match}/msg-1`);
+  world.messages["msg-1"] = { id: "msg-1", type: "regular" };
+  const event = { id: 52, event: "moderation.decision", payload: { id: 9 }, pushUntil: inAnHour() };
+  await assertRejects(() => runEvent(event));
+  assertEquals([world.emails.length, world.pushes.length, calls("ack_event").length], [0, 0, 0], "not yet");
+
+  world.messages["msg-1"] = { id: "msg-1", type: "deleted", deleted_at: new Date().toISOString() };
+  world.rpc = [];
+  await runEvent(event);
+  assertEquals(world.emails.map((e) => e.key), ["decision-9"]);
+  assertEquals(world.pushes.map((p) => p.collapse), ["decision-9"]);
+  assertEquals(steps(52), ["removed", "email", "push"]);
+});
+
+Deno.test("moderation.decision: an account erased since is acked without a word", async () => {
+  reset();
+  world.rpcResults.moderation_decision = [];
+  await runEvent({ id: 53, event: "moderation.decision", payload: { id: 10 } });
+  assertEquals([world.emails.length, calls("ack_event").length], [0, 1]);
+});
+
+Deno.test("notices: a reply to a moderation email reaches the team", async () => {
+  reset();
+  people();
+  (world.tables.profiles[0] as Row).moderation = null;
+  await runEvent({ id: 54, event: "account.moderation", payload: { userId: ana, previous: "review" } });
+  assertEquals(world.emails.map((e) => e.replyTo), ["team@drafft.so"]);
 });
