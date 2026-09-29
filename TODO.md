@@ -92,6 +92,8 @@ The app-side list lives in `drafft/TODO.md`.
 
 ## Privacy (GDPR)
 
+- [x] Terms and sensitive-data consent recorded on the server (`accept_terms`, required by
+      `complete_onboarding`); accounts onboarded before are asked by the app at their next open.
 - [ ] Data export (right of access): an Edge Function that bundles the profile, media keys, swipes,
       matches, sessions and Stream messages.
 - [ ] Retention: purge `swipes` passes older than N months, delivered outbox rows (done, 7 days), handled

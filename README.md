@@ -57,7 +57,7 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 
 | Area | RPCs |
 | --- | --- |
-| Onboarding / Edit profile | `PATCH /rest/v1/profiles` (whitelisted columns), `set_sports`, `set_prompts`, `add_profile_media`, `reorder_media`, `delete_media`, `set_location`, `complete_onboarding` |
+| Onboarding / Edit profile | `accept_terms(p_version, p_sensitive_consent)`, `PATCH /rest/v1/profiles` (whitelisted columns), `set_sports`, `set_prompts`, `add_profile_media`, `reorder_media`, `delete_media`, `set_location`, `complete_onboarding` |
 | Discover | `discover(p_filters, p_limit)`, `swipe(p_target, p_action, p_opener, p_note)`, `undo_last_swipe`, `start_boost` |
 | Likes, matches | `liked_me`, `my_matches`, `get_cards(p_ids, p_known)`, `unmatch` |
 | Sessions | `propose_session`, `respond_session`, `counter_session`, `cancel_session`, `upcoming_sessions` |
@@ -65,6 +65,18 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 | Moderation | `request_media_review(p_media)` (a second look at a refused photo), `submit_selfie(p_path)` (after uploading the selfie to the private Storage bucket `verification-selfies`, in the person's own folder, while a selfie is asked) |
 | Your data | `request_data_export()` (one open request at a time; the team sends the export) |
 | Push | `register_push_token`, `unregister_push_token`; `PATCH /rest/v1/profiles` with `language` (en, fr, es, de, it, pt, nl) and the settings `notify_matches`, `notify_likes`, `notify_messages` (mirrored to Stream), `notify_message_previews`, `notify_reactions`, `notify_session_evening`, `notify_session_hour_before`, `notify_weekly_boost` (the app reads them back at launch) |
+
+Terms and consent: gender and the genders someone wants to see can reveal their sexual orientation, lifestyle
+answers their health or beliefs, so drafft processes them on explicit consent, asked in its own step and recorded
+on the server. `accept_terms(p_version, p_sensitive_consent)` records, for the caller, the terms version the app
+showed (`profiles.terms_version`, `terms_accepted_at`) and, when `p_sensitive_consent` is true,
+`sensitive_consent_at`; the owner reads the three columns, only this RPC writes them. Errors: `unauthenticated`,
+`not_found`, `invalid_terms_version` (empty or over 40 characters), `sensitive_consent_required` (false or null
+before onboarding: there is no account without a gender). Once onboarded, false records the terms alone and keeps an
+earlier consent. `complete_onboarding` needs both (`terms_required`, after `phone_required`). Accounts onboarded
+before stay valid: the app asks at its next open (a `terms_version` behind its own, or no `sensitive_consent_at`).
+Withdrawing the consent is deleting the account (`delete-account`); lifestyle answers can be cleared on their own.
+The columns live on the profile: erased with it, or kept with it when the account is kept for safety.
 
 Realtime: subscribe to the private broadcast channel `user:<your id>`. Events: `like`, `match`,
 `match_ended`, `session`, `media`, `wallet` (any change to your wallet: purchase, refund, weekly boost,
