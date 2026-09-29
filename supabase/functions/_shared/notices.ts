@@ -1,13 +1,19 @@
 // Emails that aren't auth codes: news about the account (a hold lifted, a photo approved or refused on a
-// second look) and the acknowledgement of a support request, in the person's language; plus the team's
-// copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register as emails.ts
+// second look), the acknowledgement of a support request and a data export's link, in the person's language;
+// plus the team's copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register as emails.ts
 // (WORDING.md): the subject says the one thing (45 characters at most), the title repeats it, the note is the
 // one next step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject;
 // "l'équipe drafft" only names the team (the support reply's title).
 import { codeBox, color, escape, layout, paragraph, type Rendered, small, title } from "./emails.ts";
 import type { Language } from "./texts.ts";
 
-export type Notice = "accountRestored" | "accountReopened" | "photoApproved" | "photoRefused" | "supportReceived";
+export type Notice =
+  | "accountRestored"
+  | "accountReopened"
+  | "photoApproved"
+  | "photoRefused"
+  | "supportReceived"
+  | "exportReady";
 
 export type Copy = { subject: string; title: string; body: string; note: string };
 
@@ -247,6 +253,70 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       note: "Vermeld hem als je ons opnieuw schrijft.",
     },
   },
+  // A data export, built: the link follows the body (renderExportReady). "Export" as the app says it (You ›
+  // Privacy & data › Export my data); a reply reaches the team (Reply-To SUPPORT_INBOX).
+  exportReady: {
+    en: {
+      subject: "Your drafft export is ready",
+      title: "Your export is ready.",
+      body:
+        "Everything drafft keeps about you is in one file: your account, profile, activity and messages, with your photos and voice intro.",
+      note: "The link works for 7 days. Didn't ask for it? Reply to this email.",
+    },
+    fr: {
+      subject: "Ton export drafft est prêt",
+      title: "Ton export est prêt.",
+      body:
+        "Tout ce que drafft garde sur toi tient dans un fichier\u00A0: ton compte, ton profil, ton activité et tes messages, avec tes photos et ta présentation vocale.",
+      note: "Le lien est valable 7\u00A0jours. Tu n'as rien demandé\u00A0? Réponds à cet e-mail.",
+    },
+    es: {
+      subject: "Tu exportación de drafft está lista",
+      title: "Tu exportación está lista.",
+      body:
+        "Todo lo que drafft guarda sobre ti está en un archivo: tu cuenta, tu perfil, tu actividad y tus mensajes, con tus fotos y tu presentación de voz.",
+      note: "El enlace vale durante 7 días. ¿No lo has pedido tú? Responde a este correo.",
+    },
+    de: {
+      subject: "Dein drafft-Export ist bereit",
+      title: "Dein Export ist bereit.",
+      body:
+        "Alles, was drafft über dich speichert, steckt in einer Datei: dein Konto, dein Profil, deine Aktivität und deine Nachrichten, mit deinen Fotos und deinem Sprach-Intro.",
+      note: "Der Link gilt 7 Tage. Du hast das nicht angefordert? Antworte auf diese E-Mail.",
+    },
+    it: {
+      subject: "I tuoi dati drafft sono pronti",
+      title: "I tuoi dati sono pronti.",
+      body:
+        "Tutto ciò che drafft conserva su di te è in un unico file: account, profilo, attività e messaggi, con le tue foto e la tua presentazione vocale.",
+      note: "Il link è valido per 7 giorni. Non l'hai chiesto tu? Rispondi a questa email.",
+    },
+    pt: {
+      subject: "A tua exportação drafft está pronta",
+      title: "A tua exportação está pronta.",
+      body:
+        "Tudo o que o drafft guarda sobre ti está num só ficheiro: a tua conta, o teu perfil, a tua atividade e as tuas mensagens, com as tuas fotos e a tua apresentação de voz.",
+      note: "O link é válido durante 7 dias. Não pediste isto? Responde a este email.",
+    },
+    nl: {
+      subject: "Je drafft-export staat klaar",
+      title: "Je export staat klaar.",
+      body:
+        "Alles wat drafft over je bewaart, staat in één bestand: je account, je profiel, je activiteit en je berichten, met je foto's en je spraakintro.",
+      note: "De link is 7 dagen geldig. Niet aangevraagd? Beantwoord deze e-mail.",
+    },
+  },
+};
+
+/** The one button of the export email. */
+export const exportCta: Record<Language, string> = {
+  en: "Download my data",
+  fr: "Télécharger mes données",
+  es: "Descargar mis datos",
+  de: "Daten herunterladen",
+  it: "Scarica i miei dati",
+  pt: "Descarregar os dados",
+  nl: "Gegevens downloaden",
 };
 
 /** `reference`: the support acknowledgement only. */
@@ -257,6 +327,23 @@ export function renderNotice(kind: Notice, lang: Language, vars: { reference?: s
   if (vars.reference) rows.push(`<tr><td style="padding-bottom:24px">${codeBox(vars.reference)}</td></tr>`);
   rows.push(small(c.note, color.mute));
   const text = [c.title, "", body, ...(vars.reference ? ["", vars.reference] : []), "", c.note].join("\n");
+  return { subject: c.subject, html: layout(lang, c.subject, rows), text };
+}
+
+/** The export email: its link as the button (and on its own line in the text part), then the note. */
+export function renderExportReady(lang: Language, link: string): Rendered {
+  const c = noticeCopy.exportReady[lang];
+  const rows = [
+    title(c.title),
+    paragraph(escape(c.body)),
+    `<tr><td style="padding-bottom:24px"><a href="${
+      escape(link)
+    }" style="display:inline-block;background:${color.primary};` +
+    `color:${color.ink};font-size:16px;font-weight:700;text-decoration:none;padding:14px 24px;border-radius:16px">` +
+    `${escape(exportCta[lang])}</a></td></tr>`,
+    small(c.note, color.mute),
+  ];
+  const text = [c.title, "", c.body, "", exportCta[lang], link, "", c.note].join("\n");
   return { subject: c.subject, html: layout(lang, c.subject, rows), text };
 }
 
