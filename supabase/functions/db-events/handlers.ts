@@ -14,7 +14,8 @@ import { type Push, pushToUser } from "../_shared/apns.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
 import { deleteAuthUser, eraseChat, eraseChatUser, eraseMedia, eraseSelfies, freezeChat } from "../_shared/erase.ts";
 import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
-import { renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/notices.ts";
+import { buildExport, exportLink, storeExport } from "../_shared/export.ts";
+import { renderExportReady, renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/notices.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
 import { type Provider, ProviderError, trackProviders, viaProvider } from "../_shared/providers.ts";
@@ -616,20 +617,62 @@ export const handlers: Record<string, Handler> = {
     );
   },
 
-  // You > Your data > Email me my export: the team prepares it (no automatic export yet).
+  // You > Privacy & data > Export my data: the archive (export.ts) goes to the private bucket data-exports, the
+  // person gets a link valid 7 days in their language, and the request is fulfilled. One build at a time
+  // (export_begin): a delivery arriving while another builds is retried later. A retry skips what was done:
+  // the stored archive, the email (also idempotent at Resend). The team hears only of files left out.
   async "export.requested"(p: { id: number; userId: string }, ctx) {
+    const state = must(await admin.rpc("export_begin", { p_id: p.id }), "export begin") as string;
+    if (state === "gone" || state === "done") return;
+    if (state === "busy") throw new Error(`export ${p.id}: another delivery is building it`);
+    const path = `${p.userId}/${p.id}.zip`;
+    if (!ctx.done("archive")) {
+      const built = await buildExport(p.userId);
+      if (!built) return;
+      await storeExport(path, built.archive);
+      await ctx.record("archive");
+      if (built.omitted.length > 0) await ctx.record(`omitted=${built.omitted.length}`);
+    }
     const email = await accountEmail(p.userId);
-    await toTeam(
-      ctx,
-      "[data export] request",
-      [
-        ["Account", p.userId],
-        ["Email", email ?? "(none)"],
-        ["Promised", "a download link by email, usually within 24 hours (the app says so)"],
-      ],
-      `export-${p.id}`,
-      email,
+    if (!email) return;
+    const { data: profile, error } = await admin.from("profiles").select("language").eq("id", p.userId).maybeSingle();
+    if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
+    const link = await exportLink(path);
+    await ctx.once(
+      "email",
+      () =>
+        sendEmail(
+          email,
+          renderExportReady(language(profile?.language), link),
+          `export-${p.id}`,
+          optionalEnv("SUPPORT_INBOX"),
+        ),
     );
+    const omitted = ctx.value("omitted");
+    if (omitted) {
+      await toTeam(
+        ctx,
+        "[data export] files left out",
+        [
+          ["Account", p.userId],
+          ["Left out", `${omitted} profile files over EXPORT_MAX_BYTES: listed in data.json, send them another way`],
+        ],
+        `export-team-${p.id}`,
+        email,
+      );
+    }
+    check(await admin.rpc("export_ready", { p_id: p.id, p_path: path }), "export ready");
+  },
+
+  // An export past its 7 days (private.queue_export_expiries): the file goes, the request remembers it.
+  async "export.expired"(p: { id: number }) {
+    const { data: path, error } = await admin.rpc("export_file", { p_id: p.id });
+    if (error) throw new Error(`export file ${p.id}: ${error.message}`);
+    if (path) {
+      const removed = await admin.storage.from("data-exports").remove([path as string]);
+      if (removed.error) throw new Error(`delete export ${p.id}: ${removed.error.message}`);
+    }
+    check(await admin.rpc("export_file_deleted", { p_id: p.id }), "export file deleted");
   },
 
   // A hold was lifted after a selfie check: the selfies go (bucket verification-selfies). Held again

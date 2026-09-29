@@ -116,3 +116,45 @@ export async function sendOnce(
     throw error;
   }
 }
+
+/** A Stream message as the server reads it back. */
+export type StreamMessage = {
+  id: string;
+  text?: string;
+  type?: string;
+  user?: { id?: string };
+  created_at?: string;
+  updated_at?: string;
+  deleted_at?: string;
+  quoted_message_id?: string;
+  attachments?: Record<string, unknown>[];
+};
+
+/** Every message of a match's chat, oldest first; none when Stream has no such channel (nobody wrote yet, or
+ * erased). Read with the secret: an ended match's frozen channel too. */
+export async function channelMessages(matchId: string): Promise<StreamMessage[]> {
+  const page = 300;
+  const channel = stream().channel("messaging", matchId);
+  let all: StreamMessage[] = [];
+  let before: string | undefined;
+  for (;;) {
+    let messages: StreamMessage[];
+    try {
+      const res = await viaProvider("stream", () =>
+        channel.query({
+          state: true,
+          watch: false,
+          presence: false,
+          messages: { limit: page, ...(before ? { id_lt: before } : {}) },
+        }));
+      messages = (res.messages ?? []) as unknown as StreamMessage[];
+    } catch (error) {
+      const status = (error as { status?: unknown } | null)?.status;
+      if (status === 404 || /does not exist|not found/i.test(String(error))) return all;
+      throw error;
+    }
+    all = [...messages, ...all];
+    if (messages.length < page) return all;
+    before = messages[0].id;
+  }
+}
