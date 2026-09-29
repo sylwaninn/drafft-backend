@@ -1,5 +1,7 @@
 // Creates drafft's in-app products in App Store Connect, matching `store_products` and the app's
-// catalogue. Idempotent: existing products are left as they are.
+// catalogue. Idempotent: existing products are left as they are, so a wording change here reaches only new
+// products: edit live ones in App Store Connect. Names and descriptions follow WORDING.md (boost, super like
+// and drafft tempo in lowercase).
 //
 //   deno run -A scripts/app-store-products.ts plan    # read only: access check + price points
 //   deno run -A scripts/app-store-products.ts apply   # create what's missing
@@ -25,37 +27,37 @@ const SUBSCRIPTION_DESCRIPTION = "Unlimited likes and every drafft tempo perk"; 
 const CONSUMABLES = [
   {
     productId: "so.drafft.app.boost.1",
-    name: "1 Boost",
+    name: "1 boost",
     price: "4.99",
-    description: "30 minutes at the top of decks nearby",
+    description: "30 minutes up front for people near you",
   },
   {
     productId: "so.drafft.app.boost.5",
-    name: "5 Boosts",
+    name: "5 boosts",
     price: "17.99",
-    description: "30 minutes at the top of decks nearby",
+    description: "30 minutes up front for people near you",
   },
   {
     productId: "so.drafft.app.boost.10",
-    name: "10 Boosts",
+    name: "10 boosts",
     price: "29.99",
-    description: "30 minutes at the top of decks nearby",
+    description: "30 minutes up front for people near you",
   },
   {
     productId: "so.drafft.app.superlike.3",
-    name: "3 Super Likes",
+    name: "3 super likes",
     price: "4.99",
     description: "They see you first, with your note",
   },
   {
     productId: "so.drafft.app.superlike.15",
-    name: "15 Super Likes",
+    name: "15 super likes",
     price: "17.99",
     description: "They see you first, with your note",
   },
   {
     productId: "so.drafft.app.superlike.30",
-    name: "30 Super Likes",
+    name: "30 super likes",
     price: "29.99",
     description: "They see you first, with your note",
   },

@@ -1,220 +1,203 @@
 // Emails that aren't auth codes: news about the account (a hold lifted, a photo approved or refused on a
-// second look) and the
-// acknowledgement of a support request, in the person's language; plus the team's copies (SUPPORT_INBOX),
-// in English, until the dashboard lists them. Same layout and register as emails.ts.
+// second look) and the acknowledgement of a support request, in the person's language; plus the team's
+// copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register as emails.ts
+// (WORDING.md): the subject says the one thing (45 characters at most), the title repeats it, the note is the
+// one next step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject;
+// "l'équipe drafft" only names the team (the support reply's title).
 import { codeBox, color, escape, layout, paragraph, type Rendered, small, title } from "./emails.ts";
 import type { Language } from "./texts.ts";
 
 export type Notice = "accountRestored" | "accountReopened" | "photoApproved" | "photoRefused" | "supportReceived";
 
-type Copy = { subject: string; title: string; body: string; note: string };
+export type Copy = { subject: string; title: string; body: string; note: string };
 
-const copy: Record<Notice, Record<Language, Copy>> = {
-  // A review or a selfie check, done: nothing wrong.
+export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
+  // A review or a selfie check, done: nothing wrong. The app's hold screen said "We're checking your account."
   accountRestored: {
     en: {
-      subject: "Your drafft account is open again",
-      title: "You're all set",
-      body:
-        "We've finished checking your account: everything is in order. Your profile is visible again, and your matches and chats are right where you left them.",
+      subject: "Your account check is done",
+      title: "Your account check is done.",
+      body: "All good: your profile is visible again, and your matches and chats are still there.",
       note: "Open drafft to pick up where you left off.",
     },
     fr: {
-      subject: "Ton compte drafft est de nouveau ouvert",
-      title: "Tout est en ordre",
-      body:
-        "Nous avons terminé la vérification de ton compte : tout est en ordre. Ton profil est de nouveau visible, et tes matchs et tes discussions t'attendent là où tu les as laissés.",
+      subject: "La vérification de ton compte est terminée",
+      title: "La vérification de ton compte est terminée.",
+      body: "Tout est bon\u00A0: ton profil est de nouveau visible, et tes matchs et discussions sont toujours là.",
       note: "Ouvre drafft pour reprendre où tu en étais.",
     },
     es: {
-      subject: "Tu cuenta de drafft vuelve a estar abierta",
-      title: "Todo en orden",
-      body:
-        "Hemos terminado de revisar tu cuenta: todo está en orden. Tu perfil vuelve a ser visible y tus matches y chats siguen donde los dejaste.",
+      subject: "Hemos terminado de revisar tu cuenta",
+      title: "Hemos terminado de revisar tu cuenta.",
+      body: "Todo bien: tu perfil vuelve a ser visible y tus matches y chats siguen ahí.",
       note: "Abre drafft para seguir donde lo dejaste.",
     },
     de: {
-      subject: "Dein drafft-Konto ist wieder offen",
-      title: "Alles in Ordnung",
-      body:
-        "Wir haben dein Konto geprüft: Alles ist in Ordnung. Dein Profil ist wieder sichtbar, und deine Matches und Chats sind genau da, wo du sie gelassen hast.",
+      subject: "Wir haben dein Konto fertig geprüft",
+      title: "Wir haben dein Konto fertig geprüft.",
+      body: "Alles gut: Dein Profil ist wieder sichtbar, und deine Matches und Chats sind noch da.",
       note: "Öffne drafft und mach da weiter, wo du aufgehört hast.",
     },
     it: {
-      subject: "Il tuo account drafft è di nuovo attivo",
-      title: "Tutto a posto",
-      body:
-        "Abbiamo finito di verificare il tuo account: è tutto in ordine. Il tuo profilo è di nuovo visibile e i tuoi match e le tue chat sono dove li avevi lasciati.",
+      subject: "Abbiamo finito di verificare il tuo account",
+      title: "Abbiamo finito di verificare il tuo account.",
+      body: "Tutto a posto: il tuo profilo è di nuovo visibile e i tuoi match e le tue chat sono ancora lì.",
       note: "Apri drafft per riprendere da dove avevi lasciato.",
     },
     pt: {
-      subject: "A tua conta drafft está novamente aberta",
-      title: "Está tudo em ordem",
-      body:
-        "Terminámos a verificação da tua conta: está tudo em ordem. O teu perfil voltou a estar visível, e os teus matches e conversas estão onde os deixaste.",
+      subject: "Terminámos a verificação da tua conta",
+      title: "Terminámos a verificação da tua conta.",
+      body: "Está tudo bem: o teu perfil voltou a estar visível, e os teus matches e conversas continuam lá.",
       note: "Abre o drafft para continuares de onde paraste.",
     },
     nl: {
-      subject: "Je drafft-account is weer open",
-      title: "Alles in orde",
-      body:
-        "We hebben je account gecontroleerd: alles is in orde. Je profiel is weer zichtbaar, en je matches en chats staan nog precies waar je ze liet.",
+      subject: "We hebben je account gecontroleerd",
+      title: "We hebben je account gecontroleerd.",
+      body: "Alles is goed: je profiel is weer zichtbaar, en je matches en chats staan er nog.",
       note: "Open drafft om verder te gaan waar je gebleven was.",
     },
   },
   // A closed account, reopened (the team looked again).
   accountReopened: {
     en: {
-      subject: "Your drafft account has been reopened",
-      title: "Welcome back",
-      body:
-        "We've looked at your account again and reopened it. Your profile is visible again, and you can use drafft as before.",
-      note: "Thanks for your patience.",
+      subject: "Your drafft account is reopened",
+      title: "Your account is reopened.",
+      body: "We took another look at your account. Your profile is visible again, and you can use drafft as before.",
+      note: "Open drafft to pick up where you left off.",
     },
     fr: {
-      subject: "Ton compte drafft a été rouvert",
-      title: "Content de te revoir",
-      body:
-        "Nous avons réexaminé ton compte et l'avons rouvert. Ton profil est de nouveau visible et tu peux utiliser drafft comme avant.",
-      note: "Merci pour ta patience.",
+      subject: "Ton compte drafft est rouvert",
+      title: "Ton compte est rouvert.",
+      body: "On a réexaminé ton compte. Ton profil est de nouveau visible et tu peux utiliser drafft comme avant.",
+      note: "Ouvre drafft pour reprendre où tu en étais.",
     },
     es: {
-      subject: "Hemos reabierto tu cuenta de drafft",
-      title: "Qué bien tenerte de vuelta",
-      body:
-        "Hemos vuelto a revisar tu cuenta y la hemos reabierto. Tu perfil vuelve a ser visible y puedes usar drafft como antes.",
-      note: "Gracias por tu paciencia.",
+      subject: "Tu cuenta de drafft está reabierta",
+      title: "Tu cuenta está reabierta.",
+      body: "Hemos vuelto a revisar tu cuenta. Tu perfil vuelve a ser visible y puedes usar drafft como antes.",
+      note: "Abre drafft para seguir donde lo dejaste.",
     },
     de: {
-      subject: "Dein drafft-Konto wurde wieder geöffnet",
-      title: "Schön, dass du wieder da bist",
+      subject: "Dein drafft-Konto ist wieder offen",
+      title: "Dein Konto ist wieder offen.",
       body:
-        "Wir haben dein Konto noch einmal geprüft und wieder geöffnet. Dein Profil ist wieder sichtbar und du kannst drafft wie gewohnt nutzen.",
-      note: "Danke für deine Geduld.",
+        "Wir haben dein Konto noch einmal geprüft. Dein Profil ist wieder sichtbar und du kannst drafft wie gewohnt nutzen.",
+      note: "Öffne drafft und mach da weiter, wo du aufgehört hast.",
     },
     it: {
-      subject: "Il tuo account drafft è stato riaperto",
-      title: "Che bello rivederti",
-      body:
-        "Abbiamo riesaminato il tuo account e l'abbiamo riaperto. Il tuo profilo è di nuovo visibile e puoi usare drafft come prima.",
-      note: "Grazie per la pazienza.",
+      subject: "Il tuo account drafft è di nuovo aperto",
+      title: "Il tuo account è di nuovo aperto.",
+      body: "Abbiamo riesaminato il tuo account. Il tuo profilo è di nuovo visibile e puoi usare drafft come prima.",
+      note: "Apri drafft per riprendere da dove avevi lasciato.",
     },
     pt: {
       subject: "A tua conta drafft foi reaberta",
-      title: "Que bom ver-te de volta",
-      body:
-        "Voltámos a analisar a tua conta e reabrimo-la. O teu perfil voltou a estar visível e podes usar o drafft como antes.",
-      note: "Agradecemos a tua paciência.",
+      title: "A tua conta foi reaberta.",
+      body: "Voltámos a analisar a tua conta. O teu perfil voltou a estar visível e podes usar o drafft como antes.",
+      note: "Abre o drafft para continuares de onde paraste.",
     },
     nl: {
       subject: "Je drafft-account is heropend",
-      title: "Fijn dat je er weer bent",
+      title: "Je account is heropend.",
       body:
-        "We hebben je account opnieuw bekeken en weer geopend. Je profiel is weer zichtbaar en je kunt drafft gebruiken zoals eerst.",
-      note: "Bedankt voor je geduld.",
+        "We hebben je account opnieuw bekeken. Je profiel is weer zichtbaar en je kunt drafft gebruiken zoals eerst.",
+      note: "Open drafft om verder te gaan waar je gebleven was.",
     },
   },
   // A refused photo, approved after the second look the person asked for.
   photoApproved: {
     en: {
-      subject: "Your photo has been approved",
-      title: "Your photo is live",
-      body:
-        "You asked for a second look at one of your photos. Our team checked it: it's approved and now on your profile.",
-      note: "Thanks for taking the time to ask.",
+      subject: "Your photo is approved",
+      title: "Your photo is approved.",
+      body: "We took a second look, as you asked: it's now on your profile.",
+      note: "Open drafft to see your profile.",
     },
     fr: {
-      subject: "Ta photo a été acceptée",
-      title: "Ta photo est en ligne",
-      body:
-        "Tu as demandé qu'une de tes photos soit revue. Notre équipe l'a vérifiée : elle est acceptée et apparaît maintenant sur ton profil.",
-      note: "Merci d'avoir pris le temps de nous le demander.",
+      subject: "Ta photo est validée",
+      title: "Ta photo est validée.",
+      body: "On l'a revue, comme tu l'as demandé\u00A0: elle est maintenant sur ton profil.",
+      note: "Ouvre drafft pour voir ton profil.",
     },
     es: {
-      subject: "Hemos aprobado tu foto",
-      title: "Tu foto ya está publicada",
-      body:
-        "Pediste que revisáramos una de tus fotos. Nuestro equipo la ha revisado: está aprobada y ya aparece en tu perfil.",
-      note: "Gracias por pedírnoslo.",
+      subject: "Tu foto está aprobada",
+      title: "Tu foto está aprobada.",
+      body: "La hemos vuelto a revisar, como pediste: ya está en tu perfil.",
+      note: "Abre drafft para ver tu perfil.",
     },
     de: {
-      subject: "Dein Foto wurde freigegeben",
-      title: "Dein Foto ist online",
-      body:
-        "Du hast um eine zweite Prüfung eines deiner Fotos gebeten. Unser Team hat es angesehen: Es ist freigegeben und jetzt in deinem Profil.",
-      note: "Danke, dass du nachgefragt hast.",
+      subject: "Dein Foto ist freigegeben",
+      title: "Dein Foto ist freigegeben.",
+      body: "Wir haben es noch einmal geprüft, wie du es wolltest: Es ist jetzt in deinem Profil.",
+      note: "Öffne drafft, um dein Profil zu sehen.",
     },
     it: {
-      subject: "La tua foto è stata approvata",
-      title: "La tua foto è online",
-      body:
-        "Hai chiesto di ricontrollare una delle tue foto. Il nostro team l'ha verificata: è approvata e ora è sul tuo profilo.",
-      note: "Grazie per avercelo chiesto.",
+      subject: "La tua foto è approvata",
+      title: "La tua foto è approvata.",
+      body: "L'abbiamo ricontrollata, come hai chiesto: ora è sul tuo profilo.",
+      note: "Apri drafft per vedere il tuo profilo.",
     },
     pt: {
       subject: "A tua foto foi aprovada",
-      title: "A tua foto já está online",
-      body:
-        "Pediste que voltássemos a ver uma das tuas fotos. A nossa equipa verificou-a: está aprovada e já aparece no teu perfil.",
-      note: "Agradecemos que nos tenhas pedido.",
+      title: "A tua foto foi aprovada.",
+      body: "Voltámos a vê-la, como pediste: já está no teu perfil.",
+      note: "Abre o drafft para veres o teu perfil.",
     },
     nl: {
       subject: "Je foto is goedgekeurd",
-      title: "Je foto staat online",
-      body:
-        "Je vroeg ons een van je foto's opnieuw te bekijken. Ons team heeft hem gecontroleerd: hij is goedgekeurd en staat nu op je profiel.",
-      note: "Bedankt dat je het vroeg.",
+      title: "Je foto is goedgekeurd.",
+      body: "We hebben hem opnieuw bekeken, zoals je vroeg: hij staat nu op je profiel.",
+      note: "Open drafft om je profiel te bekijken.",
     },
   },
   // A refused photo, refused again after the second look the person asked for.
   photoRefused: {
     en: {
-      subject: "About the photo you asked us to check",
-      title: "We looked at your photo again",
+      subject: "Your photo can't go on your profile",
+      title: "Your photo can't go on your profile.",
       body:
-        "You asked for a second look at one of your photos. Our team checked it: it doesn't meet our photo guidelines, so it stays off your profile.",
+        "We took a second look, as you asked: it doesn't fit the drafft photo guidelines, so it stays off your profile.",
       note: "You can add another photo anytime in drafft.",
     },
     fr: {
-      subject: "À propos de la photo que tu nous as demandé de revoir",
-      title: "Nous avons revu ta photo",
+      subject: "Ta photo ne peut pas aller sur ton profil",
+      title: "Ta photo ne peut pas aller sur ton profil.",
       body:
-        "Tu as demandé qu'une de tes photos soit revue. Notre équipe l'a vérifiée : elle ne respecte pas nos règles sur les photos, elle reste donc hors de ton profil.",
+        "On l'a revue, comme tu l'as demandé\u00A0: elle ne respecte pas les règles photo de drafft, elle reste donc hors de ton profil.",
       note: "Tu peux ajouter une autre photo quand tu veux dans drafft.",
     },
     es: {
-      subject: "Sobre la foto que nos pediste revisar",
-      title: "Hemos vuelto a revisar tu foto",
+      subject: "Tu foto no puede ir en tu perfil",
+      title: "Tu foto no puede ir en tu perfil.",
       body:
-        "Pediste que revisáramos una de tus fotos. Nuestro equipo la ha revisado: no cumple nuestras normas sobre fotos, así que no aparecerá en tu perfil.",
+        "La hemos vuelto a revisar, como pediste: no cumple las normas de fotos de drafft, así que se queda fuera de tu perfil.",
       note: "Puedes añadir otra foto cuando quieras en drafft.",
     },
     de: {
-      subject: "Zu dem Foto, das wir noch einmal prüfen sollten",
-      title: "Wir haben dein Foto noch einmal geprüft",
+      subject: "Dein Foto kann nicht in dein Profil",
+      title: "Dein Foto kann nicht in dein Profil.",
       body:
-        "Du hast um eine zweite Prüfung eines deiner Fotos gebeten. Unser Team hat es angesehen: Es entspricht nicht unseren Foto-Richtlinien und bleibt deshalb nicht in deinem Profil.",
+        "Wir haben es noch einmal geprüft, wie du es wolltest: Es entspricht nicht den Foto-Richtlinien von drafft und kommt deshalb nicht in dein Profil.",
       note: "Du kannst in drafft jederzeit ein anderes Foto hinzufügen.",
     },
     it: {
-      subject: "Sulla foto che ci hai chiesto di ricontrollare",
-      title: "Abbiamo ricontrollato la tua foto",
+      subject: "La tua foto non può andare sul profilo",
+      title: "La tua foto non può andare sul profilo.",
       body:
-        "Hai chiesto di ricontrollare una delle tue foto. Il nostro team l'ha verificata: non rispetta le nostre regole sulle foto, quindi resta fuori dal tuo profilo.",
+        "L'abbiamo ricontrollata, come hai chiesto: non rispetta le regole sulle foto di drafft, quindi resta fuori dal tuo profilo.",
       note: "Puoi aggiungere un'altra foto quando vuoi su drafft.",
     },
     pt: {
-      subject: "Sobre a foto que nos pediste para rever",
-      title: "Voltámos a ver a tua foto",
+      subject: "A tua foto não pode ir para o perfil",
+      title: "A tua foto não pode ir para o perfil.",
       body:
-        "Pediste que voltássemos a ver uma das tuas fotos. A nossa equipa verificou-a: não cumpre as nossas regras sobre fotos, por isso fica fora do teu perfil.",
+        "Voltámos a vê-la, como pediste: não cumpre as regras de fotos do drafft, por isso fica fora do teu perfil.",
       note: "Podes adicionar outra foto quando quiseres no drafft.",
     },
     nl: {
-      subject: "Over de foto die we opnieuw moesten bekijken",
-      title: "We hebben je foto opnieuw bekeken",
+      subject: "Je foto kan niet op je profiel",
+      title: "Je foto kan niet op je profiel.",
       body:
-        "Je vroeg ons een van je foto's opnieuw te bekijken. Ons team heeft hem gecontroleerd: hij voldoet niet aan onze fotoregels en komt daarom niet op je profiel.",
+        "We hebben hem opnieuw bekeken, zoals je vroeg: hij voldoet niet aan de fotoregels van drafft en komt daarom niet op je profiel.",
       note: "Je kunt in drafft altijd een andere foto toevoegen.",
     },
   },
@@ -223,57 +206,52 @@ const copy: Record<Notice, Record<Language, Copy>> = {
   supportReceived: {
     en: {
       subject: "We got your message",
-      title: "Message received",
-      body: "Thanks for writing to us. We'll reply to this address, usually within 2 working days. Your reference:",
-      note: "Keep this reference if you write to us again.",
+      title: "We got your message.",
+      body: "We'll reply to this address, usually within 2 working days. Your reference:",
+      note: "Mention it if you write to us again.",
     },
     fr: {
-      subject: "Nous avons bien reçu ton message",
-      title: "Message reçu",
-      body:
-        "Merci de nous avoir écrit. Nous te répondrons à cette adresse, en général sous 2 jours ouvrés. Ta référence :",
-      note: "Garde cette référence si tu nous écris de nouveau.",
+      subject: "On a bien reçu ton message",
+      title: "On a bien reçu ton message.",
+      body: "On te répond à cette adresse, en général sous 2\u00A0jours ouvrés. Ta référence\u00A0:",
+      note: "Indique-la si tu nous réécris.",
     },
     es: {
       subject: "Hemos recibido tu mensaje",
-      title: "Mensaje recibido",
-      body:
-        "Gracias por escribirnos. Te responderemos a esta dirección, normalmente en 2 días laborables. Tu referencia:",
-      note: "Guarda esta referencia si vuelves a escribirnos.",
+      title: "Hemos recibido tu mensaje.",
+      body: "Te responderemos a esta dirección, normalmente en 2 días laborables. Tu referencia:",
+      note: "Inclúyela si vuelves a escribirnos.",
     },
     de: {
       subject: "Wir haben deine Nachricht erhalten",
-      title: "Nachricht erhalten",
-      body:
-        "Danke für deine Nachricht. Wir antworten dir an diese Adresse, meist innerhalb von 2 Werktagen. Deine Referenz:",
-      note: "Bewahre diese Referenz auf, falls du uns noch einmal schreibst.",
+      title: "Wir haben deine Nachricht erhalten.",
+      body: "Wir antworten dir an diese Adresse, meist innerhalb von 2 Werktagen. Deine Referenz:",
+      note: "Gib sie an, wenn du uns noch einmal schreibst.",
     },
     it: {
       subject: "Abbiamo ricevuto il tuo messaggio",
-      title: "Messaggio ricevuto",
-      body:
-        "Grazie per averci scritto. Ti risponderemo a questo indirizzo, di solito entro 2 giorni lavorativi. Il tuo riferimento:",
-      note: "Conserva questo riferimento se ci scrivi di nuovo.",
+      title: "Abbiamo ricevuto il tuo messaggio.",
+      body: "Ti risponderemo a questo indirizzo, di solito entro 2 giorni lavorativi. Il tuo riferimento:",
+      note: "Indicalo se ci scrivi di nuovo.",
     },
     pt: {
       subject: "Recebemos a tua mensagem",
-      title: "Mensagem recebida",
-      body:
-        "Agradecemos a tua mensagem. Vamos responder para este endereço, normalmente em 2 dias úteis. A tua referência:",
-      note: "Guarda esta referência se nos voltares a escrever.",
+      title: "Recebemos a tua mensagem.",
+      body: "Vamos responder para este endereço, normalmente em 2 dias úteis. A tua referência:",
+      note: "Indica-a se nos voltares a escrever.",
     },
     nl: {
       subject: "We hebben je bericht ontvangen",
-      title: "Bericht ontvangen",
-      body: "Bedankt voor je bericht. We antwoorden naar dit adres, meestal binnen 2 werkdagen. Je referentie:",
-      note: "Bewaar deze referentie als je ons opnieuw schrijft.",
+      title: "We hebben je bericht ontvangen.",
+      body: "We antwoorden naar dit adres, meestal binnen 2 werkdagen. Je referentie:",
+      note: "Vermeld hem als je ons opnieuw schrijft.",
     },
   },
 };
 
 /** `reference`: the support acknowledgement only. */
 export function renderNotice(kind: Notice, lang: Language, vars: { reference?: string } = {}): Rendered {
-  const c = copy[kind][lang];
+  const c = noticeCopy[kind][lang];
   const body = c.body;
   const rows = [title(c.title), paragraph(escape(c.body))];
   if (vars.reference) rows.push(`<tr><td style="padding-bottom:24px">${codeBox(vars.reference)}</td></tr>`);
@@ -283,46 +261,46 @@ export function renderNotice(kind: Notice, lang: Language, vars: { reference?: s
 }
 
 // A reply from the team (sophros), framed in the person's language; the reply itself is as written.
-const replyCopy: Record<Language, { title: string; intro: string; yours: string; note: string }> = {
+export const supportReplyCopy: Record<Language, { title: string; intro: string; yours: string; note: string }> = {
   en: {
-    title: "From the drafft team",
-    intro: "Here's our reply about: {topic}",
+    title: "A reply from the drafft team.",
+    intro: "Topic: {topic}",
     yours: "Your message",
-    note: "Just reply to this email to write back. Your reference:",
+    note: "Reply to this email to write back. Your reference:",
   },
   fr: {
-    title: "De la part de l'équipe drafft",
-    intro: "Voici notre réponse au sujet de : {topic}",
+    title: "Une réponse de l'équipe drafft.",
+    intro: "Sujet\u00A0: {topic}",
     yours: "Ton message",
-    note: "Réponds simplement à cet email pour nous écrire. Ta référence :",
+    note: "Réponds à cet e-mail pour nous écrire. Ta référence\u00A0:",
   },
   es: {
-    title: "Del equipo de drafft",
-    intro: "Esta es nuestra respuesta sobre: {topic}",
+    title: "Una respuesta del equipo de drafft.",
+    intro: "Tema: {topic}",
     yours: "Tu mensaje",
     note: "Responde a este correo para escribirnos. Tu referencia:",
   },
   de: {
-    title: "Vom drafft-Team",
-    intro: "Hier ist unsere Antwort zu: {topic}",
+    title: "Eine Antwort vom drafft-Team.",
+    intro: "Thema: {topic}",
     yours: "Deine Nachricht",
-    note: "Antworte einfach auf diese E-Mail, um uns zu schreiben. Deine Referenz:",
+    note: "Antworte auf diese E-Mail, um uns zu schreiben. Deine Referenz:",
   },
   it: {
-    title: "Dal team di drafft",
-    intro: "Ecco la nostra risposta su: {topic}",
+    title: "Una risposta dal team di drafft.",
+    intro: "Argomento: {topic}",
     yours: "Il tuo messaggio",
     note: "Rispondi a questa email per scriverci. Il tuo riferimento:",
   },
   pt: {
-    title: "Da equipa drafft",
-    intro: "Aqui está a nossa resposta sobre: {topic}",
+    title: "Uma resposta da equipa drafft.",
+    intro: "Assunto: {topic}",
     yours: "A tua mensagem",
     note: "Responde a este email para nos escreveres. A tua referência:",
   },
   nl: {
-    title: "Van het drafft-team",
-    intro: "Hier is ons antwoord over: {topic}",
+    title: "Een antwoord van het drafft-team.",
+    intro: "Onderwerp: {topic}",
     yours: "Je bericht",
     note: "Beantwoord deze e-mail om ons te schrijven. Je referentie:",
   },
@@ -337,14 +315,14 @@ export function renderSupportReply(
   lang: Language,
   vars: { reference: string; topic: string; body: string; message: string },
 ): Rendered {
-  const c = replyCopy[lang];
+  const c = supportReplyCopy[lang];
   const subject = `Re: ${vars.topic} [${vars.reference}]`;
   const rows = [
     title(c.title),
     muted(escape(c.intro).replace("{topic}", `<strong>${escape(vars.topic)}</strong>`)),
     paragraph(escape(vars.body).replace(/\n/g, "<br>")),
     muted(`${escape(c.yours)}<br>${escape(vars.message).replace(/\n/g, "<br>")}`),
-    small(escape(c.note), color.mute),
+    small(c.note, color.mute),
     `<tr><td style="padding-bottom:24px">${codeBox(vars.reference)}</td></tr>`,
   ];
   const text = [
@@ -354,7 +332,7 @@ export function renderSupportReply(
     "",
     vars.body,
     "",
-    `${c.yours}:`,
+    `${c.yours}${lang === "fr" ? "\u00A0:" : ":"}`,
     vars.message,
     "",
     c.note,

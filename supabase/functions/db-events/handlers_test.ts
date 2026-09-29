@@ -433,13 +433,13 @@ Deno.test("stream.user: Stream's user carries the app language and the previews 
       id: ana,
       name: "Ana",
       language: "fr",
-      drafft_push: { message: "t'a envoyé un message", separator: "\u00A0: ", previews: false },
+      drafft_push: { message: "Nouveau message.", someone: "Quelqu'un", previews: false },
     },
     {
       id: bo,
       name: "Bo",
       language: "en",
-      drafft_push: { message: "sent you a message", separator: ": ", previews: true },
+      drafft_push: { message: "New message.", someone: "Someone", previews: true },
     },
   ]);
   assertEquals(calls("ack_event").length, 2);

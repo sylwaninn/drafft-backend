@@ -27,13 +27,12 @@ import {
   type ModerationPush,
   moderationPush,
   photoRefused,
-  pushTitle,
   sessionAutoCancelled,
+  sessionCard,
   sessionChanged,
   sessionName,
   sessionReminderEvening,
   sessionReminderHour,
-  someone,
   superLikeReceived,
   weeklyBoost,
 } from "../_shared/texts.ts";
@@ -190,15 +189,14 @@ export const handlers: Record<string, Handler> = {
     const lang = await recipient(p.to, "notify_likes");
     if (!lang) return;
     await ctx.push("push", p.to, {
-      title: pushTitle,
-      body: (p.superLike ? superLikeReceived : likeReceived)[lang],
+      ...(p.superLike ? superLikeReceived : likeReceived)[lang],
       data: { tab: "likes" },
       collapseId: "likes",
     });
   },
 
   // Chat channel, then the openers each person attached to their like, then a push to both. Ended or gone
-  // by the time it's delivered: nothing (no channel, no opener, no "It's a match").
+  // by the time it's delivered: nothing (no channel, no opener, no "It's mutual").
   async "match.created"(p: { matchId: string; userA: string; userB: string }, ctx) {
     const opened = await ensureChannel(p.matchId);
     if (!opened) return;
@@ -240,16 +238,14 @@ export const handlers: Record<string, Handler> = {
     // One after the other, each recorded: a retry never tells the first person twice.
     if (langA) {
       await ctx.push("push-a", p.userA, {
-        title: pushTitle,
-        body: matchCreated(langA, nameB ?? someone[langA]),
+        ...matchCreated(langA, nameB),
         data: { match: p.matchId },
         collapseId: `match-${p.matchId}`,
       });
     }
     if (langB) {
       await ctx.push("push-b", p.userB, {
-        title: pushTitle,
-        body: matchCreated(langB, nameA ?? someone[langB]),
+        ...matchCreated(langB, nameA),
         data: { match: p.matchId },
         collapseId: `match-${p.matchId}`,
       });
@@ -310,7 +306,7 @@ export const handlers: Record<string, Handler> = {
         sendOnce(opened.channel, {
           id: `session-${p.sessionId}-cancelled`,
           user_id: p.chatFrom as string,
-          text: "Cancelled the session",
+          text: sessionCard.cancelled,
           drafft: { type: "session", sessionId: p.sessionId, status: "cancelled" },
         }));
     }
@@ -318,8 +314,7 @@ export const handlers: Record<string, Handler> = {
     // nothing to warn about any more.
     if (!p.notify || (p.at && Date.parse(p.at) < Date.now())) return;
     await ctx.push("push", p.to, {
-      title: pushTitle,
-      body: sessionAutoCancelled(language(p.language), p.at ? new Date(p.at) : null, p.timezone),
+      ...sessionAutoCancelled(language(p.language), p.at ? new Date(p.at) : null, p.timezone),
       data: { kind: "session_cancelled", session: p.sessionId },
       // A retried event replaces the push instead of adding a second one.
       collapseId: `session-cancelled-${p.sessionId}`,
@@ -343,18 +338,19 @@ export const handlers: Record<string, Handler> = {
     if (error) throw new Error(`session ${p.sessionId}: ${error.message}`);
     if (!session || session.status !== "accepted" || !session.chosen_at) return;
     if (Date.parse(session.chosen_at as string) !== Date.parse(p.at) || Date.parse(p.at) < Date.now()) return;
-    const { data: match, error: matchError } = await admin.from("matches").select("ended_at")
+    const { data: match, error: matchError } = await admin.from("matches").select("ended_at, user_a, user_b")
       .eq("id", session.match_id as string).maybeSingle();
     if (matchError) throw new Error(`match ${session.match_id}: ${matchError.message}`);
     if (!match || match.ended_at) return;
     const lang = await recipient(p.to, p.kind === "evening" ? "notify_session_evening" : "notify_session_hour_before");
     if (!lang) return;
     const name = sessionName(lang, session.title as string | null, session.sport_id as string);
+    // Who it's with, by first name ("With Maya: Padel session"); no name: the session alone.
+    const partner = await firstName((match.user_a === p.to ? match.user_b : match.user_a) as string);
     await ctx.push("push", p.to, {
-      title: pushTitle,
-      body: p.kind === "evening"
-        ? sessionReminderEvening(lang, name, new Date(p.at), p.timezone)
-        : sessionReminderHour(lang, name),
+      ...(p.kind === "evening"
+        ? sessionReminderEvening(lang, name, new Date(p.at), p.timezone, partner)
+        : sessionReminderHour(lang, name, partner)),
       data: { kind: "session_reminder", match: p.matchId, session: p.sessionId },
       collapseId: `session-reminder-${p.sessionId}-${p.kind}`,
     });
@@ -666,8 +662,7 @@ export const handlers: Record<string, Handler> = {
     if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
     if (!data?.notify_weekly_boost) return;
     await ctx.push("push", p.userId, {
-      title: pushTitle,
-      body: weeklyBoost[language(data.language)],
+      ...weeklyBoost[language(data.language)],
       data: { kind: "weekly_boost" },
       collapseId: "weekly-boost",
     });
@@ -695,8 +690,7 @@ async function pushModeration(
   }
   if (!kind) return;
   await ctx.push("push", p.userId, {
-    title: pushTitle,
-    body: moderationPush[kind][language(lang)],
+    ...moderationPush[kind][language(lang)],
     data: { kind: "moderation" },
     // One moderation push at a time: a newer state replaces the older one on the lock screen.
     collapseId: `moderation-${p.userId}`,
@@ -717,8 +711,7 @@ async function pushPhotoRefused(ctx: EventContext, userId: string, mediaId: stri
   if (!data) return null;
   const lang = language(data.language);
   await ctx.push("push", userId, {
-    title: pushTitle,
-    body: photoRefused[lang],
+    ...photoRefused[lang],
     data: { kind: "photo_refused", media: mediaId },
     collapseId: `photo-${mediaId}`,
   });
@@ -745,12 +738,8 @@ async function sessionEvent(
     await admin.from("sessions").select("sport_id, title, options, chosen_at").eq("id", p.sessionId).single(),
     "session",
   );
-  const text = {
-    proposed: "Proposed a session",
-    accepted: "Accepted the session",
-    declined: "Declined the session",
-    cancelled: "Cancelled the session",
-  }[status];
+  // English on purpose (see sessionCard): the app draws the card from `drafft`, never from this text.
+  const text = sessionCard[status];
   await ctx.once("message", () =>
     sendOnce(channel, {
       id: `session-${p.sessionId}-${status}`,
@@ -768,10 +757,8 @@ async function sessionEvent(
   if (times.length > 0 && times.every((t) => Date.parse(t) < Date.now())) return;
   const lang = await recipient(other, "notify_messages");
   if (!lang) return;
-  const name = (await firstName(actor)) ?? someone[lang];
   await ctx.push("push", other, {
-    title: pushTitle,
-    body: sessionChanged(lang, status, name, sessionName(lang, session.title, session.sport_id)),
+    ...sessionChanged(lang, status, await firstName(actor), sessionName(lang, session.title, session.sport_id)),
     // A cancel reads like the automatic one (`session.auto_cancelled`) to the app: same kind.
     data: status === "cancelled"
       ? { kind: "session_cancelled", match: p.matchId, session: p.sessionId }
