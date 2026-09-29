@@ -54,6 +54,12 @@ const world = {
   labels: [] as { Name: string; ParentName: string; Confidence: number }[],
   stream: [] as string[],
   streamUsers: [] as Row[],
+  /** Stream channels by id: their messages. */
+  channels: {} as Record<string, Row[]>,
+  /** R2 keys that exist, and the outside deletions (R2, selfies bucket, Stream, Auth), in order. */
+  objects: [] as string[],
+  selfies: [] as string[],
+  erased: [] as string[],
 };
 
 function reset() {
@@ -70,6 +76,10 @@ function reset() {
   world.labels = [];
   world.stream = [];
   world.streamUsers = [];
+  world.channels = {};
+  world.objects = [];
+  world.selfies = [];
+  world.erased = [];
 }
 
 /** PostgREST filters as supabase-js writes them: `col=eq.value`, and `.or(...)` (all rows). */
@@ -104,6 +114,17 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
       const name = url.pathname.slice("/rest/v1/rpc/".length);
       world.rpc.push({ name, args: text ? JSON.parse(text) : {} });
       return respond(world.rpcResults[name] ?? null);
+    }
+    if (url.pathname.startsWith("/auth/v1/admin/users/") && request.method === "DELETE") {
+      world.erased.push(`auth ${url.pathname.split("/").pop()}`);
+      return respond({});
+    }
+    if (url.pathname === "/storage/v1/object/list/verification-selfies") {
+      return respond(world.selfies.map((name) => ({ name })));
+    }
+    if (url.pathname === "/storage/v1/object/verification-selfies" && request.method === "DELETE") {
+      world.erased.push(`selfies ${(JSON.parse(text) as { prefixes: string[] }).prefixes.join(" ")}`);
+      return respond([]);
     }
     if (url.pathname.startsWith("/auth/v1/admin/users/")) {
       const id = url.pathname.split("/").pop()!;
@@ -144,6 +165,15 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
   }
 
   if (url.host.endsWith("r2.cloudflarestorage.com")) {
+    if (url.searchParams.get("list-type") === "2") {
+      const prefix = url.searchParams.get("prefix") ?? "";
+      const keys = world.objects.filter((k) => k.startsWith(prefix)).map((k) => `<Key>${k}</Key>`).join("");
+      return new Response(`<ListBucketResult>${keys}</ListBucketResult>`, { status: 200 });
+    }
+    if (request.method === "DELETE") {
+      world.erased.push(`r2 ${decodeURIComponent(url.pathname.split("/").slice(2).join("/"))}`);
+      return new Response(null, { status: 204 });
+    }
     if (request.method === "HEAD") return new Response(null, { status: 200, headers: { "content-length": "4" } });
     return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
   }
@@ -164,7 +194,22 @@ const fakeStream = {
       world.stream.push(`create ${id}`);
       return Promise.resolve({});
     },
-    delete: () => Promise.resolve({}),
+    delete: (options?: { hard_delete?: boolean }) => {
+      if (!world.channels[id]) {
+        return Promise.reject(Object.assign(new Error("channel does not exist"), { status: 404 }));
+      }
+      delete world.channels[id];
+      world.erased.push(`stream channel ${id}${options?.hard_delete ? " hard" : ""}`);
+      return Promise.resolve({});
+    },
+    // Oldest first, `limit` of them before `id_lt`, like the real thing; an unknown channel is a 404.
+    query: (options: { messages?: { limit?: number; id_lt?: string } }) => {
+      const all = world.channels[id];
+      if (!all) return Promise.reject(Object.assign(new Error(`Can't find channel ${id}`), { status: 404 }));
+      const end = options.messages?.id_lt ? all.findIndex((m) => m.id === options.messages?.id_lt) : all.length;
+      const limit = options.messages?.limit ?? 25;
+      return Promise.resolve({ messages: all.slice(Math.max(0, end - limit), end) });
+    },
     sendMessage: (m: { id: string }, options?: { skip_push?: boolean }) => {
       if (messages.has(m.id)) return Promise.reject(new Error(`StreamChat error: message ${m.id} already exists`));
       messages.add(m.id);
@@ -182,6 +227,10 @@ const fakeStream = {
   banUser: () => Promise.resolve({}),
   unbanUser: () => Promise.resolve({}),
   setPushPreferences: () => Promise.resolve({}),
+  deleteUsers: (ids: string[], options: Row) => {
+    world.erased.push(`stream user ${ids.join(" ")} ${options.user}`);
+    return Promise.resolve({ task_id: "t" });
+  },
 };
 
 const { useStreamClientForTests } = await import("../_shared/stream.ts");
@@ -484,5 +533,110 @@ Deno.test("session.reminder: pushed while the session holds, never once it's can
   }];
   await runEvent({ id: 12, event: "session.reminder", payload, pushUntil: inAnHour() });
   assertEquals(world.pushes, []);
+  assertEquals(calls("ack_event").length, 1);
+});
+
+// MARK: Retention purges (20260930000201)
+
+/** A chat of `n` messages, one of them with a photo, another with a video and its poster. */
+function chat(n: number, sender = ana): Row[] {
+  return Array.from({ length: n }, (_, i) => ({
+    id: `m${i}`,
+    attachments: i === 1
+      ? [{ type: "drafft_media", key: `u/${sender}/chat/p${i}.jpg` }]
+      : i === n - 1
+      ? [{ type: "drafft_media", key: `u/${bo}/chat/v${i}.mp4`, poster_key: `u/${bo}/chat/v${i}.jpg` }]
+      : [],
+  }));
+}
+
+Deno.test("chat.erase: every page's media, whoever sent it, then the channel, for good", async () => {
+  reset();
+  world.rpcResults.chat_erase_due = true;
+  world.channels[match] = chat(650);
+  // Not a chat object: never deleted from a chat's erasure.
+  world.channels[match][5].attachments = [{ type: "drafft_media", key: `u/${ana}/photos/profile.jpg` }];
+  await runEvent({ id: 30, event: "chat.erase", payload: { matchId: match } });
+  // Media first (in any order: 20 at a time), the channel last.
+  assertEquals(world.erased.slice(0, 3).sort(), [
+    `r2 u/${ana}/chat/p1.jpg`,
+    `r2 u/${bo}/chat/v649.jpg`,
+    `r2 u/${bo}/chat/v649.mp4`,
+  ]);
+  assertEquals(world.erased.slice(3), [`stream channel ${match} hard`]);
+  assertEquals(steps(30), ["chat"]);
+  assertEquals(calls("chat_erased")[0].args, { p_match: match });
+  assertEquals(calls("ack_event").length, 1);
+});
+
+Deno.test("chat.erase: a channel Stream never had is done; one not due is left alone", async () => {
+  reset();
+  world.rpcResults.chat_erase_due = true;
+  await runEvent({ id: 31, event: "chat.erase", payload: { matchId: match } });
+  assertEquals(world.erased, []);
+  assertEquals(calls("chat_erased").length, 1, "nothing left to track");
+
+  reset();
+  world.rpcResults.chat_erase_due = false;
+  world.channels[match] = chat(3);
+  await runEvent({ id: 32, event: "chat.erase", payload: { matchId: match } });
+  assertEquals(world.erased, []);
+  assertEquals(calls("chat_erased").length, 0);
+  assertEquals(calls("ack_event").length, 1);
+});
+
+Deno.test("account.purge: its chats, Stream user, media and selfies, then the Auth user; a retry repeats nothing", async () => {
+  reset();
+  world.rpcResults.retained_account_due = true;
+  world.tables.matches = [{ id: match, user_a: ana, user_b: bo }];
+  world.channels[match] = chat(3);
+  world.objects = [`u/${ana}/photos/a.jpg`, `u/${ana}/chat/p1.jpg`, `u/${bo}/photos/b.jpg`];
+  world.selfies = ["s1.jpg"];
+  const event = { id: 33, event: "account.purge", payload: { userId: ana } };
+  await runEvent(event);
+  assertEquals(world.erased.slice(0, 3).sort(), [
+    `r2 u/${ana}/chat/p1.jpg`,
+    `r2 u/${bo}/chat/v2.jpg`,
+    `r2 u/${bo}/chat/v2.mp4`,
+  ]);
+  assertEquals(world.erased.slice(3, 5), [`stream channel ${match} hard`, `stream user ${ana} hard`]);
+  assertEquals(
+    world.erased.slice(5, 7).sort(),
+    [`r2 u/${ana}/chat/p1.jpg`, `r2 u/${ana}/photos/a.jpg`],
+    "its prefix only",
+  );
+  assertEquals(world.erased.slice(7), [`selfies ${ana}/s1.jpg`, `auth ${ana}`]);
+  assertEquals(steps(33), [`chat-${match}`, "chat-user", "media", "selfies"]);
+  assertEquals(calls("chat_erased")[0].args, { p_match: match });
+
+  world.erased = [];
+  world.rpc = [];
+  world.rpcResults.retained_account_due = true;
+  await runEvent({ ...event, steps: [`chat-${match}`, "chat-user", "media", "selfies"] });
+  assertEquals(world.erased, [`auth ${ana}`], "only what was left");
+});
+
+Deno.test("account.purge: a case reopened since keeps the account", async () => {
+  reset();
+  world.rpcResults.retained_account_due = false;
+  world.tables.matches = [{ id: match, user_a: ana, user_b: bo }];
+  world.channels[match] = chat(3);
+  await runEvent({ id: 34, event: "account.purge", payload: { userId: ana } });
+  assertEquals(world.erased, []);
+  assertEquals(calls("ack_event").length, 1);
+});
+
+Deno.test("selfie.expired: a banned account's selfies go 6 months on, only when still due", async () => {
+  reset();
+  world.rpcResults.banned_selfies_due = true;
+  world.rpcResults.selfie_paths = [`${ana}/s1.jpg`];
+  await runEvent({ id: 35, event: "selfie.expired", payload: { userId: ana } });
+  assertEquals(world.erased, [`selfies ${ana}/s1.jpg`]);
+  assertEquals(calls("forget_selfies").length, 1);
+
+  reset();
+  world.rpcResults.banned_selfies_due = false;
+  await runEvent({ id: 36, event: "selfie.expired", payload: { userId: ana } });
+  assertEquals(calls("selfie_paths").length, 0);
   assertEquals(calls("ack_event").length, 1);
 });
