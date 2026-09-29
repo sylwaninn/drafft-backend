@@ -185,7 +185,7 @@ export type Deletion = "kept" | "erased";
  * Deleting an account (delete-account). The database decides (retain_deleted_account):
  * - banned, held or under an open report: kept for members' safety, a soft delete, all in that one
  *   transaction; db-events `account.purge` erases it a year after its case is closed;
- * - anything else: erased. Its chats with their media, its Stream user, its media and selfies go first;
+ * - anything else: erased. Its chats with their media, its Stream user, its media, selfies and data exports go first;
  *   deleting the Auth user last cascades through every table. A step that fails leaves the account in place,
  *   so the deletion can run again. One exception (decision 5.4): a chat whose other member is banned or on
  *   hold at that moment is kept for the team, frozen, and erased a year later (`chat.erase`); the Stream user
@@ -205,6 +205,8 @@ export async function deleteAccount(userId: string): Promise<Deletion> {
 
   await eraseMedia(userId);
   await eraseSelfies(userId);
+  // Data exports not expired yet: every part of every export, side by side in the account's folder.
+  await emptyFolder("data-exports", userId);
 
   // Reported or held while the above ran: keep what is left (the database rows) instead of erasing it.
   if (await retained(userId)) return "kept";
