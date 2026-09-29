@@ -12,6 +12,7 @@
 import { optionalEnv } from "../_shared/env.ts";
 import { type Push, pushToUser } from "../_shared/apns.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
+import { eraseChat, eraseChatUser, eraseMedia, eraseSelfies } from "../_shared/erase.ts";
 import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
 import { renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/notices.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
@@ -253,8 +254,8 @@ export const handlers: Record<string, Handler> = {
   },
 
   // Unmatch, block, report, or a deleted account kept for safety: the chat disappears for both and nobody
-  // can write in it, but it is kept, never deleted, so the team can still read it in sophros (server side,
-  // with the secret). Both members leave the channel (it leaves their channel lists, and members only can
+  // can write in it, but it is kept a year (then `chat.erase`), so the team can still read it in sophros (server
+  // side, with the secret). Both members leave the channel (it leaves their channel lists, and members only can
   // read a messaging channel), then it is frozen (no message or reaction from anyone). Both calls are
   // idempotent. No channel yet (nobody wrote) or an erased account (the channel went with it): nothing to do.
   async "match.ended"(p: { matchId: string }) {
@@ -646,12 +647,42 @@ export const handlers: Record<string, Handler> = {
       .maybeSingle();
     if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
     if (profile?.moderation) return;
-    const paths = must(await admin.rpc("selfie_paths", { p_user: p.userId }), "selfie paths") as string[];
-    if (paths.length > 0) {
-      const removed = await admin.storage.from("verification-selfies").remove(paths);
-      if (removed.error) throw new Error(`selfies of ${p.userId}: ${removed.error.message}`);
-    }
-    check(await admin.rpc("forget_selfies", { p_user: p.userId }), "forget selfies");
+    await forgetSelfies(p.userId);
+  },
+
+  // A banned account's selfies, kept 6 months for an appeal (private.queue_retention_purges). Reopened since,
+  // or banned again more recently: not due, the database says.
+  async "selfie.expired"(p: { userId: string }) {
+    if (!await due("banned_selfies_due", { p_user: p.userId })) return;
+    await forgetSelfies(p.userId);
+  },
+
+  // An account kept for safety, its case closed over a year ago: erased like delete-account erases one. First
+  // the chats it had (frozen since its deletion) with what either member sent in them, then its Stream user,
+  // its media and selfies, and last its Auth user, which takes every row with it. A hold or a report reopened
+  // since keeps it: the database says whether it is still due.
+  async "account.purge"(p: { userId: string }, ctx) {
+    if (!await due("retained_account_due", { p_user: p.userId })) return;
+    const matches = must(
+      await admin.from("matches").select("id").or(`user_a.eq.${p.userId},user_b.eq.${p.userId}`),
+      "matches",
+    ) as { id: string }[];
+    for (const m of matches) await ctx.once(`chat-${m.id}`, () => eraseChat(m.id));
+    await ctx.once("chat-user", () => eraseChatUser(p.userId));
+    await ctx.once("media", () => eraseMedia(p.userId));
+    await ctx.once("selfies", () => eraseSelfies(p.userId));
+    const { error } = await admin.auth.admin.deleteUser(p.userId);
+    if (error && error.status !== 404) throw new Error(`delete auth user ${p.userId}: ${error.message}`);
+    // After the Auth user: erasing its matches tracked their chats again.
+    for (const m of matches) check(await admin.rpc("chat_erased", { p_match: m.id }), "chat erased");
+  },
+
+  // A chat that ended over a year ago (an ended match, or one kept when an account was deleted): its media
+  // and its channel go. Erased already with a kept account: nothing to do.
+  async "chat.erase"(p: { matchId: string }, ctx) {
+    if (!await due("chat_erase_due", { p_match: p.matchId })) return;
+    await ctx.once("chat", () => eraseChat(p.matchId));
+    check(await admin.rpc("chat_erased", { p_match: p.matchId }), "chat erased");
   },
 
   // drafft tempo's free boost of the week was credited (private.credit_weekly_boosts). Tapping it
@@ -695,6 +726,23 @@ async function pushModeration(
     // One moderation push at a time: a newer state replaces the older one on the lock screen.
     collapseId: `moderation-${p.userId}`,
   });
+}
+
+/** Whether a purge is still due, asked of the database at delivery (the state may have changed since queued). */
+async function due(rpc: string, args: Record<string, string>): Promise<boolean> {
+  const result = await admin.rpc(rpc, args);
+  check(result, rpc);
+  return result.data === true;
+}
+
+/** The selfies an account sent, deleted from the bucket, then forgotten. */
+async function forgetSelfies(userId: string) {
+  const paths = must(await admin.rpc("selfie_paths", { p_user: userId }), "selfie paths") as string[];
+  if (paths.length > 0) {
+    const removed = await admin.storage.from("verification-selfies").remove(paths);
+    if (removed.error) throw new Error(`selfies of ${userId}: ${removed.error.message}`);
+  }
+  check(await admin.rpc("forget_selfies", { p_user: userId }), "forget selfies");
 }
 
 async function reviewWasSelfie(userId: string): Promise<boolean> {
