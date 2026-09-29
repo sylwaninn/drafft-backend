@@ -27,6 +27,12 @@ Use this skill when:
 - Creating onboarding guides
 - Explaining complex technical concepts
 
+## drafft: user-facing text
+
+Anything people read in the product or its marketing (UI strings, help and safety sheets, emails,
+push, store listings, website) follows the repository's `WORDING.md`: read it first and use the
+`wording` skill. This skill covers developer documentation only.
+
 ## Writing Principles
 
 ### 1. **User-Centered**

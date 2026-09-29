@@ -68,7 +68,7 @@ jobs:
         run: deno check cloudflare/media-worker/src/*.ts && deno test cloudflare/media-worker
       - name: Unit and Edge Function auth tests (no network)
         working-directory: supabase/functions
-        run: deno test --allow-env --allow-read=.
+        run: deno test --allow-env --allow-read=.,../../WORDING.md
       - name: Shell scripts
         run: shellcheck -S warning scripts/*.sh scripts/ci/*.sh
       - name: Workflows
