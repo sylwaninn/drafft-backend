@@ -97,9 +97,21 @@ The app-side list lives in `drafft/TODO.md`.
       their next open is the app's part (`drafft`, `feat/sensitive-data-consent`).
 - [ ] Data export (right of access): an Edge Function that bundles the profile, media keys, swipes,
       matches, sessions and Stream messages.
-- [ ] Retention: purge `swipes` passes older than N months, delivered outbox rows (done, 7 days), handled
-      reports after the legal period.
-- [ ] Data processing agreements: Supabase, Cloudflare, Stream, moderation and SMS providers.
+- [x] Retention on the privacy policy's schedule (`privacy-purge`, see README "Privacy and data retention"):
+      reports, moderation records, the audit log, identity fingerprints, help requests, purchases, dead letters.
+      Swipes stay for the account's life, as the policy says.
+- [ ] Accounts kept for safety, frozen chats and their media, banned accounts' selfies: purge them on the
+      policy's schedule (1 year after the case is closed, 1 year after the match ended, 6 months after the ban).
+- [ ] **Backups.** Enable Point-in-Time Recovery (or daily backups) with 30 days of retention at most before
+      launch (Supabase dashboard, production): the policy says backups are erased after 30 days.
+- [ ] **Auth audit log.** `auth.audit_log_entries` keeps sign-in events with IP addresses: purge them after 180
+      days like `private.ips`, or turn the database audit log off (Auth settings).
+- [ ] **Data processing agreements** signed with Supabase, Cloudflare, Stream, AWS (Rekognition), Twilio,
+      Resend and RevenueCat (and Sentry, PostHog when added), with the transfer safeguards the policy names.
+- [ ] **Sentry and PostHog**, when added: EU region (Germany), 90 days for crash reports and 13 months at most
+      for usage statistics, PostHog only after the in-app consent, deleted with the account.
+- [ ] **support@getdrafft.com** routed to sophros (see "Support replies landing back" above): the policy and
+      the terms give it as the address for rights requests and reports of illegal content.
 
 ## Scale, when numbers ask for it
 

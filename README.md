@@ -161,6 +161,39 @@ Support replies are written in sophros (`admin_reply_support`) and emailed by db
 framed in the person's language, with Reply-To SUPPORT_INBOX. The mailer never sends to reserved domains
 (`.test`, `.example`, `.invalid`, `.localhost`), which the demo and test accounts use.
 
+## Privacy and data retention
+
+What drafft keeps about people, where, for how long, and what enforces it, as the privacy policy promises
+("How long we keep it"). The periods are maximums: most rows go earlier, with their account. Daily jobs run
+from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000101`) returns what it deleted.
+
+| Data | Where | Kept | Enforced by |
+| --- | --- | --- | --- |
+| Account, profile, lifestyle, sports, prompts, settings, location, wallet, cards, swipes, matches, blocks, sessions, push tokens, DeviceCheck token, selfie records, export requests | `auth.users`, `auth.identities`, `public.*`, `private.locations`, `private.device_checks`, `private.selfie_checks`, `private.data_requests` | the account's life | `delete-account`: deleting the Auth user cascades through every table |
+| Photos, videos, voice intro, chat photos and videos | R2 `u/<id>/…` | the account's life; a removed photo at once | `delete-account` (the whole prefix), db-events `media.deleted` |
+| Chat messages | Stream, one channel per match | the match's life; an ended match's chat is frozen and kept | `delete-account` hard-deletes the Stream user and messages |
+| Accounts kept for safety (banned, held or under an open report when deleted) | the same rows, `profiles.deleted_at`, `private.account_deletions` | until the case is closed | see [TODO.md](TODO.md) |
+| Verification selfies | Storage `verification-selfies` | until the hold is lifted; a banned account's for an appeal | db-events `selfie.delete`, `delete-account` |
+| IP addresses | `private.ips` | 180 days after the last open from that address | `device-reports-prune` |
+| Devices (model, versions, last IP) | `private.devices` | 1 year after the last open | `device-reports-prune` |
+| Verification texts sent (number, IP) | `private.sms_sends` | 30 days | `sms-sends-cleanup` |
+| Sending queue (pushes, emails, Stream and R2 calls) | `private.outbox` | delivered 7 days; dropped, discarded or failed 30 days | `outbox-cleanup` |
+| Team alerts (counts only, nothing personal) | `private.ops_alerts` | 90 days | `ops-alerts-cleanup` |
+| Reports | `public.reports` | 1 year after they're handled; open ones stay; the reporter's id goes when they delete their account | `privacy-purge` |
+| Moderation log, staff notes, photo flags, links between accounts | `private.moderation_log`, `private.staff_notes`, `public.media_flags`, `private.account_links` | 1 year, 3 years about a banned account (the entry behind a hold in force stays with the hold; a flag counts from its review) | `privacy-purge` |
+| Team access log | `private.admin_audit` | 1 year, 3 years about a banned account; append-only, the purge is the only deletion | `privacy-purge` |
+| Identity fingerprints (HMAC digests of email, phone, Apple or Google ids) | `private.identity_marks`, `private.deleted_identities` | the account's life (marks of a hold or ban), then 1 year after its deletion, 3 years for a ban | `privacy-purge` |
+| Help requests and replies | `private.support_requests`, `private.support_messages` | 3 years after the last exchange | `privacy-purge` |
+| Purchases | `public.purchase_events`, `private.purchase_credits` | 10 years after the event (accounting); unlinked from the account when it's deleted | `privacy-purge`, `on delete set null` |
+| Backups | Supabase | 30 days at most | dashboard setting, see [TODO.md](TODO.md) |
+
+"About a banned account": banned now, or banned when it was deleted (`private.banned_account`: its ban marks
+outlive it and keep its id). The deletion record of a kept account (`private.account_deletions.identities`)
+never holds an identity in clear: which kinds existed and the sign-ins' providers and dates only. The digests in
+`private.deleted_identities` link a later sign-up, and `admin_users` finds a kept account from its full old email
+or phone number through them. `private.admin_audit` stays append-only for everyone: its delete trigger lets a row
+go only inside the purge (the transaction setting `drafft.purging`) and only once past its period.
+
 ## Local development
 
 ```sh
