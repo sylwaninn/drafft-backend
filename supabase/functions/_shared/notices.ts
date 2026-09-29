@@ -425,6 +425,425 @@ export function renderExportReady(lang: Language, links: string[]): Rendered {
   return { subject: c.subject, html: layout(lang, c.subject, rows), text: text.join("\n") };
 }
 
+// MARK: Statements of reasons
+
+// A decision by a person on the team about a member (DSA art. 17): what was decided, why (a category from
+// private.reason_categories, and the team's note when they wrote one, sent as written), the rule it applies,
+// and how to contest it. Sent by db-events (`moderation.decision`) with Reply-To SUPPORT_INBOX.
+export type Decision = "photo_refused" | "message_deleted" | "account_review" | "account_selfie" | "account_banned";
+
+export const decisionCopy: Record<Decision, Record<Language, { subject: string; title: string; body: string }>> = {
+  photo_refused: {
+    en: {
+      subject: "A photo can't go on your profile",
+      title: "A photo can't go on your profile.",
+      body: "A person on the drafft team looked at one of your photos and refused it.",
+    },
+    fr: {
+      subject: "Une photo ne peut pas aller sur ton profil",
+      title: "Une photo ne peut pas aller sur ton profil.",
+      body: "Une personne de l'équipe drafft a examiné une de tes photos et l'a refusée.",
+    },
+    es: {
+      subject: "Una foto no puede ir en tu perfil",
+      title: "Una foto no puede ir en tu perfil.",
+      body: "Una persona del equipo de drafft ha revisado una de tus fotos y la ha rechazado.",
+    },
+    de: {
+      subject: "Ein Foto kann nicht in dein Profil",
+      title: "Ein Foto kann nicht in dein Profil.",
+      body: "Eine Person aus dem drafft-Team hat eines deiner Fotos geprüft und abgelehnt.",
+    },
+    it: {
+      subject: "Una foto non può andare sul tuo profilo",
+      title: "Una foto non può andare sul tuo profilo.",
+      body: "Una persona del team di drafft ha esaminato una delle tue foto e l'ha rifiutata.",
+    },
+    pt: {
+      subject: "Uma foto não pode ir para o teu perfil",
+      title: "Uma foto não pode ir para o teu perfil.",
+      body: "Uma pessoa da equipa drafft analisou uma das tuas fotos e recusou-a.",
+    },
+    nl: {
+      subject: "Een foto kan niet op je profiel",
+      title: "Een foto kan niet op je profiel.",
+      body: "Iemand van het drafft-team heeft een van je foto's bekeken en afgewezen.",
+    },
+  },
+  message_deleted: {
+    en: {
+      subject: "We removed one of your messages",
+      title: "We removed one of your messages.",
+      body: "A person on the drafft team removed one of your messages in a chat.",
+    },
+    fr: {
+      subject: "On a supprimé un de tes messages",
+      title: "On a supprimé un de tes messages.",
+      body: "Une personne de l'équipe drafft a supprimé un de tes messages dans une discussion.",
+    },
+    es: {
+      subject: "Hemos eliminado uno de tus mensajes",
+      title: "Hemos eliminado uno de tus mensajes.",
+      body: "Una persona del equipo de drafft ha eliminado uno de tus mensajes en un chat.",
+    },
+    de: {
+      subject: "Wir haben eine deiner Nachrichten entfernt",
+      title: "Wir haben eine deiner Nachrichten entfernt.",
+      body: "Eine Person aus dem drafft-Team hat eine deiner Nachrichten in einem Chat entfernt.",
+    },
+    it: {
+      subject: "Abbiamo rimosso un tuo messaggio",
+      title: "Abbiamo rimosso un tuo messaggio.",
+      body: "Una persona del team di drafft ha rimosso un tuo messaggio in una chat.",
+    },
+    pt: {
+      subject: "Removemos uma das tuas mensagens",
+      title: "Removemos uma das tuas mensagens.",
+      body: "Uma pessoa da equipa drafft removeu uma das tuas mensagens numa conversa.",
+    },
+    nl: {
+      subject: "We hebben een bericht van je verwijderd",
+      title: "We hebben een bericht van je verwijderd.",
+      body: "Iemand van het drafft-team heeft een van je berichten in een chat verwijderd.",
+    },
+  },
+  account_review: {
+    en: {
+      subject: "We're checking your account",
+      title: "We're checking your account.",
+      body: "Until a person on the drafft team has checked it, your profile is hidden and your chats are read-only.",
+    },
+    fr: {
+      subject: "On vérifie ton compte",
+      title: "On vérifie ton compte.",
+      body:
+        "Jusqu'à ce qu'une personne de l'équipe drafft l'ait vérifié, ton profil est masqué et tes discussions sont en lecture seule.",
+    },
+    es: {
+      subject: "Estamos revisando tu cuenta",
+      title: "Estamos revisando tu cuenta.",
+      body:
+        "Hasta que una persona del equipo de drafft la revise, tu perfil está oculto y tus chats son de solo lectura.",
+    },
+    de: {
+      subject: "Wir prüfen dein Konto",
+      title: "Wir prüfen dein Konto.",
+      body:
+        "Bis eine Person aus dem drafft-Team es geprüft hat, ist dein Profil verborgen und deine Chats sind schreibgeschützt.",
+    },
+    it: {
+      subject: "Stiamo verificando il tuo account",
+      title: "Stiamo verificando il tuo account.",
+      body:
+        "Finché una persona del team di drafft non l'avrà verificato, il tuo profilo è nascosto e le chat sono in sola lettura.",
+    },
+    pt: {
+      subject: "Estamos a verificar a tua conta",
+      title: "Estamos a verificar a tua conta.",
+      body:
+        "Até uma pessoa da equipa drafft a verificar, o teu perfil fica oculto e as tuas conversas ficam só de leitura.",
+    },
+    nl: {
+      subject: "We controleren je account",
+      title: "We controleren je account.",
+      body:
+        "Tot iemand van het drafft-team het heeft gecontroleerd, is je profiel verborgen en kun je je chats alleen lezen.",
+    },
+  },
+  account_selfie: {
+    en: {
+      subject: "We need a selfie to check your account",
+      title: "We need a selfie to check your account.",
+      body: "Until you send it, your profile is hidden and your chats are read-only. Open drafft to take it.",
+    },
+    fr: {
+      subject: "On a besoin d'un selfie pour ton compte",
+      title: "On a besoin d'un selfie pour ton compte.",
+      body:
+        "Tant que tu ne l'as pas envoyé, ton profil est masqué et tes discussions sont en lecture seule. Ouvre drafft pour le prendre.",
+    },
+    es: {
+      subject: "Necesitamos un selfie para tu cuenta",
+      title: "Necesitamos un selfie para tu cuenta.",
+      body: "Hasta que lo envíes, tu perfil está oculto y tus chats son de solo lectura. Abre drafft para hacerlo.",
+    },
+    de: {
+      subject: "Wir brauchen ein Selfie für dein Konto",
+      title: "Wir brauchen ein Selfie für dein Konto.",
+      body:
+        "Bis du es schickst, ist dein Profil verborgen und deine Chats sind schreibgeschützt. Öffne drafft, um es aufzunehmen.",
+    },
+    it: {
+      subject: "Ci serve un selfie per il tuo account",
+      title: "Ci serve un selfie per il tuo account.",
+      body: "Finché non lo invii, il tuo profilo è nascosto e le chat sono in sola lettura. Apri drafft per scattarlo.",
+    },
+    pt: {
+      subject: "Precisamos de uma selfie para a tua conta",
+      title: "Precisamos de uma selfie para a tua conta.",
+      body:
+        "Até a enviares, o teu perfil fica oculto e as tuas conversas ficam só de leitura. Abre o drafft para a tirar.",
+    },
+    nl: {
+      subject: "We hebben een selfie van je nodig",
+      title: "We hebben een selfie van je nodig.",
+      body: "Tot je hem stuurt, is je profiel verborgen en kun je je chats alleen lezen. Open drafft om hem te maken.",
+    },
+  },
+  account_banned: {
+    en: {
+      subject: "Your drafft account is closed",
+      title: "Your account is closed.",
+      body:
+        "A person on the drafft team closed your account for good: your profile is hidden and you can't sign up again.",
+    },
+    fr: {
+      subject: "Ton compte drafft est fermé",
+      title: "Ton compte est fermé.",
+      body:
+        "Une personne de l'équipe drafft a fermé ton compte définitivement\u00A0: ton profil est masqué et tu ne peux plus t'inscrire à nouveau.",
+    },
+    es: {
+      subject: "Tu cuenta de drafft está cerrada",
+      title: "Tu cuenta está cerrada.",
+      body:
+        "Una persona del equipo de drafft ha cerrado tu cuenta de forma definitiva: tu perfil está oculto y no puedes volver a registrarte.",
+    },
+    de: {
+      subject: "Dein drafft-Konto ist geschlossen",
+      title: "Dein Konto ist geschlossen.",
+      body:
+        "Eine Person aus dem drafft-Team hat dein Konto dauerhaft geschlossen: Dein Profil ist verborgen und du kannst dich nicht neu registrieren.",
+    },
+    it: {
+      subject: "Il tuo account drafft è chiuso",
+      title: "Il tuo account è chiuso.",
+      body:
+        "Una persona del team di drafft ha chiuso il tuo account in modo definitivo: il tuo profilo è nascosto e non puoi registrarti di nuovo.",
+    },
+    pt: {
+      subject: "A tua conta drafft foi encerrada",
+      title: "A tua conta foi encerrada.",
+      body:
+        "Uma pessoa da equipa drafft encerrou a tua conta de vez: o teu perfil fica oculto e não te podes registar de novo.",
+    },
+    nl: {
+      subject: "Je drafft-account is gesloten",
+      title: "Je account is gesloten.",
+      body:
+        "Iemand van het drafft-team heeft je account definitief gesloten: je profiel is verborgen en je kunt je niet opnieuw aanmelden.",
+    },
+  },
+};
+
+/** The reason categories of private.reason_categories, as the member reads them after "Why:". */
+export type ReasonCategory =
+  | "harassment"
+  | "hate"
+  | "sexual_content"
+  | "violence_illegal"
+  | "underage"
+  | "impersonation"
+  | "scam_commercial"
+  | "privacy"
+  | "fake_account"
+  | "evasion"
+  | "photo_guidelines"
+  | "identity_check"
+  | "other";
+
+export const reasonCopy: Record<ReasonCategory, Record<Language, string>> = {
+  harassment: {
+    en: "harassing, threatening or insulting someone",
+    fr: "harceler, menacer ou insulter quelqu'un",
+    es: "acosar, amenazar o insultar a alguien",
+    de: "jemanden belästigen, bedrohen oder beleidigen",
+    it: "molestare, minacciare o insultare qualcuno",
+    pt: "assediar, ameaçar ou insultar alguém",
+    nl: "iemand lastigvallen, bedreigen of beledigen",
+  },
+  hate: {
+    en: "hateful or discriminatory content",
+    fr: "un contenu haineux ou discriminatoire",
+    es: "contenido de odio o discriminatorio",
+    de: "hasserfüllte oder diskriminierende Inhalte",
+    it: "contenuti d'odio o discriminatori",
+    pt: "conteúdo de ódio ou discriminatório",
+    nl: "haatdragende of discriminerende inhoud",
+  },
+  sexual_content: {
+    en: "sexual content or nudity",
+    fr: "un contenu sexuel ou de la nudité",
+    es: "contenido sexual o desnudos",
+    de: "sexuelle Inhalte oder Nacktheit",
+    it: "contenuti sessuali o nudità",
+    pt: "conteúdo sexual ou nudez",
+    nl: "seksuele inhoud of naakt",
+  },
+  violence_illegal: {
+    en: "violent or illegal content",
+    fr: "un contenu violent ou illégal",
+    es: "contenido violento o ilegal",
+    de: "gewalttätige oder illegale Inhalte",
+    it: "contenuti violenti o illegali",
+    pt: "conteúdo violento ou ilegal",
+    nl: "gewelddadige of illegale inhoud",
+  },
+  underage: {
+    en: "drafft is only for people aged 18 or over",
+    fr: "drafft est réservé aux personnes de 18\u00A0ans ou plus",
+    es: "drafft es solo para mayores de 18 años",
+    de: "drafft ist nur für Menschen ab 18",
+    it: "drafft è solo per chi ha almeno 18 anni",
+    pt: "o drafft é só para maiores de 18 anos",
+    nl: "drafft is alleen voor mensen van 18 of ouder",
+  },
+  impersonation: {
+    en: "pretending to be someone else, or using someone else's photos",
+    fr: "se faire passer pour quelqu'un d'autre, ou utiliser ses photos",
+    es: "hacerse pasar por otra persona o usar sus fotos",
+    de: "sich als jemand anderes ausgeben oder fremde Fotos nutzen",
+    it: "fingersi un'altra persona o usare le sue foto",
+    pt: "fazer-se passar por outra pessoa ou usar as fotos dela",
+    nl: "je voordoen als iemand anders of andermans foto's gebruiken",
+  },
+  scam_commercial: {
+    en: "a scam, selling or advertising, or asking for money",
+    fr: "une arnaque, de la vente ou de la publicité, ou une demande d'argent",
+    es: "una estafa, vender o anunciar algo, o pedir dinero",
+    de: "Betrug, Verkauf oder Werbung, oder Bitten um Geld",
+    it: "una truffa, vendite o pubblicità, o richieste di denaro",
+    pt: "uma burla, vendas ou publicidade, ou pedidos de dinheiro",
+    nl: "oplichting, verkoop of reclame, of vragen om geld",
+  },
+  privacy: {
+    en: "sharing someone's personal information or messages without their consent",
+    fr: "partager les informations personnelles ou les messages de quelqu'un sans son accord",
+    es: "compartir información personal o mensajes de alguien sin su consentimiento",
+    de: "persönliche Daten oder Nachrichten von jemandem ohne Zustimmung teilen",
+    it: "condividere informazioni personali o messaggi di qualcuno senza il suo consenso",
+    pt: "partilhar informações pessoais ou mensagens de alguém sem consentimento",
+    nl: "iemands persoonlijke gegevens of berichten delen zonder toestemming",
+  },
+  fake_account: {
+    en: "a fake account, several accounts, or automated use",
+    fr: "un faux compte, plusieurs comptes ou une utilisation automatisée",
+    es: "una cuenta falsa, varias cuentas o un uso automatizado",
+    de: "ein Fake-Konto, mehrere Konten oder automatisierte Nutzung",
+    it: "un account falso, più account o un uso automatizzato",
+    pt: "uma conta falsa, várias contas ou uma utilização automatizada",
+    nl: "een nepaccount, meerdere accounts of geautomatiseerd gebruik",
+  },
+  evasion: {
+    en: "getting around a restriction, a block or a ban",
+    fr: "contourner une restriction, un blocage ou un bannissement",
+    es: "saltarse una restricción, un bloqueo o una expulsión",
+    de: "eine Einschränkung, Blockierung oder Sperre umgehen",
+    it: "aggirare una restrizione, un blocco o un ban",
+    pt: "contornar uma restrição, um bloqueio ou uma expulsão",
+    nl: "een beperking, blokkering of ban omzeilen",
+  },
+  photo_guidelines: {
+    en: "the photo doesn't fit drafft's photo guidelines",
+    fr: "la photo ne respecte pas les règles photo de drafft",
+    es: "la foto no cumple las normas de fotos de drafft",
+    de: "das Foto entspricht nicht den Foto-Richtlinien von drafft",
+    it: "la foto non rispetta le regole sulle foto di drafft",
+    pt: "a foto não cumpre as regras de fotos do drafft",
+    nl: "de foto voldoet niet aan de fotoregels van drafft",
+  },
+  identity_check: {
+    en: "we need to confirm your photos are of you",
+    fr: "on doit vérifier que tes photos sont bien de toi",
+    es: "tenemos que confirmar que las fotos son tuyas",
+    de: "wir müssen prüfen, ob die Fotos dich zeigen",
+    it: "dobbiamo verificare che le foto siano tue",
+    pt: "temos de confirmar que as fotos são tuas",
+    nl: "we moeten controleren of de foto's van jou zijn",
+  },
+  other: {
+    en: "a breach of drafft's terms of use",
+    fr: "un manquement aux conditions d'utilisation de drafft",
+    es: "un incumplimiento de las condiciones de uso de drafft",
+    de: "ein Verstoß gegen die Nutzungsbedingungen von drafft",
+    it: "una violazione delle condizioni d'uso di drafft",
+    pt: "uma violação dos termos de utilização do drafft",
+    nl: "een schending van de gebruiksvoorwaarden van drafft",
+  },
+};
+
+/** Around every statement: the reason line, the rule, the team's note, how to contest. */
+export const statementCopy: Record<Language, { why: string; rule: string; note: string; contest: string }> = {
+  en: {
+    why: "Why: {reason}.",
+    rule: "The rule is in drafft's terms of use.",
+    note: "A note from the team",
+    contest:
+      "Think it's a mistake? Reply to this email, or write to us from You › Help › Help center in drafft: someone else on the team will look at it again.",
+  },
+  fr: {
+    why: "Pourquoi\u00A0: {reason}.",
+    rule: "La règle figure dans les conditions d'utilisation de drafft.",
+    note: "Un mot de l'équipe",
+    contest:
+      "Tu penses que c'est une erreur\u00A0? Réponds à cet e-mail, ou écris-nous depuis Toi › Aide › Centre d'aide dans drafft\u00A0: une autre personne de l'équipe réexaminera la décision.",
+  },
+  es: {
+    why: "Motivo: {reason}.",
+    rule: "La norma está en las condiciones de uso de drafft.",
+    note: "Una nota del equipo",
+    contest:
+      "¿Crees que es un error? Responde a este correo o escríbenos desde Tú › Ayuda › Centro de ayuda en drafft: otra persona del equipo volverá a revisarlo.",
+  },
+  de: {
+    why: "Grund: {reason}.",
+    rule: "Die Regel steht in den Nutzungsbedingungen von drafft.",
+    note: "Eine Notiz vom Team",
+    contest:
+      "Du hältst das für einen Fehler? Antworte auf diese E-Mail oder schreib uns in drafft unter Du › Hilfe › Hilfe-Center: Eine andere Person aus dem Team prüft es noch einmal.",
+  },
+  it: {
+    why: "Motivo: {reason}.",
+    rule: "La regola è nelle condizioni d'uso di drafft.",
+    note: "Una nota del team",
+    contest:
+      "Pensi che sia un errore? Rispondi a questa email o scrivici da Tu › Aiuto › Centro assistenza in drafft: un'altra persona del team la riesaminerà.",
+  },
+  pt: {
+    why: "Motivo: {reason}.",
+    rule: "A regra está nos termos de utilização do drafft.",
+    note: "Uma nota da equipa",
+    contest:
+      "Achas que é um erro? Responde a este email ou escreve-nos em Tu › Ajuda › Centro de ajuda no drafft: outra pessoa da equipa volta a analisar.",
+  },
+  nl: {
+    why: "Reden: {reason}.",
+    rule: "De regel staat in de gebruiksvoorwaarden van drafft.",
+    note: "Een berichtje van het team",
+    contest:
+      "Denk je dat het een fout is? Beantwoord deze e-mail of schrijf ons via Jij › Hulp › Helpcentrum in drafft: iemand anders van het team bekijkt het opnieuw.",
+  },
+};
+
+/** A statement of reasons. An unknown category reads as `other`; `details` is the team's note, as written. */
+export function renderDecision(lang: Language, kind: Decision, category: string, details?: string | null): Rendered {
+  const c = decisionCopy[kind][lang];
+  const f = statementCopy[lang];
+  const reason = (reasonCopy[category as ReasonCategory] ?? reasonCopy.other)[lang];
+  const why = f.why.replace("{reason}", reason);
+  const note = details?.trim();
+  const rows = [
+    title(c.title),
+    paragraph(escape(c.body)),
+    paragraph(`<strong>${escape(why)}</strong>`),
+    small(f.rule, color.body),
+  ];
+  if (note) rows.push(muted(`${escape(f.note)}<br>${escape(note).replace(/\n/g, "<br>")}`));
+  rows.push(small(f.contest, color.mute));
+  const text = [c.title, "", c.body, "", why, f.rule, ...(note ? ["", f.note, note] : []), "", f.contest].join("\n");
+  return { subject: c.subject, html: layout(lang, c.subject, rows), text };
+}
+
 // A reply from the team (sophros), framed in the person's language; the reply itself is as written.
 export const supportReplyCopy: Record<Language, { title: string; intro: string; yours: string; note: string }> = {
   en: {
