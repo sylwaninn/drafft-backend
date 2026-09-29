@@ -56,6 +56,9 @@ The app-side list lives in `drafft/TODO.md`.
       asks for the SMS code, so the hook must be live before any public build.
 - [x] **Reports.** Reviewed and closed in sophros (the team's dashboard). A report never holds an account by
       itself: the team decides.
+- [ ] **sophros: reasons and conversation access.** Send `p_category` and `p_details` with every decision
+      (README, "Statements of reasons"), ask for a real reason before opening a conversation and show its basis
+      (`admin_conversation_access`), with the admin override.
 - [ ] **sophros per environment.** Cloudflare Access applications (staging, production), the staff in
       `private.staff` of each database, the Workers' secrets: see the sophros README.
 - [ ] **Support replies landing back.** Replies written in sophros are emailed (db-events, `support.reply`)

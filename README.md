@@ -158,8 +158,48 @@ insert into private.staff (email, role) values ('someone@getdrafft.com', 'admin'
 Locally, `supabase db reset` seeds `dev@drafft.local` (admin), the identity sophros uses in dev mode.
 
 Support replies are written in sophros (`admin_reply_support`) and emailed by db-events (`support.reply`),
-framed in the person's language, with Reply-To SUPPORT_INBOX. The mailer never sends to reserved domains
+framed in the person's language, with Reply-To SUPPORT_INBOX, like every email to a member about their account
+(notices, statements of reasons): a reply reaches the team. The mailer never sends to reserved domains
 (`.test`, `.example`, `.invalid`, `.localhost`), which the demo and test accounts use.
+
+### Statements of reasons (DSA art. 17)
+
+When a person on the team refuses a photo, removes a message, puts an account on hold or bans it, the member is
+told what was decided and why (migration `20260930000401`): the decision is stored in
+`private.moderation_decisions` (kept like the moderation log: 1 year, 3 about a banned account) and db-events
+(`moderation.decision`) emails it in their language, with the rule it applies and how to contest it (the in-app
+help center, or a reply, reviewed by someone else), and pushes it when no other push says it (a removed message,
+a review, a ban; a refused photo and a selfie request have their own). A removed message is told once Stream shows
+it removed. Automatic decisions (the photo check, holds from reports or a device) keep their own messages.
+
+The contract for sophros: two new parameters, both defaulting to null so an older sophros keeps working (a
+decision without a category is told as `other`, without a note).
+
+| RPC (service role) | New parameters | Statement sent |
+| --- | --- | --- |
+| `admin_set_hold(p_actor, p_user, p_state, p_reason, p_category, p_details)` | reason category, note for the member | a hold put or changed: `account_review`, `account_selfie`, `account_banned`; none when lifted |
+| `admin_review_media(p_actor, p_media, p_approved, p_reason, p_category, p_details)` | same | `photo_refused`, when a photo becomes refused |
+| `admin_decide_photo(p_actor, p_media, p_reason, p_hold, p_hold_reason, p_category, p_details)` | same, for the photo and the hold | `photo_refused` for a pending photo, plus the hold's |
+| `admin_close_report(p_actor, p_report, p_resolution, p_hold, p_category, p_details)` | same, for the hold | the hold's |
+| `admin_decide_flags(p_actor, p_ids, p_reason, p_hold, p_hold_reason, p_category, p_details)` | same, for the hold | the hold's |
+| `admin_log(p_actor, 'message.delete', p_user, '<match>/<message>', p_reason, p_override, p_category, p_details)` | same; `p_user` is the author | `message_deleted` |
+
+`p_reason` stays the team's internal reason (audit log, moderation log); `p_details` is written for the member
+and sent as written (1,000 characters at most). `p_category` is one of `admin_reason_categories(p_actor)`:
+`harassment`, `hate`, `sexual_content`, `violence_illegal`, `underage`, `impersonation`, `scam_commercial`,
+`privacy`, `fake_account`, `evasion`, `photo_guidelines`, `identity_check`, `other`; anything else fails with
+`invalid_category` and applies nothing.
+
+### Reading conversations and selfies
+
+`admin_log(p_actor, 'conversation.view', p_user, p_match, p_reason, p_override)` is the gate sophros calls before
+reading a conversation from Stream (and `'message.delete'` before removing a message). It needs a reason written by
+the person (`reason_required`; the old default "opened in sophros" is refused) and a basis, from
+`admin_conversation_access(p_actor, p_match)` → `{ basis, canOverride }`: `report` (a report between the two
+members), `support` (a help request from either, open or from the last 90 days), `hold` (either account on hold
+or banned). Without one it fails with `no_basis`; an admin may still read it with `p_override = true`, logged as
+an override. The audit log records the basis. `admin_selfies(p_actor, p_user, p_reason)` needs a reason (no default
+any more).
 
 ## Privacy and data retention
 
