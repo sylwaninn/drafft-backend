@@ -15,13 +15,21 @@ import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_s
 import { deleteAuthUser, eraseChat, eraseChatUser, eraseMedia, eraseSelfies, freezeChat } from "../_shared/erase.ts";
 import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
 import { buildExport, exportLink, partPath, removeExtraParts, removeParts, storeExport } from "../_shared/export.ts";
-import { renderExportReady, renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/notices.ts";
+import {
+  type Decision,
+  renderDecision,
+  renderExportReady,
+  renderNotice,
+  renderSupportReply,
+  renderTeamEmail,
+} from "../_shared/notices.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
 import { type Provider, ProviderError, trackProviders, viaProvider } from "../_shared/providers.ts";
 import { ensureChannel, ensureUsers, sendOnce, setChatHeld, stream } from "../_shared/stream.ts";
 import { admin, check, must } from "../_shared/supabase.ts";
 import {
+  decisionPush,
   type Language,
   language,
   likeReceived,
@@ -168,6 +176,11 @@ async function toTeam(
     return;
   }
   await ctx.once("team-email", () => sendEmail(inbox, renderTeamEmail(subject, lines), key, replyTo));
+}
+
+/** Where a member's reply to a notice goes: the team's inbox (unset locally: the sender, as before). */
+function supportInbox(): string | undefined {
+  return optionalEnv("SUPPORT_INBOX");
 }
 
 /** Stream ban on or off from the account's current hold. Deleted since: the account and its chats are gone. */
@@ -477,7 +490,13 @@ export const handlers: Record<string, Handler> = {
       const kind = p.previous === "banned" ? "accountReopened" : "accountRestored";
       await ctx.once(
         "email",
-        () => sendEmail(email, renderNotice(kind, language(profile.language)), `hold-lifted-${p.userId}-${p.previous}`),
+        () =>
+          sendEmail(
+            email,
+            renderNotice(kind, language(profile.language)),
+            `hold-lifted-${p.userId}-${p.previous}`,
+            supportInbox(),
+          ),
       );
     }
   },
@@ -497,7 +516,13 @@ export const handlers: Record<string, Handler> = {
     if (profileError) throw new Error(`profile ${p.userId}: ${profileError.message}`);
     await ctx.once(
       "email",
-      () => sendEmail(email, renderNotice("photoApproved", language(profile?.language)), `photo-approved-${p.mediaId}`),
+      () =>
+        sendEmail(
+          email,
+          renderNotice("photoApproved", language(profile?.language)),
+          `photo-approved-${p.mediaId}`,
+          supportInbox(),
+        ),
     );
   },
 
@@ -525,7 +550,7 @@ export const handlers: Record<string, Handler> = {
     // One email per decision: a photo can be refused, sent back, and refused again.
     await ctx.once(
       "email",
-      () => sendEmail(email, renderNotice("photoRefused", lang), `photo-refused-${p.mediaId}-${p.at}`),
+      () => sendEmail(email, renderNotice("photoRefused", lang), `photo-refused-${p.mediaId}-${p.at}`, supportInbox()),
     );
   },
 
@@ -546,6 +571,7 @@ export const handlers: Record<string, Handler> = {
         request.email,
         renderNotice("supportReceived", language(request.language), { reference: request.reference }),
         `support-ack-${request.reference}`,
+        supportInbox(),
       ));
     await toTeam(
       ctx,
@@ -580,7 +606,7 @@ export const handlers: Record<string, Handler> = {
         reply.email,
         renderSupportReply(language(reply.language), reply),
         `support-reply-${p.id}`,
-        optionalEnv("SUPPORT_INBOX"),
+        supportInbox(),
       );
     } catch (error) {
       check(
@@ -719,6 +745,47 @@ export const handlers: Record<string, Handler> = {
     await removeParts(paths);
   },
 
+  // A decision by a person on the team (private.record_decision): the statement of reasons, emailed in the
+  // person's language with Reply-To SUPPORT_INBOX, and pushed when no other push says it (a removed message, a
+  // review, a ban). A removed message is told once Stream shows it removed: sophros logs the removal just before
+  // making it, so until then the event is retried, and one that never happened ends in the dead letters.
+  async "moderation.decision"(p: { id: number }, ctx) {
+    const [decision] = must(await admin.rpc("moderation_decision", { p_id: p.id }), "decision") as {
+      user_id: string;
+      kind: Decision;
+      category: string;
+      details: string | null;
+      target: string | null;
+      language: string | null;
+    }[];
+    // The account was erased since: nobody to tell.
+    if (!decision) return;
+    if (decision.kind === "message_deleted" && !ctx.done("removed")) {
+      await messageRemoved(decision.target?.split("/")[1] ?? "");
+      await ctx.record("removed");
+    }
+    const lang = language(decision.language);
+    const email = await accountEmail(decision.user_id);
+    if (email) {
+      await ctx.once("email", () =>
+        sendEmail(
+          email,
+          renderDecision(lang, decision.kind, decision.category, decision.details),
+          `decision-${p.id}`,
+          supportInbox(),
+        ));
+    }
+    if (decision.kind in decisionPush) {
+      const kind = decision.kind as keyof typeof decisionPush;
+      await ctx.push("push", decision.user_id, {
+        ...decisionPush[kind][lang],
+        data: { kind: "moderation" },
+        // A hold replaces the moderation push before it on the lock screen; each removed message is its own.
+        collapseId: kind === "message_deleted" ? `decision-${p.id}` : `moderation-${decision.user_id}`,
+      });
+    }
+  },
+
   // A hold was lifted after a selfie check: the selfies go (bucket verification-selfies). Held again
   // since (a new request): kept for now, the next lift deletes them all.
   async "selfie.delete"(p: { userId: string }) {
@@ -813,8 +880,9 @@ export const handlers: Record<string, Handler> = {
 
 /** Moderation news the person waits for, pushed: a hold lifted (reopened after a ban, a selfie approved,
  * or a review cleared), a selfie asked for, or asked again after one wasn't enough. Never a new
- * restriction (review, ban): the app's own screen says those. Only while the state is still the one this
- * event is about: a later change speaks for itself. The open app hides it (its screen already changed). */
+ * restriction (review, ban): the app's own screen says those, and a person's decision is pushed with its
+ * statement (`moderation.decision`). Only while the state is still the one this event is about: a later change
+ * speaks for itself. The open app hides it (its screen already changed). */
 async function pushModeration(
   ctx: EventContext,
   p: { userId: string; state?: string | null; previous: string | null },
@@ -860,6 +928,20 @@ function requestId(value: unknown): number {
 function uuid(value: unknown, name: string): string {
   if (typeof value !== "string" || !UUID.test(value)) throw new Error(`invalid ${name}: ${String(value).slice(0, 60)}`);
   return value;
+}
+
+/** Throws until Stream shows the message removed (soft-deleted, or gone altogether). */
+async function messageRemoved(messageId: string) {
+  if (!messageId) throw new Error("decision: no message id");
+  try {
+    const { message } = await viaProvider("stream", () => stream().getMessage(messageId));
+    if (message.type === "deleted" || message.deleted_at) return;
+  } catch (error) {
+    const status = (error as { status?: unknown } | null)?.status;
+    if (status === 404 || /not found|does not exist/i.test(String(error))) return;
+    throw error;
+  }
+  throw new Error(`decision: message ${messageId} not removed yet`);
 }
 
 async function reviewWasSelfie(userId: string): Promise<boolean> {
