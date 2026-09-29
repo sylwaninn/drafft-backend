@@ -1,12 +1,12 @@
 // POST /stream-webhook, called by Stream Chat for the events set in the app's webhook settings
 // (scripts/stream-webhook.ts): reaction.new and reaction.updated. Signed with the Stream API secret
 // (X-Signature). Message pushes stay Stream's own; reactions are pushed from here, in the person's
-// language and under their settings, WhatsApp-style: "Maya reacted ❤️ to: “See you at 7?”".
+// language and under their settings, WhatsApp-style: "Maya" / "Reacted ❤️ to “See you at 7?”".
 import { pushToUser } from "../_shared/apns.ts";
 import { HttpError, json, serve } from "../_shared/http.ts";
 import { stream } from "../_shared/stream.ts";
 import { admin } from "../_shared/supabase.ts";
-import { language, pushTitle, reaction, someone } from "../_shared/texts.ts";
+import { language, reaction } from "../_shared/texts.ts";
 
 interface ReactionEvent {
   type: string;
@@ -48,13 +48,7 @@ serve(async (req) => {
   // The app sends the emoji itself as the reaction type.
   const lang = language(to.language);
   await pushToUser(author, {
-    title: pushTitle,
-    body: reaction(
-      lang,
-      from?.name || event.user?.name || someone[lang],
-      r.type,
-      to.notify_message_previews ? message.text : undefined,
-    ),
+    ...reaction(lang, from?.name || event.user?.name, r.type, to.notify_message_previews ? message.text : undefined),
     data: { match: matchId },
     collapseId: `reaction-${message.id}`,
   });

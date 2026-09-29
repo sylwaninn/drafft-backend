@@ -4,7 +4,7 @@ import { StreamChat } from "npm:stream-chat@9";
 import { env } from "./env.ts";
 import { admin, must } from "./supabase.ts";
 import { viaProvider } from "./providers.ts";
-import { language, messageSent, previewSeparator } from "./texts.ts";
+import { language, messageSent, someone } from "./texts.ts";
 
 let client: StreamChat | undefined;
 
@@ -42,9 +42,10 @@ export async function ensureChannel(matchId: string) {
 
 /**
  * A person's Stream user. Stream sends message pushes itself, from the template in scripts/stream-push.ts:
- * the user carries its app language and the push sentence in it (`drafft_push`), and whether message
- * previews are on (`notify_message_previews`, off by default: no text in the push). An upsert replaces the
- * whole user, so every upsert writes all of it.
+ * the sender's name is the title, and the recipient's user carries, in their app language, the body without
+ * the text (`drafft_push.message`) and the title for a sender without a name (`drafft_push.someone`), plus
+ * whether message previews are on (`notify_message_previews`, off by default: no text in the push). An upsert
+ * replaces the whole user, so every upsert writes all of it.
  */
 export function streamUser(
   p: { id: string; name: string | null; language: unknown; notify_message_previews: boolean },
@@ -56,7 +57,7 @@ export function streamUser(
     language: lang,
     drafft_push: {
       message: messageSent[lang],
-      separator: previewSeparator(lang),
+      someone: someone[lang],
       previews: p.notify_message_previews === true,
     },
   };

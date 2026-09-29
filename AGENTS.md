@@ -17,6 +17,15 @@ them without displaying them, always naming the project, e.g.
 when the human asks for it: it writes to a remote project. If a task seems to need a value from them, ask the
 human instead. The `.env.example` files are safe to read.
 
+## User-facing text: WORDING.md first (priority rule)
+
+Before writing or changing any text people receive (push, email, SMS, support replies, moderation
+notices, product names, error sentences, in any of the 7 languages), read and apply
+[WORDING.md](WORDING.md), then run its review checklist (section 10). The `wording` skill
+(`.agents/skills/wording/`) walks through it. Never write "plan" in any sense or language, and never
+present a match as turning into something. WORDING.md here is a synced copy: edit it in the `drafft`
+repository only, then run `drafft/scripts/sync-wording.sh`.
+
 ## Rules for every agent
 
 Read these before committing or opening a pull request. They live in `.agents/` so any agent can use
@@ -24,7 +33,7 @@ them; Claude Code loads them through `CLAUDE.md`.
 
 - Commits and branches: [.agents/rules/commits.md](.agents/rules/commits.md)
 - GitHub (pull requests, comments): [.agents/rules/github.md](.agents/rules/github.md)
-- Skills: `.agents/skills/` (`create-pr`, `technical-writer`)
+- Skills: `.agents/skills/` (`create-pr`, `technical-writer`, `wording`)
 - Git hooks that enforce them for everyone, agents and humans (`.agents/git-hooks/`): `commit-msg`
   (format, one line, no Co-Authored-By) and `pre-push` (no push to `main`). Enable once per clone:
   `git config core.hooksPath .agents/git-hooks`
@@ -34,7 +43,7 @@ them; Claude Code loads them through `CLAUDE.md`.
 
 ```sh
 deno fmt --check supabase/functions scripts && deno lint supabase/functions scripts \
-  && (cd supabase/functions && deno check ./*/index.ts && deno test --allow-env --allow-read=.) \
+  && (cd supabase/functions && deno check ./*/index.ts && deno test --allow-env --allow-read=.,../../WORDING.md) \
   && deno check scripts/*.ts \
   && supabase test db && supabase db advisors --local --level info -o json | python3 scripts/ci/advisors.py
 ```

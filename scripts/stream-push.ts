@@ -5,10 +5,14 @@
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/stream-push.ts plan
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/stream-push.ts apply
 //
-// Also sets the APNs template of message pushes (below): Stream sends them, in each recipient's app
-// language and with the text only when their message previews are on, from their Stream user
-// (`drafft_push`, written by the functions from the profile: _shared/stream.ts). Preview what a person
-// would get, without sending: `client.testPushSettings(<user id>, { skipDevices: true })` renders it.
+// Also sets the APNs template of message pushes (below): Stream sends them, titled with the sender's name,
+// in each recipient's app language and with the text only when their message previews are on, from their
+// Stream user (`drafft_push`, written by the functions from the profile: _shared/stream.ts). Preview what a
+// person would get, without sending: `client.testPushSettings(<user id>, { skipDevices: true })` renders it.
+//
+// When the template and `drafft_push` change together: apply the template first, then deploy the functions
+// and write every Stream user again. The template reads fields an older user may not have yet and falls
+// back to English for them, so no push goes out broken in between.
 //
 // Never prints the key.
 import { StreamChat } from "npm:stream-chat@9";
@@ -31,21 +35,22 @@ const key = {
   apn_team_id: env("APNS_TEAM_ID"),
   apn_topic: env("APNS_BUNDLE_ID"),
 };
-// The recipient's sentence and separator come from their Stream user, so the template itself holds no
-// language. A user not yet written by the functions gets the English sentence. Server messages (openers,
-// sessions) skip Stream's push: db-events pushes those. `match` opens the chat, like db-events' pushes;
-// `stream` is what Stream's own clients expect. Stream escapes the values for JSON.
+// The title is the sender's name, or the recipient's word for "someone" when the sender has none (never an
+// empty title). The body is the text with previews on, otherwise the recipient's "New message." A user not
+// yet written by the functions gets English. Server messages (openers, sessions) skip Stream's push:
+// db-events pushes those. `match` opens the chat, like db-events' pushes; `stream` is what Stream's own
+// clients expect. Stream escapes the values for JSON.
+const fallback = (field: string, english: string) =>
+  `{{#if receiver.drafft_push.${field}}}{{ receiver.drafft_push.${field} }}{{else}}${english}{{/if}}`;
+const title = `{{#if sender.name}}{{ sender.name }}{{else}}${fallback("someone", "Someone")}{{/if}}`;
 const body = [
-  "{{#if receiver.drafft_push}}",
-  "{{#if receiver.drafft_push.previews}}{{#if message.text}}",
-  "{{ sender.name }}{{ receiver.drafft_push.separator }}{{ truncate message.text 1000 }}",
-  "{{else}}{{ sender.name }} {{ receiver.drafft_push.message }}{{/if}}",
-  "{{else}}{{ sender.name }} {{ receiver.drafft_push.message }}{{/if}}",
-  "{{else}}{{ sender.name }} sent you a message{{/if}}",
+  "{{#if receiver.drafft_push.previews}}{{#if message.text}}{{ truncate message.text 1000 }}",
+  `{{else}}${fallback("message", "New message.")}{{/if}}`,
+  `{{else}}${fallback("message", "New message.")}{{/if}}`,
 ].join("");
 const template = JSON.stringify({
   aps: {
-    alert: { title: "drafft", body },
+    alert: { title, body },
     sound: "default",
     "mutable-content": 1,
     "thread-id": "{{ channel.id }}",
