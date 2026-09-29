@@ -6,6 +6,7 @@
 // No network: fetch is replaced by a small world (PostgREST, Auth admin, APNs, Resend, R2, Rekognition)
 // and Stream by a fake client. Everything they're asked is recorded.
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1";
+import { unzipSync } from "npm:fflate@0.8.2";
 
 // A throwaway P-256 key for the APNs provider token.
 const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
@@ -71,6 +72,9 @@ const world = {
   queryPagesOk: 0,
   /** Frozen channels Stream has (chat.sweep), oldest first. */
   frozen: [] as { id: string; created_at: string; updated_at: string }[],
+  /** The data-exports bucket: path → bytes, and what was removed. */
+  exports: {} as Record<string, Uint8Array>,
+  removed: [] as string[],
 };
 
 function reset() {
@@ -98,6 +102,8 @@ function reset() {
   world.authDeleteStatus = 200;
   world.queryPagesOk = 0;
   world.frozen = [];
+  world.exports = {};
+  world.removed = [];
 }
 
 /** PostgREST filters as supabase-js writes them: `col=eq.value`, and `.or(...)` (all rows). */
@@ -125,13 +131,28 @@ function respond(body: unknown, status = 200): Response {
 globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
   const request = input instanceof Request ? input : new Request(input, init);
   const url = new URL(request.url);
-  const text = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
+  const body = request.method === "GET" || request.method === "HEAD"
+    ? new Uint8Array()
+    : new Uint8Array(await request.arrayBuffer());
+  const text = new TextDecoder().decode(body);
 
   if (url.host === "supabase.test") {
     if (url.pathname.startsWith("/rest/v1/rpc/")) {
       const name = url.pathname.slice("/rest/v1/rpc/".length);
       world.rpc.push({ name, args: text ? JSON.parse(text) : {} });
       return respond(world.rpcResults[name] ?? null);
+    }
+    if (url.pathname.startsWith("/storage/v1/object/sign/data-exports/")) {
+      const path = url.pathname.slice("/storage/v1/object/sign/data-exports/".length);
+      return respond({ signedURL: `/object/sign/data-exports/${path}?token=signed` });
+    }
+    if (url.pathname.startsWith("/storage/v1/object/data-exports/") && request.method === "POST") {
+      world.exports[decodeURIComponent(url.pathname.slice("/storage/v1/object/data-exports/".length))] = body;
+      return respond({ Key: url.pathname });
+    }
+    if (url.pathname === "/storage/v1/object/data-exports" && request.method === "DELETE") {
+      world.removed.push(...(JSON.parse(text) as { prefixes: string[] }).prefixes);
+      return respond([]);
     }
     if (url.pathname.startsWith("/auth/v1/admin/users/") && request.method === "DELETE") {
       if (world.authDeleteStatus !== 200) {
@@ -908,4 +929,91 @@ Deno.test("chat.sweep: frozen channels are handed to the database page by page, 
   world.rpc = [];
   await runEvent({ id: 52, event: "chat.sweep", payload: {}, steps: [`after=${world.frozen[34].created_at}`] });
   assertEquals(calls("track_frozen_chats").length, 0, "nothing after the last one");
+});
+
+// MARK: Data exports (20260930000301)
+
+function exportWorld() {
+  people();
+  world.rpcResults.export_begin = "go";
+  world.rpcResults.export_data = {
+    account: { id: ana, email: "ana@drafft.so" },
+    profile: { id: ana, name: "Ana", voice_intro_key: `u/${ana}/voice/v.m4a` },
+    media: [{ key: `u/${ana}/photos/1.jpg`, posterKey: null }],
+    matches: [{ id: match }],
+  };
+  // 650 messages over three pages: Ana wrote the even ones.
+  world.channels[match] = Array.from({ length: 650 }, (_, i) => ({
+    id: `m${i}`,
+    user: { id: i % 2 === 0 ? ana : bo },
+    text: `message ${i}`,
+    created_at: new Date(Date.UTC(2026, 8, 1, 0, i)).toISOString(),
+  }));
+}
+
+function exported(path: string) {
+  const files = unzipSync(world.exports[path]);
+  const data = JSON.parse(new TextDecoder().decode(files["data.json"]));
+  return { files: Object.keys(files).sort(), data };
+}
+
+Deno.test("export.requested: built, stored, emailed with a 7-day link in the person's language, then fulfilled", async () => {
+  reset();
+  exportWorld();
+  const event = { id: 40, event: "export.requested", payload: { id: 77, userId: ana } };
+  await runEvent(event);
+  const { files, data } = exported(`${ana}/77.zip`);
+  assertEquals(files, ["data.json", "files/photos/1.jpg", "files/voice/v.m4a"]);
+  assertEquals(data.messagesSent.length, 325, "every page, only what Ana sent");
+  assertEquals(data.messagesSent[0].id, "m0");
+  assertEquals(data.account.email, "ana@drafft.so");
+  assertEquals(world.emails, [{ to: "ana@drafft.so", key: "export-77" }], "no team copy when nothing is left out");
+  assertEquals(steps(40), ["archive", "email"]);
+  assertEquals(calls("export_ready")[0].args, { p_id: 77, p_path: `${ana}/77.zip` });
+
+  // Replayed after the email: nothing is built or sent again.
+  world.rpc = [];
+  world.exports = {};
+  await runEvent({ ...event, steps: ["archive", "email"] });
+  assertEquals(world.exports, {});
+  assertEquals(world.emails.length, 1);
+  assertEquals(calls("export_ready").length, 1);
+});
+
+Deno.test("export.requested: another delivery building it is retried later; one fulfilled is done", async () => {
+  reset();
+  exportWorld();
+  world.rpcResults.export_begin = "busy";
+  await assertRejects(() => runEvent({ id: 41, event: "export.requested", payload: { id: 77, userId: ana } }));
+  assertEquals(calls("export_data").length, 0);
+  assertEquals(calls("ack_event").length, 0);
+
+  world.rpc = [];
+  world.rpcResults.export_begin = "done";
+  await runEvent({ id: 42, event: "export.requested", payload: { id: 77, userId: ana } });
+  assertEquals([calls("export_data").length, world.emails.length, calls("ack_event").length], [0, 0, 1]);
+});
+
+Deno.test("export.requested: files over the size limit are listed, not included, and the team is told", async () => {
+  reset();
+  exportWorld();
+  // Every object is 4 bytes here: the first fits, the voice intro doesn't.
+  Deno.env.set("EXPORT_MAX_BYTES", "6");
+  try {
+    await runEvent({ id: 43, event: "export.requested", payload: { id: 78, userId: ana } });
+  } finally {
+    Deno.env.delete("EXPORT_MAX_BYTES");
+  }
+  const { files, data } = exported(`${ana}/78.zip`);
+  assertEquals(files, ["data.json", "files/photos/1.jpg"]);
+  assertEquals(data.files.notIncluded, [`u/${ana}/voice/v.m4a`]);
+  assertEquals(world.emails.map((e) => e.to), ["ana@drafft.so", "team@drafft.so"]);
+});
+
+Deno.test("export.expired: the file goes, the request remembers it", async () => {
+  reset();
+  world.rpcResults.export_file = `${ana}/77.zip`;
+  await runEvent({ id: 44, event: "export.expired", payload: { id: 77 } });
+  assertEquals(world.removed, [`${ana}/77.zip`]);
+  assertEquals(calls("export_file_deleted")[0].args, { p_id: 77 });
 });
