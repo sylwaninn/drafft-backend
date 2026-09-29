@@ -130,16 +130,24 @@ in a romantic sense, positions, "body count", partner in a dating sense (FR « p
 any "X less, Y more", "100% sportifs", "people who actually train", sweat and « sueur » (bpm), "It
 all starts with…" (Tinder ™), "designed to be deleted" (Hinge), "No chat, just dates" (Breeze).
 
-### 5.4 Pressure, judgement, filler
+### 5.4 Never invent a value
+
+No invented number, percentage, count, rating, score, ranking or statistic, anywhere: UI, push, email,
+store, website, screenshots. That includes placeholders computed in code ("62% agree", "12 people
+nearby", "4.8 stars") and demo values left in shipped copy. Every value shown comes from real data;
+when there is none, show no value (a label without a figure, or nothing). No demo or placeholder text
+in anything people can see ("Demo text…", "Lorem ipsum", "TBD").
+
+### 5.5 Pressure, judgement, filler
 
 - Fake urgency and guilt: "Don't miss out", "Last chance", "Hurry", "X people are waiting",
-  "You haven't…", invented numbers or statistics (we have no user counts, rates or press).
+  "You haven't…", invented user counts, rates or press (5.4).
 - Body or performance judgement: fit, in shape, beach body, "no couch potatoes", "real athletes".
 - Robotic filler: "Oops", "Uh-oh", "Success!", "An error occurred", "Invalid input", "Something went
   wrong" with no way out, "Click here", bare "Are you sure?".
 - Masculine default in gendered languages (FR « Content de te revoir » → « Te revoilà. »).
 
-### 5.5 Machine-checked patterns
+### 5.6 Machine-checked patterns
 
 Case-insensitive regexes, one per line, `pattern | reason`. The lints read this block from their
 repository's copy of this file: keep the format.
@@ -164,8 +172,8 @@ repository's copy of this file: keep the format.
 \bsmall talk\b | category cliché (5.3)
 \bsweat\w* | bpm territory (5.3)
 \bsueur\b | bpm territory (5.3)
-\boops\b | robotic filler (5.4)
-\bdon[’']t miss out\b | fake urgency (5.4)
+\boops\b | robotic filler (5.5)
+\bdon[’']t miss out\b | fake urgency (5.5)
 ```
 
 ## 6. Form rules
@@ -283,14 +291,15 @@ Run on every text before you validate it.
 
 - [ ] No "plan" in any sense or language (5.1). No match → date/night promise.
 - [ ] No hookup word or double meaning (5.2). Read it once as a suspicious reader.
-- [ ] No category cliché or competitor line (5.3). No fake urgency, guilt, body judgement (5.4).
+- [ ] No category cliché or competitor line (5.3). No fake urgency, guilt, body judgement (5.5).
 - [ ] Brand terms exact: drafft, drafft tempo, session/séance, propose/proposer, times/créneaux.
 - [ ] Informal "you"; FR non-breaking spaces; gender-neutral; sentence case.
 - [ ] CTA starts with a verb, 1–3 words, says what happens.
 - [ ] Headline ends with a full stop; no "!" or emoji in UI, push, email.
 - [ ] Error: what happened + one way out, no blame.
 - [ ] All 7 languages updated, adapted (not literal), same placeholders, no longer than needed.
-- [ ] Nothing invented: no numbers, testimonials, features we don't have (no "place" field in an
+- [ ] Nothing invented: no value, percentage or count without real data (5.4), no testimonials,
+  no demo text, no features we don't have (no "place" field in an
   invite, no level field on profiles, selfie check only when moderation asks).
 - [ ] Lints pass (`python3 scripts/ci/i18n_lint.py`, backend tests, web CI).
 
@@ -313,5 +322,7 @@ Run on every text before you validate it.
 - 2026-09-29: Session cards posted in a chat stay in English (one message, two readers): the only
   exception to "one language per person".
 - 2026-09-29: Auth-code email subjects keep the code wording iOS autofill recognises.
+- 2026-09-29: Never invent a value or percentage (5.4): the icebreaker's computed "% agree so far"
+  and the "Demo text" line of the legal sheets were removed.
 - 2026-09-29: Session ideas and prompts suggest coffee, brunch, smoothies, picnics; never drinks or
   dinner, never a city-specific place (the app runs in several cities).
