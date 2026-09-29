@@ -250,7 +250,7 @@ Functions, keys and URL), fed with the same migrations. The app's **Drafft Stagi
 to `main` deploys it, then a `v*` tag deploys to production (below).
 
 GitHub Actions (`.github/workflows/backend.yml`) does it on its own: every pull request is checked
-(Deno type checks, database tests), a push to `main` deploys to staging, and a `v*` tag deploys to
+(Deno type checks, unit tests including the copy against [WORDING.md](WORDING.md), database tests), a push to `main` deploys to staging, and a `v*` tag deploys to
 production (the `production` environment only accepts `v*` tags). Migrations and functions only:
 secrets are still set by hand, always naming the project: `deploy.sh <env> --secrets` or
 `supabase secrets set --project-ref <ref> --env-file supabase/functions/.env.<env>`.
