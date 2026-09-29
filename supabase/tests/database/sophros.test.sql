@@ -41,8 +41,8 @@ select throws_ok($$select public.admin_set_staff('boss@drafft.test', 'boss@draff
 select public.admin_set_staff('boss@drafft.test', 'New@Drafft.test', 'support');
 select is((select role from private.staff where email = 'new@drafft.test'), 'support', 'staff added, lowercased');
 select ok(not has_function_privilege('authenticated', 'public.admin_user(text, uuid)', 'execute')
-    and not has_function_privilege('anon', 'public.admin_set_hold(text, uuid, public.moderation_state, text)', 'execute')
-    and has_function_privilege('service_role', 'public.admin_set_hold(text, uuid, public.moderation_state, text)', 'execute'),
+    and not has_function_privilege('anon', 'public.admin_set_hold(text, uuid, public.moderation_state, text, text, text)', 'execute')
+    and has_function_privilege('service_role', 'public.admin_set_hold(text, uuid, public.moderation_state, text, text, text)', 'execute'),
   'the dashboard functions are for the service role only');
 
 -- MARK: Accounts

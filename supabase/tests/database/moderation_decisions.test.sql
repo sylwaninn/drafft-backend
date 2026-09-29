@@ -46,12 +46,12 @@ insert into private.staff (email, role) values ('sup@drafft.test', 'support'), (
 select public.admin_set_hold('mod@drafft.test', bo, 'banned', 'scam') from people;
 select public.admin_set_hold('mod@drafft.test', dee, 'banned', 'scam') from people;
 
-select ok(not has_function_privilege('authenticated', 'public.admin_close_report(text, uuid, text, public.moderation_state)', 'execute')
-    and not has_function_privilege('anon', 'public.admin_decide_flags(text, bigint[], text, public.moderation_state, text)', 'execute')
-    and not has_function_privilege('authenticated', 'public.admin_decide_photo(text, uuid, text, public.moderation_state, text)', 'execute')
-    and has_function_privilege('service_role', 'public.admin_close_report(text, uuid, text, public.moderation_state)', 'execute')
-    and has_function_privilege('service_role', 'public.admin_decide_flags(text, bigint[], text, public.moderation_state, text)', 'execute')
-    and has_function_privilege('service_role', 'public.admin_decide_photo(text, uuid, text, public.moderation_state, text)', 'execute'),
+select ok(not has_function_privilege('authenticated', 'public.admin_close_report(text, uuid, text, public.moderation_state, text, text)', 'execute')
+    and not has_function_privilege('anon', 'public.admin_decide_flags(text, bigint[], text, public.moderation_state, text, text, text)', 'execute')
+    and not has_function_privilege('authenticated', 'public.admin_decide_photo(text, uuid, text, public.moderation_state, text, text, text)', 'execute')
+    and has_function_privilege('service_role', 'public.admin_close_report(text, uuid, text, public.moderation_state, text, text)', 'execute')
+    and has_function_privilege('service_role', 'public.admin_decide_flags(text, bigint[], text, public.moderation_state, text, text, text)', 'execute')
+    and has_function_privilege('service_role', 'public.admin_decide_photo(text, uuid, text, public.moderation_state, text, text, text)', 'execute'),
   'the decisions are for the service role only');
 
 -- MARK: Reports
