@@ -57,11 +57,11 @@ select throws_ok(format($$select public.admin_user('sup@drafft.test', %L)$$, gen
 
 -- MARK: Holds
 
-select throws_ok(format($$select public.admin_set_hold('sup@drafft.test', %L, 'review', 'check')$$, (select bo from ids)),
+select throws_ok(format($$select public.admin_set_hold('sup@drafft.test', %L, 'review', 'check', p_category => 'other')$$, (select bo from ids)),
   'P0001', 'not allowed', 'support can''t hold an account');
-select throws_ok(format($$select public.admin_set_hold('mod@drafft.test', %L, 'review', ' ')$$, (select bo from ids)),
+select throws_ok(format($$select public.admin_set_hold('mod@drafft.test', %L, 'review', ' ', p_category => 'other')$$, (select bo from ids)),
   'P0001', 'say why', 'a hold needs a reason');
-select public.admin_set_hold('mod@drafft.test', (select bo from ids), 'banned', 'scam links');
+select public.admin_set_hold('mod@drafft.test', (select bo from ids), 'banned', 'scam links', p_category => 'other');
 select is((select moderation::text from public.profiles where id = (select bo from ids)), 'banned', 'banned');
 select is((select actor || ': ' || note from private.moderation_log where user_id = (select bo from ids) order by id desc limit 1),
   'mod@drafft.test: scam links', 'the log says who and why');
