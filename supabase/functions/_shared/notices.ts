@@ -1,13 +1,19 @@
 // Emails that aren't auth codes: news about the account (a hold lifted, a photo approved or refused on a
-// second look) and the acknowledgement of a support request, in the person's language; plus the team's
-// copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register as emails.ts
-// (WORDING.md): the subject says the one thing (45 characters at most), the title repeats it, the note is the
-// one next step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject;
+// second look), the acknowledgement of a support request and a data export's link, in the person's language;
+// plus the team's copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register
+// as emails.ts (WORDING.md): the subject says the one thing (45 characters at most), the title repeats it, the
+// note is the one next step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject;
 // "l'équipe drafft" only names the team (the support reply's title).
 import { codeBox, color, escape, layout, paragraph, type Rendered, small, title } from "./emails.ts";
 import type { Language } from "./texts.ts";
 
-export type Notice = "accountRestored" | "accountReopened" | "photoApproved" | "photoRefused" | "supportReceived";
+export type Notice =
+  | "accountRestored"
+  | "accountReopened"
+  | "photoApproved"
+  | "photoRefused"
+  | "supportReceived"
+  | "exportReady";
 
 export type Copy = { subject: string; title: string; body: string; note: string };
 
@@ -247,6 +253,137 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       note: "Vermeld hem als je ons opnieuw schrijft.",
     },
   },
+  // A data export, built: the link follows the body, one per part when it has several (renderExportReady).
+  // "Export" as the app says it (You › Privacy & data › Export my data); a reply reaches the team (Reply-To
+  // SUPPORT_INBOX).
+  exportReady: {
+    en: {
+      subject: "Your drafft export is ready",
+      title: "Your export is ready.",
+      body:
+        "Your drafft data is in one file: your account, profile, activity and messages, with your photos, videos and voice intro.",
+      note: "The link works for 7 days. Didn't ask for it? Reply to this email.",
+    },
+    fr: {
+      subject: "Ton export drafft est prêt",
+      title: "Ton export est prêt.",
+      body:
+        "Tes données drafft tiennent dans un fichier\u00A0: ton compte, ton profil, ton activité et tes messages, avec tes photos, tes vidéos et ta présentation vocale.",
+      note: "Le lien est valable 7\u00A0jours. Tu n'as rien demandé\u00A0? Réponds à cet e-mail.",
+    },
+    es: {
+      subject: "Tu exportación de drafft está lista",
+      title: "Tu exportación está lista.",
+      body:
+        "Tus datos de drafft están en un archivo: tu cuenta, tu perfil, tu actividad y tus mensajes, con tus fotos, tus vídeos y tu presentación de voz.",
+      note: "El enlace vale durante 7 días. ¿No lo has pedido tú? Responde a este correo.",
+    },
+    de: {
+      subject: "Dein drafft-Export ist bereit",
+      title: "Dein Export ist bereit.",
+      body:
+        "Deine drafft-Daten stecken in einer Datei: dein Konto, dein Profil, deine Aktivität und deine Nachrichten, mit deinen Fotos, Videos und deinem Sprach-Intro.",
+      note: "Der Link gilt 7 Tage. Du hast das nicht angefordert? Antworte auf diese E-Mail.",
+    },
+    it: {
+      subject: "I tuoi dati drafft sono pronti",
+      title: "I tuoi dati sono pronti.",
+      body:
+        "I tuoi dati drafft sono in un unico file: account, profilo, attività e messaggi, con le tue foto, i tuoi video e la tua presentazione vocale.",
+      note: "Il link è valido per 7 giorni. Non l'hai chiesto tu? Rispondi a questa email.",
+    },
+    pt: {
+      subject: "A tua exportação drafft está pronta",
+      title: "A tua exportação está pronta.",
+      body:
+        "Os teus dados drafft estão num só ficheiro: a tua conta, o teu perfil, a tua atividade e as tuas mensagens, com as tuas fotos, os teus vídeos e a tua apresentação de voz.",
+      note: "O link é válido durante 7 dias. Não pediste isto? Responde a este email.",
+    },
+    nl: {
+      subject: "Je drafft-export staat klaar",
+      title: "Je export staat klaar.",
+      body:
+        "Je drafft-gegevens staan in één bestand: je account, je profiel, je activiteit en je berichten, met je foto's, video's en je spraakintro.",
+      note: "De link is 7 dagen geldig. Niet aangevraagd? Beantwoord deze e-mail.",
+    },
+  },
+};
+
+/** The one button of the export email. */
+export const exportCta: Record<Language, string> = {
+  en: "Download my data",
+  fr: "Télécharger mes données",
+  es: "Descargar mis datos",
+  de: "Daten herunterladen",
+  it: "Scarica i miei dati",
+  pt: "Descarregar os dados",
+  nl: "Gegevens downloaden",
+};
+
+// An export too heavy for one file (export.ts: parts of 45 MiB at most): the same email, with the number of files
+// in the body, one button for part 1 (WORDING.md: one CTA) and the other parts as plain links under `others`, the
+// links in the plural. `{count}`: the parts, 2 or more; `{n}`: a part's number. The subject and title stay those of
+// noticeCopy.exportReady.
+export const exportPartsCopy: Record<
+  Language,
+  { body: string; cta: string; others: string; part: string; note: string }
+> = {
+  en: {
+    body:
+      "Your drafft data is in {count} files: your account, profile, activity and messages, with your photos, videos and voice intro.",
+    cta: "Download part 1",
+    others: "Other parts",
+    part: "Part {n}",
+    note: "The links work for 7 days. Didn't ask for it? Reply to this email.",
+  },
+  fr: {
+    body:
+      "Tes données drafft tiennent dans {count}\u00A0fichiers\u00A0: ton compte, ton profil, ton activité et tes messages, avec tes photos, tes vidéos et ta présentation vocale.",
+    cta: "Télécharger la partie 1",
+    others: "Les autres parties",
+    part: "Partie {n}",
+    note: "Les liens sont valables 7\u00A0jours. Tu n'as rien demandé\u00A0? Réponds à cet e-mail.",
+  },
+  es: {
+    body:
+      "Tus datos de drafft están en {count} archivos: tu cuenta, tu perfil, tu actividad y tus mensajes, con tus fotos, tus vídeos y tu presentación de voz.",
+    cta: "Descargar la parte 1",
+    others: "Las otras partes",
+    part: "Parte {n}",
+    note: "Los enlaces valen durante 7 días. ¿No lo has pedido tú? Responde a este correo.",
+  },
+  de: {
+    body:
+      "Deine drafft-Daten stecken in {count} Dateien: dein Konto, dein Profil, deine Aktivität und deine Nachrichten, mit deinen Fotos, Videos und deinem Sprach-Intro.",
+    cta: "Teil 1 herunterladen",
+    others: "Die anderen Teile",
+    part: "Teil {n}",
+    note: "Die Links gelten 7 Tage. Du hast das nicht angefordert? Antworte auf diese E-Mail.",
+  },
+  it: {
+    body:
+      "I tuoi dati drafft sono in {count} file: account, profilo, attività e messaggi, con le tue foto, i tuoi video e la tua presentazione vocale.",
+    cta: "Scarica la parte 1",
+    others: "Le altre parti",
+    part: "Parte {n}",
+    note: "I link sono validi per 7 giorni. Non l'hai chiesto tu? Rispondi a questa email.",
+  },
+  pt: {
+    body:
+      "Os teus dados drafft estão em {count} ficheiros: a tua conta, o teu perfil, a tua atividade e as tuas mensagens, com as tuas fotos, os teus vídeos e a tua apresentação de voz.",
+    cta: "Descarregar a parte 1",
+    others: "As outras partes",
+    part: "Parte {n}",
+    note: "Os links são válidos durante 7 dias. Não pediste isto? Responde a este email.",
+  },
+  nl: {
+    body:
+      "Je drafft-gegevens staan in {count} bestanden: je account, je profiel, je activiteit en je berichten, met je foto's, video's en je spraakintro.",
+    cta: "Deel 1 downloaden",
+    others: "De andere delen",
+    part: "Deel {n}",
+    note: "De links zijn 7 dagen geldig. Niet aangevraagd? Beantwoord deze e-mail.",
+  },
 };
 
 /** `reference`: the support acknowledgement only. */
@@ -258,6 +395,34 @@ export function renderNotice(kind: Notice, lang: Language, vars: { reference?: s
   rows.push(small(c.note, color.mute));
   const text = [c.title, "", body, ...(vars.reference ? ["", vars.reference] : []), "", c.note].join("\n");
   return { subject: c.subject, html: layout(lang, c.subject, rows), text };
+}
+
+/** The export email: one button (part 1 when there are several), the other parts as plain links under it, each
+ * link on its own line in the text part, then the note. */
+export function renderExportReady(lang: Language, links: string[]): Rendered {
+  const c = noticeCopy.exportReady[lang];
+  const several = links.length > 1 ? exportPartsCopy[lang] : null;
+  const body = several ? several.body.replace("{count}", String(links.length)) : c.body;
+  const note = several?.note ?? c.note;
+  const cta = several?.cta ?? exportCta[lang];
+  const rows = [
+    title(c.title),
+    paragraph(escape(body)),
+    `<tr><td style="padding-bottom:24px"><a href="${escape(links[0])}" style="display:inline-block;` +
+    `background:${color.primary};color:${color.ink};font-size:16px;font-weight:700;text-decoration:none;` +
+    `padding:14px 24px;border-radius:16px">${escape(cta)}</a></td></tr>`,
+  ];
+  const text = [c.title, "", body, "", cta, links[0], ""];
+  if (several) {
+    // Part 2 onwards, as plain links.
+    const others = links.slice(1).map((link, i) => ({ link, label: several.part.replace("{n}", String(i + 2)) }));
+    const anchors = others.map((o) => `<a href="${escape(o.link)}" style="color:${color.ink}">${escape(o.label)}</a>`);
+    rows.push(paragraph(`${escape(several.others)}<br>${anchors.join("<br>")}`));
+    text.push(several.others, ...others.flatMap((o) => [o.label, o.link]), "");
+  }
+  rows.push(small(note, color.mute));
+  text.push(note);
+  return { subject: c.subject, html: layout(lang, c.subject, rows), text: text.join("\n") };
 }
 
 // A reply from the team (sophros), framed in the person's language; the reply itself is as written.

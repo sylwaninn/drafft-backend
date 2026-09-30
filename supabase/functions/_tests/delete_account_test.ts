@@ -30,6 +30,8 @@ let chatsAnswer: { keep: { match: string; other: string }[]; erase: string[] } =
 /** Channels Stream has, and the status of its deletion tasks. */
 let channels: Record<string, { id: string; user: { id: string }; attachments: unknown[] }[]> = {};
 let taskStatus = "completed";
+/** The account's export parts in the data-exports bucket. */
+let exportParts: string[] = [];
 
 globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
   const request = input instanceof Request ? input : new Request(String(input), init);
@@ -55,6 +57,14 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
   }
   if (call === "POST /rest/v1/rpc/forget_selfies") return Response.json(null);
   if (call === "POST /storage/v1/object/list/verification-selfies") return Response.json([]);
+  // An export in two parts: the folder holds both, and both go.
+  if (call === "POST /storage/v1/object/list/data-exports") {
+    return Response.json(exportParts.splice(0).map((name) => ({ name })));
+  }
+  if (call === "DELETE /storage/v1/object/data-exports") {
+    assertEquals(await request.json(), { prefixes: [`${USER}/7-1.zip`, `${USER}/7-2.zip`] });
+    return Response.json([]);
+  }
   if (call === `DELETE /auth/v1/admin/users/${USER}`) return Response.json({});
   return Promise.reject(new Error(`unexpected fetch in a test: ${call}`));
 };
@@ -117,7 +127,8 @@ Deno.test("reported, held or banned: kept, nothing erased", async () => {
   assertEquals(calls, ["GET /auth/v1/user", "POST /rest/v1/rpc/retain_deleted_account"]);
 });
 
-Deno.test("any other account: chats, Stream user, media, selfies and the auth user erased, in that order", async () => {
+Deno.test("any other account: chats, Stream user, media, selfies, exports and the auth user erased, in that order", async () => {
+  exportParts = ["7-1.zip", "7-2.zip"];
   channels = {
     "plain-chat": [{
       id: "m1",
@@ -137,6 +148,8 @@ Deno.test("any other account: chats, Stream user, media, selfies and the auth us
     `r2 delete u/${USER}/photos/photo.jpg`,
     "POST /storage/v1/object/list/verification-selfies",
     "POST /rest/v1/rpc/forget_selfies",
+    "POST /storage/v1/object/list/data-exports",
+    "DELETE /storage/v1/object/data-exports",
     "POST /rest/v1/rpc/retain_deleted_account",
     `DELETE /auth/v1/admin/users/${USER}`,
   ]);
