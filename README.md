@@ -63,7 +63,7 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 | Sessions | `propose_session`, `respond_session`, `counter_session`, `cancel_session`, `upcoming_sessions` |
 | Safety | `block_user`, `unblock_user`, `blocked_users`, `report_user`, `report_app_open(p_install, p_device)` (each time the app comes to the front: install id, model, iOS, app version, locale, time zone; the IP and country come from the request) |
 | Moderation | `request_media_review(p_media)` (a second look at a refused photo), `submit_selfie(p_path)` (after uploading the selfie to the private Storage bucket `verification-selfies`, in the person's own folder, while a selfie is asked) |
-| Your data | `request_data_export()` (one open request at a time; the export is emailed as a link, see Data export below) |
+| Your data | `request_data_export()` (one open request at a time; the export is emailed as one or more links, see Data export below) |
 | Push | `register_push_token`, `unregister_push_token`; `PATCH /rest/v1/profiles` with `language` (en, fr, es, de, it, pt, nl) and the settings `notify_matches`, `notify_likes`, `notify_messages` (mirrored to Stream), `notify_message_previews`, `notify_reactions`, `notify_session_evening`, `notify_session_hour_before`, `notify_weekly_boost` (the app reads them back at launch) |
 
 Terms and consent: gender and the genders someone wants to see can reveal their sexual orientation, lifestyle
@@ -175,6 +175,7 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 | Chat messages, and the chat photos, videos and voice messages they point to | Stream, one channel per match; R2 `u/<id>/chat/…` | the match's life; an ended match's chat is frozen, then erased 1 year after the match ended | `delete-account` erases its chats and hard-deletes the Stream user; db-events `chat.erase` (below) |
 | Accounts kept for safety (banned, held or under an open report when deleted) | the same rows, `profiles.deleted_at`, `private.account_deletions` | 1 year after the case is closed | db-events `account.purge` (below) |
 | Verification selfies | Storage `verification-selfies` | until the check is over; a banned account's 6 months, for an appeal | db-events `selfie.delete`, `selfie.expired` (below), `delete-account` |
+| Data export archives | Storage `data-exports` | 7 days; at once when the account is deleted | `data-exports-expire`, `data-exports-sweep`, `delete-account` (see Data export below) |
 | IP addresses | `private.ips` | 180 days after the last open from that address | `device-reports-prune` |
 | Sign-in events with IP addresses | `auth.audit_log_entries` | not enforced yet | see [TODO.md](TODO.md) |
 | Devices (model, versions, last IP) | `private.devices` | 1 year after the last open | `device-reports-prune` |
@@ -245,27 +246,37 @@ task completes.
 
 You › Privacy & data › Export my data calls `request_data_export()`, which queues `export.requested`
 (migration `20260930000301`). db-events claims the request (`export_begin`: one build at a time, taken back after
-15 minutes) and builds the export (`_shared/export.ts`): `data.json` with everything `export_data(user)` returns
-(account and sign-ins, the profile row with lifestyle, settings, language and consent, sports, prompts, media list,
-rounded location, wallet, likes sent, matches, sessions, blocks, reports made, holds, selfie dates, help requests
-and replies, purchases, devices and IPs, push tokens, earlier requests) plus the messages the person sent (Stream,
-every match, ended ones too), and their own photos, videos, posters and voice intro under `files/` (R2). Left out on
-purpose: reports about the person (they protect whoever made them), the team's notes and audit log, likes received.
+15 minutes). An account without an email address gets nothing built: the team is told and the request closed
+(`export_closed`, `closed_reason = 'no_email'`; asking again later works). Otherwise it builds the export
+(`_shared/export.ts`): `data.json` with what `export_data(user)` returns (account and sign-ins, the profile row with
+lifestyle, settings, language and consent, the consent log, sports, prompts, media list, rounded location, wallet
+and credits, likes sent, matches, sessions, blocks, reports made, holds, selfie dates, checks of their own photos,
+help requests and replies, purchases, devices, IPs, DeviceCheck record, verification texts, push tokens, earlier
+requests), the messages the person sent and the reactions they left (Stream, every match, ended ones too: the
+latest reactions Stream returns per message), and their own files under `files/` (R2): photos, videos, posters,
+voice intro, and the photos, videos and voice messages they sent in chats. Left out on purpose: reports about the
+person (they protect whoever made them), likes received, the team's notes, audit log and safety records (identity
+marks, links between accounts), copies of the profile (`profile_cards`). A pgTAP test lists every table naming an
+account as exported or left out, so a new one has to choose. A file the database lists but R2 doesn't have is
+listed in `data.json` with a note, and logged.
 
-The export comes in parts, zips of at most `EXPORT_MAX_BYTES` each (function secret, 45 MiB by default, under the
-50 MiB a Storage upload takes by default). Part 1 holds `data.json` and the first files; the next files fill the
-next parts, in order; `data.json` lists every file with its part (`files.list`). The parts are built and stored one
-at a time, so the function holds one part in memory at most. Each goes to the private Storage bucket `data-exports`
-at `<user id>/<request id>-<part>.zip`; the person gets one email in their language with one signed link per part,
-valid 7 days and numbered when there are several (Reply-To SUPPORT_INBOX), and the request is fulfilled
-(`export_ready`, with the parts' paths). A file larger than a part on its own would stay out, listed with a note,
-and the team would get a short email to send it another way; with the default limit it can't happen (a profile
-file is 40 MiB at most, media-upload-url signs each upload's size). That is the only team copy; sophros still
-lists requests and can fulfil one by hand.
+The export comes in parts, zips of at most `EXPORT_MAX_BYTES` bytes each (function secret, 45 MiB by default,
+under the 50 MiB a Storage upload takes by default; validated: a bad value fails the export clearly, and so does a
+`data.json` too big for one part). Part 1 holds `data.json` and the first files; the next files fill the next
+parts, in order; `data.json` lists every file with its part (`files.list`). The parts are built and stored one at
+a time: at most one part's files plus its archive in memory, about twice `EXPORT_MAX_BYTES`. Each goes to the
+private Storage bucket `data-exports` at `<user id>/<request id>-<part>.zip`, and the parts are recorded at once
+(`export_stored`, only the request's own paths), so they expire 7 days on whatever happens next; if the request
+went meanwhile (the account erased), db-events deletes them. The person gets one email in their language with one
+button (part 1 when there are several) and the other parts as plain links, each valid 7 days (Reply-To
+SUPPORT_INBOX); then the request is fulfilled (`export_ready`). A file larger than a part on its own stays out,
+listed with a note, and the team gets a short email to send it another way; with the default limit it can't
+happen (a file is 40 MiB at most, media-upload-url signs each upload's size).
 
-`data-exports-expire` (hourly) queues `export.expired` 7 days on, which deletes every part. `delete-account` deletes
-the account's folder at once, all parts of all its exports. An account kept for safety keeps its export until it
-expires: the purge of kept accounts comes a year later.
+`data-exports-expire` (hourly) queues `export.expired` 7 days on, which deletes every part. `data-exports-sweep`
+(daily) queues `export.sweep` for objects of the bucket no request refers to, a day old at least (a build that
+failed for good). Both are erasures: a failed one waits for the team. `delete-account` deletes the account's
+folder at once, all parts of all its exports. An account kept for safety keeps its export until it expires.
 
 ## Local development
 
@@ -357,7 +368,9 @@ or `functions deploy` by hand.
    DeviceCheck; the team comes from `APNS_TEAM_ID`), `DEVICECHECK_ENVIRONMENT=production` (Apple's environment
    is chosen by the project, never by the app), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key,
    required: every verification SMS goes to a mobile line Lookup accepted, and none goes out without it), `SUPPORT_INBOX` (the team's copy of support requests, reports and
-   export requests), `TURNSTILE_SECRET_KEY` (the Turnstile widget's secret key: required in both projects, the
+   exports it must finish by hand), optionally `EXPORT_MAX_BYTES` (the most one export part weighs, in bytes:
+   47185920, 45 MiB, when unset; keep it under the Storage upload limit; anything but a positive whole number
+   fails the export), `TURNSTILE_SECRET_KEY` (the Turnstile widget's secret key: required in both projects, the
    signed-out support form is refused without it and `scripts/ci/env-parity.sh` flags a project missing it).
    Otherwise unset, each feature is skipped and logged. The Vault secret `identity_hash_key` is
    created by migration `20260927000004`: never delete or rotate it, every ban and hold mark would be lost.
