@@ -34,7 +34,7 @@ import {
   renderTeamEmail,
 } from "../_shared/notices.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
-import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
+import { hasFace, moderateImage, moderationConfigured } from "../_shared/moderation.ts";
 import { isGone, type Provider, ProviderError, trackProviders, viaProvider } from "../_shared/providers.ts";
 import { ensureChannel, ensureUsers, sendOnce, setChatHeld, stream } from "../_shared/stream.ts";
 import { admin, check, must } from "../_shared/supabase.ts";
@@ -449,7 +449,8 @@ export const handlers: Record<string, Handler> = {
         return;
       }
       // Rekognition when configured. Videos are judged on their poster frame. `review` (borderline
-      // labels, or an image over Rekognition's 5 MB) leaves the media pending for a human.
+      // labels, or an image over Rekognition's 5 MB) leaves the media pending for a human. A photo's
+      // face is checked at the same time: only a photo with one may be the portrait (private.portrait).
       if (moderationConfigured()) {
         const bytes = await getObject(p.posterKey ?? p.key);
         if (!bytes) {
@@ -460,13 +461,22 @@ export const handlers: Record<string, Handler> = {
           console.warn(`moderation: ${p.mediaId} over 5 MB, left for review`);
           return;
         }
-        const judged = await moderateImage(bytes);
-        console.log(`moderation: ${p.mediaId} ${judged.verdict} ${judged.labels.join(", ")}`);
+        const [judged, face] = await Promise.all([
+          moderateImage(bytes),
+          // A failed face check (an IAM user without rekognition:DetectFaces) leaves the face unknown
+          // rather than holding the verdict back.
+          p.posterKey ? Promise.resolve(null) : hasFace(bytes).catch((e) => {
+            console.error(`face check: ${p.mediaId} ${e}`);
+            return null;
+          }),
+        ]);
+        console.log(`moderation: ${p.mediaId} ${judged.verdict} face=${face} ${judged.labels.join(", ")}`);
         const applied = must(
           await admin.rpc("apply_media_verdict", {
             p_media: p.mediaId,
             p_verdict: judged.verdict,
             p_labels: judged.labels,
+            p_face: face,
           }),
           "media verdict",
         ) as boolean;
