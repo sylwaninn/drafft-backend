@@ -7,7 +7,10 @@
 set -euo pipefail
 
 title=${1:?Usage: $0 "<pull request title>" [last-tag]}
-last=${2:-$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo v0.0.0)}
+# The highest version already merged, not `git describe`'s pick: two tags on one commit (a release
+# redeployed by hand) would make describe return the older one and the next tag collide.
+last=${2:-$(git tag --merged HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)}
+last=${last:-v0.0.0}
 
 pattern='^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\([a-z0-9-]+\))?(!)?: .+'
 if ! [[ $title =~ $pattern ]]; then
