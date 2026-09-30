@@ -698,7 +698,7 @@ export const handlers: Record<string, Handler> = {
           email,
           renderExportReady(language(profile?.language), links),
           `export-${id}`,
-          optionalEnv("SUPPORT_INBOX"),
+          supportInbox(),
         ),
     );
     const omitted = ctx.value("omitted");
