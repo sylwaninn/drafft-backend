@@ -170,33 +170,43 @@ the demo and test accounts use.
 
 Every support email a member gets, the acknowledgement (`support.created`) and the team's replies
 (`support.reply`), has the request's reference at the end of its subject (`We got your message [DR-ABC234]`,
-`Re: Help [DR-ABC234]`) and Reply-To `SUPPORT_ADDRESS` (support@getdrafft.com; while it is unset, SUPPORT_INBOX).
-The team's copies still go to SUPPORT_INBOX. What comes back, or anything else written to that address, lands in
-sophros (migration `20260930000501`):
+`Re: Help [DR-ABC234]`). Every email to a member about their account has Reply-To `SUPPORT_ADDRESS`
+(support@getdrafft.com; while it is unset, SUPPORT_INBOX). The team's copies still go to SUPPORT_INBOX. What comes
+back, or anything else written to that address, lands in sophros (migration `20260930000501`):
 
 1. Cloudflare Email Routing hands the email to the Email Worker `cloudflare/support-mail-worker`. It parses it
    (postal-mime), keeps what the person wrote this time (quoted history, `>` lines and signature cut off; an
-   HTML-only email as text), the attachments' names only, and the reference (`DR-XXXXXX` in the subject, else in
-   the quoted text). The sender is the envelope's (SMTP MAIL FROM, vouched for by SPF), never the From header.
+   HTML-only email, or an empty text part next to HTML, as text), the attachments' names only, and the reference
+   (`DR-XXXXXX` in the subject, else in the quoted text, HTML quotes included). The sender is the envelope's (SMTP
+   MAIL FROM), never the From header. It is **verified** only when Cloudflare's own Authentication-Results (the
+   first such header, authserv-id `mx.cloudflare.net`) say SPF passed for the envelope's domain, or DKIM passed
+   for a domain aligned with it.
 2. It posts that to `support-inbound` with the header `x-support-inbound-secret` (`SUPPORT_INBOUND_SECRET`, the
-   same in the Worker and the function). The function calls `receive_support_email`:
-   - a known reference, from the address its request was written from (or its account's current email): the
-     message joins the request as the member's (`support_messages.direction = 'in'`, at most 8000 characters),
-     the request reopens, and db-events emails the team a copy (`support.received`, to SUPPORT_INBOX);
-   - no reference, an unknown one, or another address: a new request from the sender, topic `email`, linked to
-     the account with that email if any (its language, else English), with the form's limits, acknowledgement
-     and team copy (`create_support_request`); a reference it mentioned is kept in its context for the team.
+   same in the Worker and the function). Both sides parse the payload and the answer with
+   `supabase/functions/_shared/support_inbound.ts` (a wrong type is a 400, never coerced), and the function keeps
+   the request's context within its 2000 bytes. `receive_support_email`:
+   - verified, a known reference, from the address its request was written from (or its account's current
+     email): the message joins the request as the member's (`support_messages.direction = 'in'`, at most 8000
+     characters), the request reopens, and db-events emails the team a copy (`support.received`, to SUPPORT_INBOX);
+   - verified, anything else: a new request from the sender, linked to the account with that email if any (its
+     language, else English), acknowledged, the team copied;
+   - not verified: always a new request, linked to no account, never acknowledged (no mail to an address that may
+     not have written); the team copy says so. A reference it mentioned is kept in its context for the team.
      Another address never joins someone else's thread.
-   - each email once (by Message-ID, `private.support_inbound`); 10 messages an hour into one request; posts
-     over 256 KB refused.
-3. Nothing is lost: when the function doesn't take the email (unreachable, 4xx, 5xx), or it isn't a person
-   writing (an auto-reply, a bounce, a mailing list: never filed, so an out-of-office can't open request after
-   request), the Worker forwards the whole email to `FALLBACK_ADDRESS` (the team's mailbox) with an
-   `X-Drafft-Support` header saying why. Filed but not whole (attachments, a text cut to size): filed, and
-   forwarded as well. If even that forward fails, the Worker throws and Email Routing refuses the email, so the
-   sender's server reports it.
+   - the topic is the cleaned subject (no `Re:`, no reference), else "Message by email" in the account's
+     language; each email once (by Message-ID, `private.support_inbound`); 10 messages an hour into one request,
+     5 new requests an hour per address and 200 in all (their own limits, apart from the app's signed-out
+     form); posts over 256 KB refused.
+3. Nothing is lost: when the function doesn't take the email (unreachable, 4xx, 5xx, an answer that isn't a
+   result), or it isn't a person writing (an auto-reply, a bounce, a mailing list: never filed, so an
+   out-of-office can't open request after request), the Worker forwards the whole email to `FALLBACK_ADDRESS`
+   (the team's mailbox) with an `X-Drafft-Support` header saying why. Filed but not whole (attachments, a text
+   cut to size, lines of their own cut with the quoted history, since "he wrote:" reads like an attribution):
+   filed, and forwarded as well. If even that forward fails, the Worker throws and Email Routing refuses the
+   email, so the sender's server reports it.
 
-sophros shows the member's messages in the thread, marked as received by email.
+`admin_support` returns each message's `direction`; showing the member's messages as received by email is
+sophros' part (its own pull request). Until then they read like the team's.
 
 Setting it up, per environment (production: support@getdrafft.com; staging: support-staging@getdrafft.com):
 
@@ -217,9 +227,11 @@ Setting it up, per environment (production: support@getdrafft.com; staging: supp
    `npx wrangler@4 deploy --env <env>`.
 6. Email Routing › Routing rules: a custom address `support@getdrafft.com` (and `support-staging@`), action "Send
    to a Worker", `drafft-support-mail` (and `drafft-support-mail-staging`). Leave the catch-all off.
-7. Try it: reply to a staging acknowledgement; the message shows in sophros and the request reopens. Then set
-   `SUPPORT_ADDRESS` (`support-staging@getdrafft.com` on staging, `support@getdrafft.com` in production) in both
-   projects: from then on, replies come back through this route.
+7. Try it on staging: send an email to support-staging@getdrafft.com from the address of a staging request,
+   with its `[DR-XXXXXX]` in the subject (Reply-To is still SUPPORT_INBOX at this point, so a plain reply would
+   go there): the message shows in sophros and the request reopens. Then set `SUPPORT_ADDRESS`
+   (`support-staging@getdrafft.com` on staging, `support@getdrafft.com` in production) in both projects: from
+   then on, replies come back through this route.
 
 ### Statements of reasons (DSA art. 17)
 
