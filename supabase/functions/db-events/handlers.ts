@@ -14,7 +14,7 @@ import { type Push, pushToUser } from "../_shared/apns.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
 import { deleteAuthUser, eraseChat, eraseChatUser, eraseMedia, eraseSelfies, freezeChat } from "../_shared/erase.ts";
 import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
-import { buildExport, exportLink, partPath, removeExtraParts, storeExport } from "../_shared/export.ts";
+import { buildExport, exportLink, partPath, removeExtraParts, removeParts, storeExport } from "../_shared/export.ts";
 import { renderExportReady, renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/notices.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
@@ -617,32 +617,58 @@ export const handlers: Record<string, Handler> = {
     );
   },
 
-  // You > Privacy & data > Export my data: the export (export.ts), in as many parts as it takes, goes to the private
-  // bucket data-exports; the person gets one link per part, valid 7 days, in their language, and the request is
-  // fulfilled. One build at a time (export_begin): a delivery arriving while another builds is retried later. A
-  // retry skips what was done: the stored parts (`parts=<n>`), the email (also idempotent at Resend). The team
-  // hears only of a file too large for any part.
+  // You › Privacy & data › Export my data: the export (export.ts), in as many parts as it takes, goes to the private
+  // bucket data-exports and is recorded at once (export_stored: the parts expire 7 days on whatever happens next);
+  // the person gets one email with a link per part, valid 7 days, in their language, and the request is fulfilled.
+  // One build at a time (export_begin): a delivery arriving while another builds is retried later. A retry skips
+  // what was done: the stored parts (`parts=<n>`), the email (also idempotent at Resend). No email address on the
+  // account: nothing is built, the team is told and the request closed. The team also hears of files left out.
   async "export.requested"(p: { id: number; userId: string }, ctx) {
-    const state = must(await admin.rpc("export_begin", { p_id: p.id }), "export begin") as string;
+    const id = requestId(p.id);
+    const userId = uuid(p.userId, "userId");
+    const state = must(await admin.rpc("export_begin", { p_id: id }), "export begin") as string;
     if (state === "gone" || state === "done") return;
-    if (state === "busy") throw new Error(`export ${p.id}: another delivery is building it`);
+    if (state === "busy") throw new Error(`export ${id}: another delivery is building it`);
+    const email = await accountEmail(userId);
+    if (!email) {
+      await toTeam(
+        ctx,
+        "[data export] no email address",
+        [
+          ["Account", userId],
+          ["Request", String(id)],
+          ["What happened", "No export was built: the account has no email address to send it to. Request closed."],
+          ["What to do", "Reach the person another way if needed; they can ask again once they add an email."],
+        ],
+        `export-team-${id}`,
+        null,
+      );
+      check(await admin.rpc("export_closed", { p_id: id, p_reason: "no_email" }), "export closed");
+      return;
+    }
     let parts = Number(ctx.value("parts") ?? 0);
     if (!parts) {
-      const built = await buildExport(
-        p.userId,
-        (part, archive) => storeExport(partPath(p.userId, p.id, part), archive),
-      );
+      const built = await buildExport(userId, async (part, archive) => {
+        const path = partPath(userId, id, part);
+        await storeExport(path, archive);
+        return path;
+      });
       if (!built) return;
-      await removeExtraParts(p.userId, p.id, built.parts);
-      if (built.tooLarge.length > 0) await ctx.record(`omitted=${built.tooLarge.length}`);
-      await ctx.record(`parts=${built.parts}`);
-      parts = built.parts;
+      await removeExtraParts(userId, id, built.paths.length);
+      const kept = must(await admin.rpc("export_stored", { p_id: id, p_paths: built.paths }), "export stored");
+      if (kept !== true) {
+        // The request went with its account while the parts were built: nothing may outlive it.
+        await removeParts(built.paths);
+        return;
+      }
+      const left = built.tooLarge.length + built.missing.length;
+      if (left > 0) await ctx.record(`omitted=${built.tooLarge.length},${built.missing.length}`);
+      await ctx.record(`parts=${built.paths.length}`);
+      parts = built.paths.length;
     }
-    const paths = Array.from({ length: parts }, (_, i) => partPath(p.userId, p.id, i + 1));
-    const email = await accountEmail(p.userId);
-    if (!email) return;
-    const { data: profile, error } = await admin.from("profiles").select("language").eq("id", p.userId).maybeSingle();
-    if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
+    const paths = Array.from({ length: parts }, (_, i) => partPath(userId, id, i + 1));
+    const { data: profile, error } = await admin.from("profiles").select("language").eq("id", userId).maybeSingle();
+    if (error) throw new Error(`profile ${userId}: ${error.message}`);
     const links: string[] = [];
     for (const [i, path] of paths.entries()) links.push(await exportLink(path, i + 1, parts));
     await ctx.once(
@@ -651,38 +677,46 @@ export const handlers: Record<string, Handler> = {
         sendEmail(
           email,
           renderExportReady(language(profile?.language), links),
-          `export-${p.id}`,
+          `export-${id}`,
           optionalEnv("SUPPORT_INBOX"),
         ),
     );
     const omitted = ctx.value("omitted");
     if (omitted) {
+      const [tooLarge, missing] = omitted.split(",").map(Number);
       await toTeam(
         ctx,
         "[data export] files left out",
         [
-          ["Account", p.userId],
-          [
-            "Left out",
-            `${omitted} profile files larger than one part (EXPORT_MAX_BYTES): listed in data.json, send them another way`,
-          ],
+          ["Account", userId],
+          ["Larger than one part (EXPORT_MAX_BYTES)", `${tooLarge}: listed in data.json, send them another way`],
+          ["Listed in the database, missing in R2", `${missing}: listed in data.json`],
         ],
-        `export-team-${p.id}`,
+        `export-team-${id}`,
         email,
       );
     }
-    check(await admin.rpc("export_ready", { p_id: p.id, p_paths: paths }), "export ready");
+    if (must(await admin.rpc("export_ready", { p_id: id }), "export ready") !== true) {
+      console.warn(`db-events: export ${id} emailed, but its request has no stored parts any more`);
+    }
   },
 
   // An export past its 7 days (private.queue_export_expiries): its parts go, the request remembers it.
   async "export.expired"(p: { id: number }) {
-    const { data: paths, error } = await admin.rpc("export_files", { p_id: p.id });
-    if (error) throw new Error(`export files ${p.id}: ${error.message}`);
-    if (Array.isArray(paths) && paths.length > 0) {
-      const removed = await admin.storage.from("data-exports").remove(paths as string[]);
-      if (removed.error) throw new Error(`delete export ${p.id}: ${removed.error.message}`);
-    }
-    check(await admin.rpc("export_file_deleted", { p_id: p.id }), "export file deleted");
+    const id = requestId(p.id);
+    const { data: paths, error } = await admin.rpc("export_files", { p_id: id });
+    if (error) throw new Error(`export files ${id}: ${error.message}`);
+    if (Array.isArray(paths) && paths.length > 0) await removeParts(paths as string[]);
+    check(await admin.rpc("export_file_deleted", { p_id: id }), "export file deleted");
+  },
+
+  // Objects of the data-exports bucket no request refers to any more (private.queue_export_sweep): a build that
+  // failed for good after storing some parts. Deleted, and logged.
+  async "export.sweep"(p: { paths: string[] }) {
+    const paths = (p.paths ?? []).filter((path) => /^[0-9a-f-]{36}\/[0-9]+-[0-9]+\.zip$/.test(path));
+    if (paths.length === 0) return;
+    console.warn(`db-events: ${paths.length} export parts no request refers to, deleted`);
+    await removeParts(paths);
   },
 
   // A hold was lifted after a selfie check: the selfies go (bucket verification-selfies). Held again
@@ -815,6 +849,12 @@ async function due(rpc: DueRpc, args: Record<string, string>): Promise<boolean> 
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** A request id from a payload. */
+function requestId(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new Error(`invalid request id`);
+  return value;
+}
 
 /** An id from a payload, checked before it reaches a filter or an erasure. */
 function uuid(value: unknown, name: string): string {

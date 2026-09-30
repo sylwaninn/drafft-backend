@@ -951,6 +951,8 @@ Deno.test("chat.sweep: frozen channels are handed to the database page by page, 
 function exportWorld() {
   people();
   world.rpcResults.export_begin = "go";
+  world.rpcResults.export_stored = true;
+  world.rpcResults.export_ready = true;
   world.rpcResults.export_data = {
     account: { id: ana, email: "ana@drafft.so" },
     profile: { id: ana, name: "Ana", voice_intro_key: `u/${ana}/voice/v.m4a` },
@@ -964,6 +966,13 @@ function exportWorld() {
     text: `message ${i}`,
     created_at: new Date(Date.UTC(2026, 8, 1, 0, i)).toISOString(),
   }));
+  // Ana's photo in a chat, and a reaction she left on one of Bo's messages; Bo's photo stays his.
+  world.channels[match][2].attachments = [{ type: "drafft_media", key: `u/${ana}/chat/c.jpg` }];
+  world.channels[match][3].attachments = [{ type: "drafft_media", key: `u/${bo}/chat/b.jpg` }];
+  world.channels[match][3].latest_reactions = [
+    { type: "like", user: { id: ana }, created_at: "2026-09-02T00:00:00Z" },
+    { type: "love", user: { id: bo }, created_at: "2026-09-02T00:00:00Z" },
+  ];
 }
 
 function exported(path: string) {
@@ -979,17 +988,23 @@ Deno.test("export.requested: built, stored, emailed with a 7-day link in the per
   await runEvent(event);
   assertEquals(Object.keys(world.exports), [`${ana}/77-1.zip`], "one part when it all fits");
   const { files, data } = exported(`${ana}/77-1.zip`);
-  assertEquals(files, ["data.json", "files/photos/1.jpg", "files/voice/v.m4a"]);
+  assertEquals(files, ["data.json", "files/chat/c.jpg", "files/photos/1.jpg", "files/voice/v.m4a"]);
   assertEquals(data.messagesSent.length, 325, "every page, only what Ana sent");
+  assertEquals(data.reactionsLeft, [{ match, message: "m3", type: "like", createdAt: "2026-09-02T00:00:00Z" }]);
   assertEquals(data.messagesSent[0].id, "m0");
   assertEquals(data.account.email, "ana@drafft.so");
   assertEquals(data.files, {
     parts: 1,
-    list: [{ path: "files/photos/1.jpg", bytes: 4, part: 1 }, { path: "files/voice/v.m4a", bytes: 4, part: 1 }],
+    list: [
+      { path: "files/photos/1.jpg", bytes: 4, part: 1 },
+      { path: "files/voice/v.m4a", bytes: 4, part: 1 },
+      { path: "files/chat/c.jpg", bytes: 4, part: 1 },
+    ],
   });
   assertEquals(world.emails, [{ to: "ana@drafft.so", key: "export-77" }], "no team copy when nothing is left out");
   assertEquals(steps(40), ["parts=1", "email"]);
-  assertEquals(calls("export_ready")[0].args, { p_id: 77, p_paths: [`${ana}/77-1.zip`] });
+  assertEquals(calls("export_stored")[0].args, { p_id: 77, p_paths: [`${ana}/77-1.zip`] });
+  assertEquals(calls("export_ready")[0].args, { p_id: 77 });
 
   // Replayed after the email: nothing is built or sent again.
   world.rpc = [];
@@ -1019,6 +1034,7 @@ Deno.test("export.requested: over the limit, split in parts under it, in order, 
   exportWorld();
   const [photo, second, voice] = [`u/${ana}/photos/1.jpg`, `u/${ana}/photos/2.jpg`, `u/${ana}/voice/v.m4a`];
   (world.rpcResults.export_data as Row).media = [{ key: photo }, { key: second }];
+  world.channels[match] = [];
   world.sizes = { [photo]: 30_000, [second]: 30_000, [voice]: 10_000 };
   // A part from an earlier attempt that split it in 4: deleted.
   world.exports[`${ana}/78-4.zip`] = new Uint8Array();
@@ -1034,7 +1050,7 @@ Deno.test("export.requested: over the limit, split in parts under it, in order, 
   for (const path of paths) assert(world.exports[path].length <= 50_000, `${path}: ${world.exports[path].length}`);
   const first = exported(paths[0]);
   assertEquals(first.files, ["data.json", "files/photos/1.jpg"], "part 1: data.json and the first files");
-  assertEquals(first.data.messagesSent.length, 325);
+  assertEquals(first.data.messagesSent, [], "a chat with no message");
   assertEquals(first.data.files.parts, 2);
   assertEquals(first.data.files.list.map((f: Row) => [f.path, f.part]), [
     ["files/photos/1.jpg", 1],
@@ -1044,13 +1060,13 @@ Deno.test("export.requested: over the limit, split in parts under it, in order, 
   assertEquals(exported(paths[1]), { files: ["files/photos/2.jpg", "files/voice/v.m4a"], data: null });
   assertEquals(world.emails, [{ to: "ana@drafft.so", key: "export-78" }], "one email, no team copy");
   assertEquals(steps(43), ["parts=2", "email"]);
-  assertEquals(calls("export_ready")[0].args, { p_id: 78, p_paths: paths });
+  assertEquals(calls("export_stored")[0].args, { p_id: 78, p_paths: paths });
 });
 
 Deno.test("export.requested: a file larger than a part on its own is listed with a note, and the team is told", async () => {
   reset();
   exportWorld();
-  world.sizes = { [`u/${ana}/voice/v.m4a`]: 60_000 };
+  world.sizes = { [`u/${ana}/voice/v.m4a`]: 60_000, [`u/${ana}/chat/c.jpg`]: -1 };
   Deno.env.set("EXPORT_MAX_BYTES", "50000");
   try {
     await runEvent({ id: 44, event: "export.requested", payload: { id: 79, userId: ana } });
@@ -1066,8 +1082,14 @@ Deno.test("export.requested: a file larger than a part on its own is listed with
     part: null,
     note: "Too large for one part of this export: not included, the team sends it another way.",
   });
+  assertEquals(data.files.list[2], {
+    path: "files/chat/c.jpg",
+    bytes: null,
+    part: null,
+    note: "Not found in storage: not included.",
+  });
   assertEquals(world.emails.map((e) => e.to), ["ana@drafft.so", "team@drafft.so"]);
-  assertEquals(steps(44), ["omitted=1", "parts=1", "email", "team-email"]);
+  assertEquals(steps(44), ["omitted=1,1", "parts=1", "email", "team-email"]);
 });
 
 Deno.test("export.expired: every part goes, the request remembers it", async () => {
@@ -1076,4 +1098,70 @@ Deno.test("export.expired: every part goes, the request remembers it", async () 
   await runEvent({ id: 45, event: "export.expired", payload: { id: 77 } });
   assertEquals(world.removed, [`${ana}/77-1.zip`, `${ana}/77-2.zip`]);
   assertEquals(calls("export_file_deleted")[0].args, { p_id: 77 });
+});
+
+Deno.test("export.requested: no email address on the account: nothing built, the team told, the request closed", async () => {
+  reset();
+  exportWorld();
+  world.users = {};
+  await runEvent({ id: 46, event: "export.requested", payload: { id: 80, userId: ana } });
+  assertEquals(calls("export_data").length, 0);
+  assertEquals(world.exports, {});
+  assertEquals(world.emails.map((e) => e.to), ["team@drafft.so"]);
+  assertEquals(calls("export_closed")[0].args, { p_id: 80, p_reason: "no_email" });
+  assertEquals(calls("ack_event").length, 1);
+});
+
+Deno.test("export.requested: the account erased while it was built: its parts are deleted, no email", async () => {
+  reset();
+  exportWorld();
+  world.rpcResults.export_stored = false;
+  await runEvent({ id: 47, event: "export.requested", payload: { id: 81, userId: ana } });
+  assertEquals(world.removed, [`${ana}/81-1.zip`]);
+  assertEquals(world.emails, []);
+  assertEquals(calls("export_ready").length, 0);
+});
+
+Deno.test("export.requested: Stream failing is an error, never an export without messages", async () => {
+  reset();
+  exportWorld();
+  world.streamFail.query = { status: 401, code: 5 };
+  await assertRejects(() => runEvent({ id: 48, event: "export.requested", payload: { id: 82, userId: ana } }));
+  assertEquals(world.exports, {});
+  assertEquals(calls("ack_event").length, 0);
+
+  // A match without a channel (nobody wrote): no messages, not an error.
+  reset();
+  exportWorld();
+  delete world.channels[match];
+  await runEvent({ id: 49, event: "export.requested", payload: { id: 83, userId: ana } });
+  assertEquals(exported(`${ana}/83-1.zip`).data.messagesSent, []);
+});
+
+Deno.test("export.requested: a limit that isn't a number of bytes, or data.json alone over it, fails clearly", async () => {
+  for (const [limit, message] of [["45MB", "EXPORT_MAX_BYTES must be a number of bytes"], ["300", "data.json alone"]]) {
+    reset();
+    exportWorld();
+    Deno.env.set("EXPORT_MAX_BYTES", limit);
+    try {
+      await assertRejects(
+        () => runEvent({ id: 50, event: "export.requested", payload: { id: 84, userId: ana } }),
+        Error,
+        message,
+      );
+    } finally {
+      Deno.env.delete("EXPORT_MAX_BYTES");
+    }
+    assertEquals(world.exports, {});
+  }
+});
+
+Deno.test("export.sweep: parts no request refers to are deleted, nothing else", async () => {
+  reset();
+  await runEvent({
+    id: 51,
+    event: "export.sweep",
+    payload: { paths: [`${ana}/90-1.zip`, "../elsewhere/x.zip", `${ana}/notes.txt`] },
+  });
+  assertEquals(world.removed, [`${ana}/90-1.zip`]);
 });

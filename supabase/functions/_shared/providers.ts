@@ -23,6 +23,13 @@ export class ProviderError extends Error {
   }
 }
 
+/** The provider doesn't have it: never created, or deleted already. Only a clear answer counts: HTTP 404, or
+ * Stream's code 16. */
+export function isGone(error: unknown): boolean {
+  const e = error as { status?: unknown; code?: unknown } | null;
+  return e?.status === 404 || e?.code === 16;
+}
+
 /** 408, 425, 429 and 5xx: the provider, not the request. */
 export function transientStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
