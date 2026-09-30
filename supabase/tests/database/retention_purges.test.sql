@@ -3,7 +3,7 @@
 -- clear, dead letters go 30 days after they failed (erasures never), and a job that stops running is flagged.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(67);
+select plan(69);
 
 create function pg_temp.person(p_email text) returns uuid language plpgsql as $$
 declare
@@ -235,6 +235,11 @@ select is((select count(*) from private.deleted_identities where user_id = (sele
 select is((select identities || jsonb_build_object('purged', identities_purged_at is not null)
     from private.account_deletions where user_id = (select jo from kept)), '{"purged": true}'::jsonb,
   'and what the record says of them, marked as purged');
+select ok((public.admin_account_deletion('sup@drafft.test', (select jo from kept)) ->> 'identitiesPurgedAt')::timestamptz
+    = (select identities_purged_at from private.account_deletions where user_id = (select jo from kept)),
+  'sophros gets the purge date with the record');
+select ok(public.admin_account_deletion('sup@drafft.test', (select kim from kept)) -> 'identitiesPurgedAt' = 'null'::jsonb,
+  'and null while the identities are still there');
 select ok((select count(*) > 0 from private.deleted_identities where user_id = (select kim from kept))
     and (select count(*) > 0 from private.deleted_identities where user_id = (select hed from kept)),
   'not while the kept account is banned or on hold');

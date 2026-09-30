@@ -198,8 +198,9 @@ removed if the ban is lifted, and kept 3 years after the account is erased, so a
 whatever happened to the identity marks. The deletion record of a kept account
 (`private.account_deletions.identities`) never holds an identity in clear: which kinds existed and the
 sign-ins' providers and dates only (a check holds it to `private.identities_summary`), and `'{}'` with
-`identities_purged_at` once the purge cleared it. The digests in `private.deleted_identities` link a later
-sign-up, and `admin_users` finds a kept account from its full old email or phone number through them.
+`identities_purged_at` once the purge cleared it (sophros gets that date as `identitiesPurgedAt` from
+`admin_account_deletion`). The digests in `private.deleted_identities` link a later sign-up, and `admin_users`
+finds a kept account from its full old email or phone number through them.
 `private.admin_audit` stays append-only for everyone: its delete trigger lets a row go only inside a running
 purge (recognised by its `private.job_runs` row for the current transaction, which no other role can write) and
 only once past its period.

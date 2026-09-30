@@ -402,6 +402,30 @@ begin
 end;
 $$;
 
+-- 20260928000132, plus when the purge cleared the identities (`identitiesPurgedAt`, null until then).
+create or replace function public.admin_account_deletion(p_actor text, p_user uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  perform private.require_staff(p_actor, 'support');
+  return (
+    select jsonb_build_object('deletedAt', d.deleted_at, 'basis', d.basis, 'legalBasis', d.legal_basis,
+      'moderation', d.refs -> 'moderation',
+      'reports', (select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'reason', r.reason, 'createdAt', r.created_at,
+          'handledAt', r.handled_at, 'resolution', r.resolution) order by r.created_at), '[]')
+        from public.reports r where r.id in (select (jsonb_array_elements_text(d.refs -> 'reports'))::uuid)),
+      'holds', (select coalesce(jsonb_agg(jsonb_build_object('state', l.state, 'note', l.note, 'createdAt', l.created_at)
+          order by l.created_at), '[]')
+        from private.moderation_log l where l.id in (select (jsonb_array_elements_text(d.refs -> 'holds'))::bigint)),
+      'identities', d.identities, 'identitiesPurgedAt', d.identities_purged_at)
+    from private.account_deletions d where d.user_id = p_user);
+end;
+$$;
+
 -- MARK: Job runs
 
 -- The daily jobs whose runs are watched, and since when (a job that never ran is late 26 hours after this).
