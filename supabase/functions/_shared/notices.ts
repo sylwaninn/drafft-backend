@@ -260,49 +260,49 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       subject: "Your drafft export is ready",
       title: "Your export is ready.",
       body:
-        "Everything drafft keeps about you is in one file: your account, profile, activity and messages, with your photos and voice intro.",
+        "Your drafft data is in one file: your account, profile, activity and messages, with your photos, videos and voice intro.",
       note: "The link works for 7 days. Didn't ask for it? Reply to this email.",
     },
     fr: {
       subject: "Ton export drafft est prêt",
       title: "Ton export est prêt.",
       body:
-        "Tout ce que drafft garde sur toi tient dans un fichier\u00A0: ton compte, ton profil, ton activité et tes messages, avec tes photos et ta présentation vocale.",
+        "Tes données drafft tiennent dans un fichier\u00A0: ton compte, ton profil, ton activité et tes messages, avec tes photos, tes vidéos et ta présentation vocale.",
       note: "Le lien est valable 7\u00A0jours. Tu n'as rien demandé\u00A0? Réponds à cet e-mail.",
     },
     es: {
       subject: "Tu exportación de drafft está lista",
       title: "Tu exportación está lista.",
       body:
-        "Todo lo que drafft guarda sobre ti está en un archivo: tu cuenta, tu perfil, tu actividad y tus mensajes, con tus fotos y tu presentación de voz.",
+        "Tus datos de drafft están en un archivo: tu cuenta, tu perfil, tu actividad y tus mensajes, con tus fotos, tus vídeos y tu presentación de voz.",
       note: "El enlace vale durante 7 días. ¿No lo has pedido tú? Responde a este correo.",
     },
     de: {
       subject: "Dein drafft-Export ist bereit",
       title: "Dein Export ist bereit.",
       body:
-        "Alles, was drafft über dich speichert, steckt in einer Datei: dein Konto, dein Profil, deine Aktivität und deine Nachrichten, mit deinen Fotos und deinem Sprach-Intro.",
+        "Deine drafft-Daten stecken in einer Datei: dein Konto, dein Profil, deine Aktivität und deine Nachrichten, mit deinen Fotos, Videos und deinem Sprach-Intro.",
       note: "Der Link gilt 7 Tage. Du hast das nicht angefordert? Antworte auf diese E-Mail.",
     },
     it: {
       subject: "I tuoi dati drafft sono pronti",
       title: "I tuoi dati sono pronti.",
       body:
-        "Tutto ciò che drafft conserva su di te è in un unico file: account, profilo, attività e messaggi, con le tue foto e la tua presentazione vocale.",
+        "I tuoi dati drafft sono in un unico file: account, profilo, attività e messaggi, con le tue foto, i tuoi video e la tua presentazione vocale.",
       note: "Il link è valido per 7 giorni. Non l'hai chiesto tu? Rispondi a questa email.",
     },
     pt: {
       subject: "A tua exportação drafft está pronta",
       title: "A tua exportação está pronta.",
       body:
-        "Tudo o que o drafft guarda sobre ti está num só ficheiro: a tua conta, o teu perfil, a tua atividade e as tuas mensagens, com as tuas fotos e a tua apresentação de voz.",
+        "Os teus dados drafft estão num só ficheiro: a tua conta, o teu perfil, a tua atividade e as tuas mensagens, com as tuas fotos, os teus vídeos e a tua apresentação de voz.",
       note: "O link é válido durante 7 dias. Não pediste isto? Responde a este email.",
     },
     nl: {
       subject: "Je drafft-export staat klaar",
       title: "Je export staat klaar.",
       body:
-        "Alles wat drafft over je bewaart, staat in één bestand: je account, je profiel, je activiteit en je berichten, met je foto's en je spraakintro.",
+        "Je drafft-gegevens staan in één bestand: je account, je profiel, je activiteit en je berichten, met je foto's, video's en je spraakintro.",
       note: "De link is 7 dagen geldig. Niet aangevraagd? Beantwoord deze e-mail.",
     },
   },
@@ -320,49 +320,67 @@ export const exportCta: Record<Language, string> = {
 };
 
 // An export too heavy for one file (export.ts: parts of 45 MiB at most): the same email, with the number of files
-// in the body, one numbered button per part and the links in the plural. `{count}`: the parts, 2 or more;
-// `{n}`: the part a button downloads. The subject and title stay those of noticeCopy.exportReady.
-export const exportPartsCopy: Record<Language, { body: string; cta: string; note: string }> = {
+// in the body, one button for part 1 (WORDING.md: one CTA) and the other parts as plain links under `others`, the
+// links in the plural. `{count}`: the parts, 2 or more; `{n}`: a part's number. The subject and title stay those of
+// noticeCopy.exportReady.
+export const exportPartsCopy: Record<
+  Language,
+  { body: string; cta: string; others: string; part: string; note: string }
+> = {
   en: {
     body:
-      "Everything drafft keeps about you is in {count} files: your account, profile, activity and messages, with your photos and voice intro.",
-    cta: "Download part {n}",
+      "Your drafft data is in {count} files: your account, profile, activity and messages, with your photos, videos and voice intro.",
+    cta: "Download part 1",
+    others: "Other parts",
+    part: "Part {n}",
     note: "The links work for 7 days. Didn't ask for it? Reply to this email.",
   },
   fr: {
     body:
-      "Tout ce que drafft garde sur toi tient dans {count}\u00A0fichiers\u00A0: ton compte, ton profil, ton activité et tes messages, avec tes photos et ta présentation vocale.",
-    cta: "Télécharger la partie {n}",
+      "Tes données drafft tiennent dans {count}\u00A0fichiers\u00A0: ton compte, ton profil, ton activité et tes messages, avec tes photos, tes vidéos et ta présentation vocale.",
+    cta: "Télécharger la partie 1",
+    others: "Les autres parties",
+    part: "Partie {n}",
     note: "Les liens sont valables 7\u00A0jours. Tu n'as rien demandé\u00A0? Réponds à cet e-mail.",
   },
   es: {
     body:
-      "Todo lo que drafft guarda sobre ti está en {count} archivos: tu cuenta, tu perfil, tu actividad y tus mensajes, con tus fotos y tu presentación de voz.",
-    cta: "Descargar la parte {n}",
+      "Tus datos de drafft están en {count} archivos: tu cuenta, tu perfil, tu actividad y tus mensajes, con tus fotos, tus vídeos y tu presentación de voz.",
+    cta: "Descargar la parte 1",
+    others: "Las otras partes",
+    part: "Parte {n}",
     note: "Los enlaces valen durante 7 días. ¿No lo has pedido tú? Responde a este correo.",
   },
   de: {
     body:
-      "Alles, was drafft über dich speichert, steckt in {count} Dateien: dein Konto, dein Profil, deine Aktivität und deine Nachrichten, mit deinen Fotos und deinem Sprach-Intro.",
-    cta: "Teil {n} herunterladen",
+      "Deine drafft-Daten stecken in {count} Dateien: dein Konto, dein Profil, deine Aktivität und deine Nachrichten, mit deinen Fotos, Videos und deinem Sprach-Intro.",
+    cta: "Teil 1 herunterladen",
+    others: "Die anderen Teile",
+    part: "Teil {n}",
     note: "Die Links gelten 7 Tage. Du hast das nicht angefordert? Antworte auf diese E-Mail.",
   },
   it: {
     body:
-      "Tutto ciò che drafft conserva su di te è in {count} file: account, profilo, attività e messaggi, con le tue foto e la tua presentazione vocale.",
-    cta: "Scarica la parte {n}",
+      "I tuoi dati drafft sono in {count} file: account, profilo, attività e messaggi, con le tue foto, i tuoi video e la tua presentazione vocale.",
+    cta: "Scarica la parte 1",
+    others: "Le altre parti",
+    part: "Parte {n}",
     note: "I link sono validi per 7 giorni. Non l'hai chiesto tu? Rispondi a questa email.",
   },
   pt: {
     body:
-      "Tudo o que o drafft guarda sobre ti está em {count} ficheiros: a tua conta, o teu perfil, a tua atividade e as tuas mensagens, com as tuas fotos e a tua apresentação de voz.",
-    cta: "Descarregar a parte {n}",
+      "Os teus dados drafft estão em {count} ficheiros: a tua conta, o teu perfil, a tua atividade e as tuas mensagens, com as tuas fotos, os teus vídeos e a tua apresentação de voz.",
+    cta: "Descarregar a parte 1",
+    others: "As outras partes",
+    part: "Parte {n}",
     note: "Os links são válidos durante 7 dias. Não pediste isto? Responde a este email.",
   },
   nl: {
     body:
-      "Alles wat drafft over je bewaart, staat in {count} bestanden: je account, je profiel, je activiteit en je berichten, met je foto's en je spraakintro.",
-    cta: "Deel {n} downloaden",
+      "Je drafft-gegevens staan in {count} bestanden: je account, je profiel, je activiteit en je berichten, met je foto's, video's en je spraakintro.",
+    cta: "Deel 1 downloaden",
+    others: "De andere delen",
+    part: "Deel {n}",
     note: "De links zijn 7 dagen geldig. Niet aangevraagd? Beantwoord deze e-mail.",
   },
 };
@@ -378,27 +396,44 @@ export function renderNotice(kind: Notice, lang: Language, vars: { reference?: s
   return { subject: c.subject, html: layout(lang, c.subject, rows), text };
 }
 
-/** The export email: a button per link, numbered when the export has several parts (and each link on its own
- * line in the text part), then the note. */
+/** The export email: one button (part 1 when there are several), the other parts as plain links under it, each
+ * link on its own line in the text part, then the note. */
 export function renderExportReady(lang: Language, links: string[]): Rendered {
   const c = noticeCopy.exportReady[lang];
   const several = links.length > 1 ? exportPartsCopy[lang] : null;
   const body = several ? several.body.replace("{count}", String(links.length)) : c.body;
   const note = several ? several.note : c.note;
-  const labels = links.map((_, i) => several ? several.cta.replace("{n}", String(i + 1)) : exportCta[lang]);
-  const button = (link: string, label: string, last: boolean) =>
-    `<tr><td style="padding-bottom:${last ? 24 : 12}px"><a href="${
-      escape(link)
-    }" style="display:inline-block;background:${color.primary};` +
-    `color:${color.ink};font-size:16px;font-weight:700;text-decoration:none;padding:14px 24px;border-radius:16px">` +
-    `${escape(label)}</a></td></tr>`;
+  const cta = several ? several.cta : exportCta[lang];
+  const label = (i: number) => several!.part.replace("{n}", String(i + 1));
+  const others = links.slice(1).map((link, i) => ({ link, label: label(i + 1) }));
   const rows = [
     title(c.title),
     paragraph(escape(body)),
-    ...links.map((link, i) => button(link, labels[i], i === links.length - 1)),
+    `<tr><td style="padding-bottom:24px"><a href="${escape(links[0])}" style="display:inline-block;` +
+    `background:${color.primary};color:${color.ink};font-size:16px;font-weight:700;text-decoration:none;` +
+    `padding:14px 24px;border-radius:16px">${escape(cta)}</a></td></tr>`,
+    ...(several
+      ? [
+        paragraph(
+          `${escape(several.others)}<br>` +
+            others.map((o) => `<a href="${escape(o.link)}" style="color:${color.ink}">${escape(o.label)}</a>`)
+              .join("<br>"),
+        ),
+      ]
+      : []),
     small(note, color.mute),
   ];
-  const text = [c.title, "", body, "", ...links.flatMap((link, i) => [labels[i], link, ""]), note].join("\n");
+  const text = [
+    c.title,
+    "",
+    body,
+    "",
+    cta,
+    links[0],
+    "",
+    ...(several ? [several.others, ...others.flatMap((o) => [o.label, o.link]), ""] : []),
+    note,
+  ].join("\n");
   return { subject: c.subject, html: layout(lang, c.subject, rows), text };
 }
 
