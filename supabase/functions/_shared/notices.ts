@@ -1,10 +1,9 @@
 // Emails that aren't auth codes: news about the account (a hold lifted, a photo approved on a second look, a
-// decision by the team with its statement of reasons), the acknowledgement of a support request and a data
-// export's link, in the person's language; plus the team's copies (SUPPORT_INBOX), in English, until the
-// dashboard lists them. Same layout and register as emails.ts (WORDING.md): the subject says the one thing (45
-// characters at most), the title repeats it, the note is the one next step. In French the brand speaks as "on"
-// ("On a revu ta photo"), never "nous" as the subject; "l'équipe drafft" only names the team (the support
-// reply's title).
+// decision by the team with its statement of reasons), the acknowledgement of a support request and a data export's link, in the person's language;
+// plus the team's copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register as emails.ts
+// (WORDING.md): the subject says the one thing (45 characters at most, the acknowledgement's reference included), the title repeats it, the note is the
+// one next step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject;
+// "l'équipe drafft" only names the team (the support reply's title).
 import { codeBox, color, escape, layout, paragraph, type Rendered, small, title } from "./emails.ts";
 import type { Language } from "./texts.ts";
 
@@ -155,8 +154,9 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       note: "Open drafft om je profiel te bekijken.",
     },
   },
-  // A support request, received: its reference follows the body. Fixed text, nothing the form typed: the
-  // signed-out form mails any address, so it must not carry someone else's words.
+  // A support request, received: its reference follows the body and ends the subject (renderNotice), so the
+  // subject here keeps to 33 characters. Fixed text, nothing the form typed: the signed-out form mails any
+  // address, so it must not carry someone else's words. A reply goes to the support address (support-inbound).
   supportReceived: {
     en: {
       subject: "We got your message",
@@ -177,8 +177,8 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       note: "Inclúyela si vuelves a escribirnos.",
     },
     de: {
-      subject: "Wir haben deine Nachricht erhalten",
-      title: "Wir haben deine Nachricht erhalten.",
+      subject: "Deine Nachricht ist angekommen",
+      title: "Deine Nachricht ist angekommen.",
       body: "Wir antworten dir an diese Adresse, meist innerhalb von 2 Werktagen. Deine Referenz:",
       note: "Gib sie an, wenn du uns noch einmal schreibst.",
     },
@@ -334,15 +334,17 @@ export const exportPartsCopy: Record<
   },
 };
 
-/** `reference`: the support acknowledgement only. */
+/** `reference`: the support acknowledgement only. It ends the subject too ("We got your message [DR-ABC123]"):
+ * a reply keeps it, and the support mail Worker files the reply in its request by it. */
 export function renderNotice(kind: Notice, lang: Language, vars: { reference?: string } = {}): Rendered {
   const c = noticeCopy[kind][lang];
   const body = c.body;
+  const subject = vars.reference ? `${c.subject} [${vars.reference}]` : c.subject;
   const rows = [title(c.title), paragraph(escape(c.body))];
   if (vars.reference) rows.push(`<tr><td style="padding-bottom:24px">${codeBox(vars.reference)}</td></tr>`);
   rows.push(small(c.note, color.mute));
   const text = [c.title, "", body, ...(vars.reference ? ["", vars.reference] : []), "", c.note].join("\n");
-  return { subject: c.subject, html: layout(lang, c.subject, rows), text };
+  return { subject, html: layout(lang, subject, rows), text };
 }
 
 /** The export email: one button (part 1 when there are several), the other parts as plain links under it, each
@@ -855,7 +857,8 @@ export function renderDecision(
   return { subject: c.subject, html: layout(lang, c.subject, rows), text };
 }
 
-// A reply from the team (sophros), framed in the person's language; the reply itself is as written.
+// A reply from the team (sophros), framed in the person's language; the reply itself is as written. The subject
+// ends with the reference, which a reply keeps: the support mail Worker files it in its request.
 export const supportReplyCopy: Record<Language, { title: string; intro: string; yours: string; note: string }> = {
   en: {
     title: "A reply from the drafft team.",

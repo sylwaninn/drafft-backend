@@ -180,9 +180,11 @@ async function toTeam(
   await ctx.once("team-email", () => sendEmail(inbox, renderTeamEmail(subject, lines), key, replyTo));
 }
 
-/** Where a member's reply to a notice goes: the team's inbox (unset locally: the sender, as before). */
-function supportInbox(): string | undefined {
-  return optionalEnv("SUPPORT_INBOX");
+/** Where a member's reply to any email about their account goes: the support address, whose mail comes back into
+ * sophros (support-inbound, README "Support by email"); until it is set, the team's mailbox (unset locally: the
+ * sender, as before). */
+function supportReplyTo(): string | undefined {
+  return optionalEnv("SUPPORT_ADDRESS") ?? optionalEnv("SUPPORT_INBOX");
 }
 
 /** Stream ban on or off from the account's current hold. Deleted since: the account and its chats are gone. */
@@ -497,7 +499,7 @@ export const handlers: Record<string, Handler> = {
             email,
             renderNotice(kind, language(profile.language)),
             `hold-lifted-${p.userId}-${p.previous}`,
-            supportInbox(),
+            supportReplyTo(),
           ),
       );
     }
@@ -523,7 +525,7 @@ export const handlers: Record<string, Handler> = {
           email,
           renderNotice("photoApproved", language(profile?.language)),
           `photo-approved-${p.mediaId}`,
-          supportInbox(),
+          supportReplyTo(),
         ),
     );
   },
@@ -565,7 +567,7 @@ export const handlers: Record<string, Handler> = {
         request.email,
         renderNotice("supportReceived", language(request.language), { reference: request.reference }),
         `support-ack-${request.reference}`,
-        supportInbox(),
+        supportReplyTo(),
       ));
     await toTeam(
       ctx,
@@ -582,8 +584,9 @@ export const handlers: Record<string, Handler> = {
     );
   },
 
-  // A reply written in sophros: emailed to the person, framed in their language; their answer goes to
-  // SUPPORT_INBOX. A failed send is recorded on the message (the dashboard shows it) and retried.
+  // A reply written in sophros: emailed to the person, framed in their language; their answer goes to the
+  // support address and back into the request (support-inbound). A failed send is recorded on the message (the
+  // dashboard shows it) and retried.
   async "support.reply"(p: { id: number }) {
     const [reply] = must(await admin.rpc("support_reply", { p_id: p.id }), "support reply") as {
       reference: string;
@@ -600,7 +603,7 @@ export const handlers: Record<string, Handler> = {
         reply.email,
         renderSupportReply(language(reply.language), reply),
         `support-reply-${p.id}`,
-        supportInbox(),
+        supportReplyTo(),
       );
     } catch (error) {
       check(
@@ -610,6 +613,31 @@ export const handlers: Record<string, Handler> = {
       throw error;
     }
     check(await admin.rpc("support_reply_sent", { p_id: p.id }), "support reply sent");
+  },
+
+  // A member's email, filed in its request and the request reopened (receive_support_email): the team's copy, until
+  // sophros is watched. A reply to it goes to the member.
+  async "support.received"(p: { id: number }, ctx) {
+    const [message] = must(await admin.rpc("support_reply", { p_id: p.id }), "support message") as {
+      reference: string;
+      email: string;
+      topic: string;
+      body: string;
+      author: string;
+    }[];
+    if (!message) return;
+    await toTeam(
+      ctx,
+      `[support] ${message.reference} ${message.topic}: new message`,
+      [
+        ["From", message.author],
+        ["Message", message.body],
+        ["Status", "reopened, answer it in sophros"],
+      ],
+      `support-received-${p.id}`,
+      message.author,
+      message.author,
+    );
   },
 
   // A report: the team is told (the account may already be held, see reports_events).
@@ -769,7 +797,7 @@ export const handlers: Record<string, Handler> = {
           email,
           renderDecision(lang, decision.kind, decision.category, decision.terms_anchor, decision.details),
           `decision-${p.id}`,
-          supportInbox(),
+          supportReplyTo(),
         ));
     } else {
       console.warn(`db-events: decision ${p.id} not emailed, the account has no email address`);
