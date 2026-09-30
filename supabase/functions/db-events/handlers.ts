@@ -617,12 +617,13 @@ export const handlers: Record<string, Handler> = {
     );
   },
 
-  // You › Privacy & data › Export my data: the export (export.ts), in as many parts as it takes, goes to the private
-  // bucket data-exports and is recorded at once (export_stored: the parts expire 7 days on whatever happens next);
-  // the person gets one email with a link per part, valid 7 days, in their language, and the request is fulfilled.
-  // One build at a time (export_begin): a delivery arriving while another builds is retried later. A retry skips
-  // what was done: the stored parts (`parts=<n>`), the email (also idempotent at Resend). No email address on the
-  // account: nothing is built, the team is told and the request closed. The team also hears of files left out.
+  // You › Privacy & data › Export my data: the export (export.ts), in as many parts as it takes, goes to the
+  // private bucket data-exports and is recorded at once (export_stored: the parts expire 7 days on whatever happens
+  // next); the person gets one email with a link per part, valid 7 days, in their language, and the request is
+  // fulfilled. One build at a time (export_begin): a delivery arriving while another builds is retried later. A
+  // retry skips what was done: the stored parts (`parts=<n>`), the email (also idempotent at Resend). No email
+  // address on the account: nothing is built, the team is told and the request closed. The team also hears of
+  // files left out.
   async "export.requested"(p: { id: number; userId: string }, ctx) {
     const id = requestId(p.id);
     const userId = uuid(p.userId, "userId");
@@ -666,11 +667,10 @@ export const handlers: Record<string, Handler> = {
       await ctx.record(`parts=${built.paths.length}`);
       parts = built.paths.length;
     }
-    const paths = Array.from({ length: parts }, (_, i) => partPath(userId, id, i + 1));
     const { data: profile, error } = await admin.from("profiles").select("language").eq("id", userId).maybeSingle();
     if (error) throw new Error(`profile ${userId}: ${error.message}`);
     const links: string[] = [];
-    for (const [i, path] of paths.entries()) links.push(await exportLink(path, i + 1, parts));
+    for (let part = 1; part <= parts; part++) links.push(await exportLink(partPath(userId, id, part), part, parts));
     await ctx.once(
       "email",
       () =>

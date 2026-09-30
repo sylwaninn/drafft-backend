@@ -1,8 +1,8 @@
 // Emails that aren't auth codes: news about the account (a hold lifted, a photo approved or refused on a
 // second look), the acknowledgement of a support request and a data export's link, in the person's language;
-// plus the team's copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register as emails.ts
-// (WORDING.md): the subject says the one thing (45 characters at most), the title repeats it, the note is the
-// one next step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject;
+// plus the team's copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register
+// as emails.ts (WORDING.md): the subject says the one thing (45 characters at most), the title repeats it, the
+// note is the one next step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject;
 // "l'équipe drafft" only names the team (the support reply's title).
 import { codeBox, color, escape, layout, paragraph, type Rendered, small, title } from "./emails.ts";
 import type { Language } from "./texts.ts";
@@ -253,8 +253,9 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       note: "Vermeld hem als je ons opnieuw schrijft.",
     },
   },
-  // A data export, built: the link follows the body, one per part when it has several (renderExportReady). "Export" as the app says it (You ›
-  // Privacy & data › Export my data); a reply reaches the team (Reply-To SUPPORT_INBOX).
+  // A data export, built: the link follows the body, one per part when it has several (renderExportReady).
+  // "Export" as the app says it (You › Privacy & data › Export my data); a reply reaches the team (Reply-To
+  // SUPPORT_INBOX).
   exportReady: {
     en: {
       subject: "Your drafft export is ready",
@@ -402,39 +403,26 @@ export function renderExportReady(lang: Language, links: string[]): Rendered {
   const c = noticeCopy.exportReady[lang];
   const several = links.length > 1 ? exportPartsCopy[lang] : null;
   const body = several ? several.body.replace("{count}", String(links.length)) : c.body;
-  const note = several ? several.note : c.note;
-  const cta = several ? several.cta : exportCta[lang];
-  const label = (i: number) => several!.part.replace("{n}", String(i + 1));
-  const others = links.slice(1).map((link, i) => ({ link, label: label(i + 1) }));
+  const note = several?.note ?? c.note;
+  const cta = several?.cta ?? exportCta[lang];
   const rows = [
     title(c.title),
     paragraph(escape(body)),
     `<tr><td style="padding-bottom:24px"><a href="${escape(links[0])}" style="display:inline-block;` +
     `background:${color.primary};color:${color.ink};font-size:16px;font-weight:700;text-decoration:none;` +
     `padding:14px 24px;border-radius:16px">${escape(cta)}</a></td></tr>`,
-    ...(several
-      ? [
-        paragraph(
-          `${escape(several.others)}<br>` +
-            others.map((o) => `<a href="${escape(o.link)}" style="color:${color.ink}">${escape(o.label)}</a>`)
-              .join("<br>"),
-        ),
-      ]
-      : []),
-    small(note, color.mute),
   ];
-  const text = [
-    c.title,
-    "",
-    body,
-    "",
-    cta,
-    links[0],
-    "",
-    ...(several ? [several.others, ...others.flatMap((o) => [o.label, o.link]), ""] : []),
-    note,
-  ].join("\n");
-  return { subject: c.subject, html: layout(lang, c.subject, rows), text };
+  const text = [c.title, "", body, "", cta, links[0], ""];
+  if (several) {
+    // Part 2 onwards, as plain links.
+    const others = links.slice(1).map((link, i) => ({ link, label: several.part.replace("{n}", String(i + 2)) }));
+    const anchors = others.map((o) => `<a href="${escape(o.link)}" style="color:${color.ink}">${escape(o.label)}</a>`);
+    rows.push(paragraph(`${escape(several.others)}<br>${anchors.join("<br>")}`));
+    text.push(several.others, ...others.flatMap((o) => [o.label, o.link]), "");
+  }
+  rows.push(small(note, color.mute));
+  text.push(note);
+  return { subject: c.subject, html: layout(lang, c.subject, rows), text: text.join("\n") };
 }
 
 // A reply from the team (sophros), framed in the person's language; the reply itself is as written.
