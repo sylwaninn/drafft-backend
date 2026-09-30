@@ -296,7 +296,7 @@ select ok(exists (select 1 from cron.job where jobname = 'outbox-cleanup' and co
 -- MARK: Jobs behind
 
 select is(private.ops_state() -> 'jobsBehind', '[]'::jsonb, 'both jobs ran: nothing behind');
-update private.watched_jobs set since = now() - interval '3 days';
+update private.watched_jobs set since = now() - interval '3 days' where job in ('privacy-purge', 'outbox-cleanup');
 delete from private.job_runs;
 select is(private.ops_state() -> 'jobsBehind',
   '[{"job": "outbox-cleanup", "lastRunAt": null}, {"job": "privacy-purge", "lastRunAt": null}]'::jsonb,

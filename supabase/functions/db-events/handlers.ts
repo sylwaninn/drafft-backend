@@ -12,6 +12,7 @@
 import { optionalEnv } from "../_shared/env.ts";
 import { type Push, pushToUser } from "../_shared/apns.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
+import { deleteAuthUser, eraseChat, eraseChatUser, eraseMedia, eraseSelfies, freezeChat } from "../_shared/erase.ts";
 import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
 import { renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/notices.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
@@ -253,8 +254,8 @@ export const handlers: Record<string, Handler> = {
   },
 
   // Unmatch, block, report, or a deleted account kept for safety: the chat disappears for both and nobody
-  // can write in it, but it is kept, never deleted, so the team can still read it in sophros (server side,
-  // with the secret). Both members leave the channel (it leaves their channel lists, and members only can
+  // can write in it, but it is kept a year (then `chat.erase`), so the team can still read it in sophros (server
+  // side, with the secret). Both members leave the channel (it leaves their channel lists, and members only can
   // read a messaging channel), then it is frozen (no message or reaction from anyone). Both calls are
   // idempotent. No channel yet (nobody wrote) or an erased account (the channel went with it): nothing to do.
   async "match.ended"(p: { matchId: string }) {
@@ -262,15 +263,7 @@ export const handlers: Record<string, Handler> = {
       .maybeSingle();
     if (error) throw new Error(`match ${p.matchId}: ${error.message}`);
     if (!match) return;
-    const channel = stream().channel("messaging", p.matchId);
-    try {
-      await viaProvider("stream", async () => {
-        await channel.removeMembers([match.user_a, match.user_b]);
-        await channel.updatePartial({ set: { frozen: true } });
-      });
-    } catch (error) {
-      if (!String(error).includes("does not exist")) throw error;
-    }
+    await freezeChat(p.matchId, [match.user_a, match.user_b]);
   },
 
   // An account kept after its owner deleted it (retain_deleted_account): banned from chat for good, and every
@@ -646,12 +639,74 @@ export const handlers: Record<string, Handler> = {
       .maybeSingle();
     if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
     if (profile?.moderation) return;
-    const paths = must(await admin.rpc("selfie_paths", { p_user: p.userId }), "selfie paths") as string[];
-    if (paths.length > 0) {
-      const removed = await admin.storage.from("verification-selfies").remove(paths);
-      if (removed.error) throw new Error(`selfies of ${p.userId}: ${removed.error.message}`);
+    await eraseSelfies(uuid(p.userId, "userId"));
+  },
+
+  // A banned account's selfies, kept 6 months for an appeal (private.queue_retention_purges). Reopened since,
+  // or banned again more recently: not due, the database says.
+  async "selfie.expired"(p: { userId: string }) {
+    const userId = uuid(p.userId, "userId");
+    if (!await due("banned_selfies_due", { p_user: userId })) return;
+    await eraseSelfies(userId);
+  },
+
+  // An account kept for safety, its case closed over a year ago: erased like delete-account erases one. Its
+  // chats were ended at its deletion, so most went a year after it (`chat.erase`); any left go here, with what
+  // either member sent in them. Then its Stream user, its media and selfies, and last its Auth user, which takes
+  // its rows with it (a banned account's moderation history stays, for its 3 years). A hold or a report
+  // reopened since keeps it: the database says whether it is still due, until the Auth user is gone.
+  async "account.purge"(p: { userId: string }, ctx) {
+    const userId = uuid(p.userId, "userId");
+    if (!ctx.done("auth") && !await due("retained_account_due", { p_user: userId })) return;
+    // Its matches, read once and kept in the steps: they go with the Auth user.
+    let ids = ctx.value("matches");
+    if (ids === undefined) {
+      const rows = must(
+        await admin.from("matches").select("id").or(`user_a.eq.${userId},user_b.eq.${userId}`),
+        "matches",
+      ) as { id: string }[];
+      ids = rows.map((m) => m.id).join(",");
+      await ctx.record(`matches=${ids}`);
     }
-    check(await admin.rpc("forget_selfies", { p_user: p.userId }), "forget selfies");
+    const matches = ids === "" ? [] : ids.split(",");
+    for (const m of matches) await ctx.once(`chat-${m}`, () => eraseChat(m));
+    await ctx.once("chat-user", () => eraseChatUser(userId));
+    await ctx.once("media", () => eraseMedia(userId));
+    await ctx.once("selfies", () => eraseSelfies(userId));
+    await ctx.once("auth", () => deleteAuthUser(userId));
+    // After the Auth user: erasing its matches tracked their chats again.
+    for (const m of matches) check(await admin.rpc("chat_erased", { p_match: m }), "chat erased");
+  },
+
+  // A chat that ended over a year ago (an ended match, or one kept when an account was deleted): its media
+  // and its channel go. Erased already with a kept account: nothing to do.
+  async "chat.erase"(p: { matchId: string }, ctx) {
+    const matchId = uuid(p.matchId, "matchId");
+    if (!ctx.done("chat") && !await due("chat_erase_due", { p_match: matchId })) return;
+    await ctx.once("chat", () => eraseChat(matchId));
+    check(await admin.rpc("chat_erased", { p_match: matchId }), "chat erased");
+  },
+
+  // Once, after migration 20260930000201: the frozen channels Stream still has, oldest first, so those whose
+  // match row went before chat_retention existed get tracked (public.track_frozen_chats) and erased a year
+  // after their last update. Resumes from the last channel it recorded.
+  async "chat.sweep"(_p: Record<string, never>, ctx) {
+    const pageSize = 30;
+    let after = ctx.value("after") ?? "1970-01-01T00:00:00Z";
+    for (;;) {
+      const page = await viaProvider("stream", () =>
+        stream().queryChannelsRequest(
+          { type: "messaging", frozen: true, created_at: { $gt: after } },
+          [{ created_at: 1 }],
+          { limit: pageSize, message_limit: 0, state: false, watch: false, presence: false },
+        )) as { channel: { id: string; created_at?: string; updated_at?: string } }[];
+      if (page.length === 0) return;
+      const chats = page.map(({ channel }) => ({ id: channel.id, at: channel.updated_at ?? channel.created_at }));
+      check(await admin.rpc("track_frozen_chats", { p_chats: chats }), "track frozen chats");
+      after = page.at(-1)!.channel.created_at ?? after;
+      await ctx.record(`after=${after}`);
+      if (page.length < pageSize) return;
+    }
   },
 
   // drafft tempo's free boost of the week was credited (private.credit_weekly_boosts). Tapping it
@@ -695,6 +750,23 @@ async function pushModeration(
     // One moderation push at a time: a newer state replaces the older one on the lock screen.
     collapseId: `moderation-${p.userId}`,
   });
+}
+
+type DueRpc = "retained_account_due" | "chat_erase_due" | "banned_selfies_due";
+
+/** Whether a purge is still due, asked of the database at delivery (the state may have changed since queued). */
+async function due(rpc: DueRpc, args: Record<string, string>): Promise<boolean> {
+  const result = await admin.rpc(rpc, args);
+  check(result, rpc);
+  return result.data === true;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** An id from a payload, checked before it reaches a filter or an erasure. */
+function uuid(value: unknown, name: string): string {
+  if (typeof value !== "string" || !UUID.test(value)) throw new Error(`invalid ${name}: ${String(value).slice(0, 60)}`);
+  return value;
 }
 
 async function reviewWasSelfie(userId: string): Promise<boolean> {

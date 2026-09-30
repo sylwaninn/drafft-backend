@@ -105,7 +105,7 @@ Edge Functions (signed in unless noted):
 | --- | --- |
 | `media-upload-url` | a presigned R2 upload URL for a photo, video or voice intro |
 | `chat-media` | silent check of a photo or video sent in a chat (`{ flagged }`, nothing changes for either person) |
-| `delete-account` | deletes the account, its chat history, media and selfies |
+| `delete-account` | deletes the account, its chats, media and selfies, or keeps it for safety (erased later by db-events `account.purge`) |
 | `device-check` | the iPhone's DeviceCheck token, at each launch and sign-in |
 | `phone-code` | texts a code to verify a number: email confirmed, limits per number, account and IP, Twilio Lookup (mobile lines only, fails closed) |
 | `purchase-sync` | credits a purchase or restore straight away from RevenueCat (see Purchases below) |
@@ -172,9 +172,9 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 | --- | --- | --- | --- |
 | Account, profile, lifestyle, sports, prompts, settings, location, wallet, cards, swipes, matches, blocks, sessions, push tokens, DeviceCheck token, selfie records, export requests, terms and consent log | `auth.users`, `auth.identities`, `public.*`, `private.locations`, `private.device_checks`, `private.selfie_checks`, `private.data_requests`, `private.consent_events` | the account's life | `delete-account`: deleting the Auth user cascades through these tables (purchases, photo flags, help requests and reports' reporter are unlinked instead, `on delete set null`) |
 | Photos, videos, voice intro, chat photos and videos | R2 `u/<id>/…` | the account's life; a removed photo at once | `delete-account` (the whole prefix), db-events `media.deleted` |
-| Chat messages | Stream, one channel per match | the match's life; an ended match's chat is frozen, then erased 1 year after the match ended | `delete-account` hard-deletes the Stream user and messages; the year after the match: see [TODO.md](TODO.md) |
-| Accounts kept for safety (banned, held or under an open report when deleted) | the same rows, `profiles.deleted_at`, `private.account_deletions` | 1 year after the case is closed | see [TODO.md](TODO.md) |
-| Verification selfies | Storage `verification-selfies` | until the check is over; a banned account's 6 months, for an appeal | db-events `selfie.delete`, `delete-account`; the 6 months: see [TODO.md](TODO.md) |
+| Chat messages, and the chat photos, videos and voice messages they point to | Stream, one channel per match; R2 `u/<id>/chat/…` | the match's life; an ended match's chat is frozen, then erased 1 year after the match ended | `delete-account` erases its chats and hard-deletes the Stream user; db-events `chat.erase` (below) |
+| Accounts kept for safety (banned, held or under an open report when deleted) | the same rows, `profiles.deleted_at`, `private.account_deletions` | 1 year after the case is closed | db-events `account.purge` (below) |
+| Verification selfies | Storage `verification-selfies` | until the check is over; a banned account's 6 months, for an appeal | db-events `selfie.delete`, `selfie.expired` (below), `delete-account` |
 | IP addresses | `private.ips` | 180 days after the last open from that address | `device-reports-prune` |
 | Sign-in events with IP addresses | `auth.audit_log_entries` | not enforced yet | see [TODO.md](TODO.md) |
 | Devices (model, versions, last IP) | `private.devices` | 1 year after the last open | `device-reports-prune` |
@@ -210,6 +210,36 @@ hours, or pg_cron recorded a failed run since the last one, `ops_check` opens an
 lists it under "Daily jobs behind"; the daily summary says what each job deleted. A failed erasure event
 (`outbox_policies.erasure`: `media.deleted`, `selfie.delete`, `account.*`, `stream.user`) is never dropped: it
 keeps the incident open until someone replays or discards it in sophros.
+
+### Accounts, chats and selfies kept for safety
+
+What is kept for members' safety is erased on the privacy policy's schedule, outside the database too. A daily
+job, `private.queue_retention_purges()` (`retention-purge-external`, migration `20260930000201`, watched like
+the others), queues one outbox event per thing due, a second apart; db-events erases it, after asking the
+database again whether it is still due. The erasure itself is one module, `_shared/erase.ts`, which
+`delete-account` uses too.
+
+| Kept | Erased | Event |
+| --- | --- | --- |
+| An account kept for safety (banned, held or reported when its owner deleted it) | 1 year after its case is closed: any chat of its left (they ended at its deletion, so most went a year after it), its Stream user and messages, R2 `u/<id>/`, its selfies, then its Auth user and its rows (a banned account's moderation history stays, for its 3 years) | `account.purge` |
+| The chat of an ended match (frozen by `match.ended`), and a chat kept when an account was deleted because its other member was banned or on hold | 1 year after it ended (the match's end, or the deletion): the chat photos, videos and voice messages its messages point to in R2 (each sender's own objects only, `u/<sender>/chat/…`), then the channel | `chat.erase` |
+| A banned account's verification selfies | 6 months after the ban (a lifted hold's still go at once, `selfie.delete`) | `selfie.expired` |
+
+When a kept account's case is closed (`private.retained_case_closed_at`): only once it is banned or its hold is
+lifted, and no report about it is still open; then at the latest of its deletion, its last hold change (the ban
+decided, or the hold lifted) and its last report handled. A kept banned account is erased a year after that (a
+report handled after the ban moves the date); its ban stays remembered (`private.banned_accounts`) and its ban's
+identity marks stay, so the same email, phone or sign-in still can't come back. Its moderation log, staff notes,
+account links and photo flags outlive it: they have no foreign key any more, and a trigger deletes them with any
+other account.
+
+Chats are tracked from their end in `private.chat_retention`, by match id, because a chat kept at a deletion
+(decision 5.4) outlives its match row. Channels frozen before that migration whose match row was already gone are
+found once in Stream (db-events `chat.sweep`, queued by the migration) and tracked from their last update. An
+event on its way, or queued in the last week, is not queued again: a failed one is queued again a week after it
+was first queued. Stream counts as done only when it says the thing is gone (HTTP 404 or its code 16), a missing
+channel is found with a search that never creates one, and a user deletion (a Stream task) is done only when the
+task completes.
 
 ## Local development
 

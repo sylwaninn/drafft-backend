@@ -83,8 +83,8 @@ The app-side list lives in `drafft/TODO.md`.
       SUPPORT_INBOX (`ops-alert`) and replay or discard from sophros (migration 20260928000121).
 - [ ] **Orphan uploads.** A ticket used but never registered leaves an object in R2: lifecycle rule or a
       weekly sweep of keys absent from `profile_media`.
-- [ ] **Chat attachments.** Checked silently after delivery (`chat-media`), never removed; not deleted when
-      a match ends (they are deleted with the uploader's account).
+- [x] **Chat attachments.** Checked silently after delivery (`chat-media`); erased with the chat a year after
+      the match ended (`chat.erase`), or with the uploader's account.
 - [ ] **Rate limits.** Per-user limits on media-upload-url, report_user and swipe bursts; review Auth rate
       limits in `config.toml`.
 - [ ] **Monitoring.** Sentry for Edge Functions; weekly `pg_stat_statements` review; alert on slow
@@ -101,8 +101,8 @@ The app-side list lives in `drafft/TODO.md`.
       reports, moderation records, the audit log, identity fingerprints, bans, help requests, purchases, dead
       letters (never a failed erasure). Both daily jobs are watched by `ops_check`. Swipes stay for the
       account's life, as the policy says.
-- [ ] Accounts kept for safety, frozen chats and their media, banned accounts' selfies: purge them on the
-      policy's schedule (1 year after the case is closed, 1 year after the match ended, 6 months after the ban).
+- [x] Accounts kept for safety, frozen chats and their media, banned accounts' selfies: erased on the policy's
+      schedule (`retention-purge-external`: `account.purge`, `chat.erase`, `selfie.expired`).
 - [ ] **Backups.** Enable Point-in-Time Recovery (or daily backups) with 30 days of retention at most before
       launch (Supabase dashboard, production): the policy says backups are erased after 30 days.
 - [ ] **Auth audit log.** `auth.audit_log_entries` keeps sign-in events with IP addresses: purge them after 180
