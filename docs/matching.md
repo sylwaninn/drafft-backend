@@ -227,4 +227,5 @@ Re-run `scripts/bench.sql` after touching `discover`, `nearby_candidates` or `el
   range doesn't reach the deck, only the Likes tab.
 - **The score is local.** It only reorders the nearest `2 × p_limit` eligible people (plus super likers
   and boosts). A great match 20 km away waits until closer people have been swiped.
-- **Who liked me is not gated.** `liked_me` returns identities to every account (see `TODO.md`).
+- **Who liked me is gated on the server.** A free account gets, per like, an opaque handle and a blurred
+  ThumbHash, never an identity; drafft tempo gets the full card (`20260928000231_blur_likes_for_free_accounts.sql`).
