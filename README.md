@@ -403,6 +403,30 @@ happen (a file is 40 MiB at most, media-upload-url signs each upload's size).
 failed for good). Both are erasures: a failed one waits for the team. `delete-account` deletes the account's
 folder at once, all parts of all its exports. An account kept for safety keeps its export until it expires.
 
+## Privacy and data retention
+
+### Deleting an account without the app
+
+A member can delete their account in the app (`delete-account`), or, without the app (what
+Google Play asks for), by writing to support@getdrafft.com, as the website says: from the account's email address,
+subject "Delete my account"; without access to it anymore, giving the account's phone number, which the team asks
+them to confirm. drafft deletes the account **within 30 days at most** and confirms by email.
+
+- **Who:** an admin (`private.staff` role `admin`), in sophros, on the account's page ("Delete account at the
+  member's request"). Support staff can't: nothing undoes a deletion, so it takes an admin, who checks who is
+  asking first (the request came from the account's email, or the phone number was confirmed).
+- **How:** `admin_account_deletion_preview(actor, user)` says beforehand whether the account will be erased or kept
+  for members' safety (banned, held or under an open report, with the basis) and where the confirmation goes.
+  `admin_delete_account(actor, user, reason, reference)` needs a reason and the request's reference (its support
+  reference `DR-XXXXXX`, or `email`), writes `account.delete` to the audit log (append-only; reason, reference,
+  expected outcome), takes the account's email and language before anything changes, and queues
+  `account.staff_delete` (one at a time per account; migration `20260930000601`).
+- **What:** db-events runs the very deletion `delete-account` runs for the member (`_shared/account_deletion.ts`):
+  kept for safety as a soft delete, or erased with its chats (except those kept for a banned or held member),
+  R2 media, selfies, data exports and the Auth user, decided again at that moment. Then it emails the address the
+  account had a confirmation in its language (`accountDeleted`, Reply-To the support address, else SUPPORT_INBOX),
+  whichever the outcome: for the member, the account is gone either way.
+
 ## Local development
 
 ```sh
