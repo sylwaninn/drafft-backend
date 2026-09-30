@@ -562,18 +562,35 @@ export const handlers: Record<string, Handler> = {
       context: Record<string, unknown>;
     }[];
     if (!request) return;
-    await ctx.once("email", () =>
-      sendEmail(
-        request.email,
-        renderNotice("supportReceived", language(request.language), { reference: request.reference }),
-        `support-ack-${request.reference}`,
-        supportReplyTo(),
-      ));
+    // An email whose sender Cloudflare didn't vouch for: no acknowledgement to an address that may not have written.
+    const unverifiedEmail = request.context?.source === "email" && request.context?.verified !== true;
+    if (!unverifiedEmail) {
+      await ctx.once("email", () =>
+        sendEmail(
+          request.email,
+          renderNotice("supportReceived", language(request.language), { reference: request.reference }),
+          `support-ack-${request.reference}`,
+          supportReplyTo(),
+        ));
+    }
     await toTeam(
       ctx,
       `[support] ${request.reference} ${request.topic}`,
       [
-        ["From", `${request.email}${request.user_id ? ` (account ${request.user_id})` : " (signed out)"}`],
+        [
+          "From",
+          `${request.email}${
+            request.user_id
+              ? ` (account ${request.user_id})`
+              : request.context?.source === "email"
+              ? ""
+              : " (signed out)"
+          }${
+            request.context?.source === "email"
+              ? ` (by email, ${unverifiedEmail ? "sender NOT verified" : "sender verified"})`
+              : ""
+          }`,
+        ],
         ["Language", request.language],
         ["Message", request.message],
         ["Context", JSON.stringify(request.context)],
@@ -585,8 +602,8 @@ export const handlers: Record<string, Handler> = {
   },
 
   // A reply written in sophros: emailed to the person, framed in their language; their answer goes to the
-  // support address and back into the request (support-inbound). A failed send is recorded on the message (the
-  // dashboard shows it) and retried.
+  // support address and back into the request (support-inbound; SUPPORT_INBOX until SUPPORT_ADDRESS is set). A
+  // failed send is recorded on the message (the dashboard shows it) and retried. Only the team's messages.
   async "support.reply"(p: { id: number }) {
     const [reply] = must(await admin.rpc("support_reply", { p_id: p.id }), "support reply") as {
       reference: string;
@@ -596,8 +613,14 @@ export const handlers: Record<string, Handler> = {
       message: string;
       body: string;
       sent_at: string | null;
+      direction: "in" | "out";
     }[];
     if (!reply || reply.sent_at) return;
+    // A member's own message (received by email) is never sent back to them.
+    if (reply.direction !== "out") {
+      console.warn(`db-events: support.reply ${p.id} is a received message, not sent`);
+      return;
+    }
     try {
       await sendEmail(
         reply.email,
@@ -615,8 +638,8 @@ export const handlers: Record<string, Handler> = {
     check(await admin.rpc("support_reply_sent", { p_id: p.id }), "support reply sent");
   },
 
-  // A member's email, filed in its request and the request reopened (receive_support_email): the team's copy, until
-  // sophros is watched. A reply to it goes to the member.
+  // A member's email, filed in its request and the request reopened (receive_support_email): the team's copy in
+  // SUPPORT_INBOX, next to the thread in sophros. A reply to the copy goes to the member.
   async "support.received"(p: { id: number }, ctx) {
     const [message] = must(await admin.rpc("support_reply", { p_id: p.id }), "support message") as {
       reference: string;
@@ -624,8 +647,13 @@ export const handlers: Record<string, Handler> = {
       topic: string;
       body: string;
       author: string;
+      direction: "in" | "out";
     }[];
     if (!message) return;
+    if (message.direction !== "in") {
+      console.warn(`db-events: support.received ${p.id} is a team message, no copy`);
+      return;
+    }
     await toTeam(
       ctx,
       `[support] ${message.reference} ${message.topic}: new message`,
@@ -726,7 +754,7 @@ export const handlers: Record<string, Handler> = {
           email,
           renderExportReady(language(profile?.language), links),
           `export-${id}`,
-          supportInbox(),
+          supportReplyTo(),
         ),
     );
     const omitted = ctx.value("omitted");
@@ -768,10 +796,10 @@ export const handlers: Record<string, Handler> = {
   },
 
   // A decision by a person on the team (private.record_decision): the statement of reasons, emailed in the
-  // person's language with Reply-To SUPPORT_INBOX, and pushed when no other push says it (a removed message, a
-  // review, a ban, a selfie asked again: `repeat`, the state didn't change so account.moderation pushed nothing).
-  // A removed message is told once Stream shows it removed: sophros logs the removal just before making it, so
-  // until then the event is retried, and one that never happened ends in the dead letters.
+  // person's language with Reply-To the support address, and pushed when no other push says it (a removed
+  // message, a review, a ban, a selfie asked again: `repeat`, the state didn't change so account.moderation pushed
+  // nothing). A removed message is told once Stream shows it removed: sophros logs the removal just before making
+  // it, so until then the event is retried, and one that never happened ends in the dead letters.
   async "moderation.decision"(p: { id: number; repeat?: boolean }, ctx) {
     const [decision] = must(await admin.rpc("moderation_decision", { p_id: p.id }), "decision") as {
       user_id: string;

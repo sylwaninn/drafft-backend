@@ -13,7 +13,7 @@ function incoming(raw: string, options: { from?: string; headers?: Record<string
   const email: IncomingEmail = {
     from: options.from ?? "lea@drafft.so",
     to: "support@getdrafft.com",
-    headers: new Headers({ "authentication-results": "mx.cloudflare.net; spf=pass; dkim=pass", ...options.headers }),
+    headers: new Headers({ ...options.headers }),
     raw: new Response(raw.replace(/\n/g, "\r\n")).body!,
     rawSize: raw.length,
     forward(to: string, headers?: Headers) {
@@ -35,7 +35,9 @@ function inbound(status: number, body: unknown) {
   return { posts, fetch: fake as typeof fetch };
 }
 
-const reply = `From: Lea <lea@drafft.so>
+const reply =
+  `Authentication-Results: mx.cloudflare.net; spf=pass smtp.mailfrom=lea@drafft.so; dkim=pass header.d=drafft.so
+From: Lea <lea@drafft.so>
 To: support@getdrafft.com
 Subject: Re: Help [DR-ABC234]
 Message-ID: <m1@mail.drafft.so>
@@ -59,18 +61,76 @@ Deno.test("a reply: posted with the secret, what they wrote and the reference; n
     reference: "DR-ABC234",
     messageId: "<m1@mail.drafft.so>",
     attachments: [],
-    authentication: "mx.cloudflare.net; spf=pass; dkim=pass",
+    authentication: "mx.cloudflare.net; spf=pass smtp.mailfrom=lea@drafft.so; dkim=pass header.d=drafft.so",
+    verified: true,
   });
   assertEquals(forwarded, []);
 });
 
-Deno.test("the sender is the envelope's, never a From header anyone can write", async () => {
-  const { email } = incoming(reply.replace("From: Lea <lea@drafft.so>", "From: Lea <lea@drafft.so>"), {
-    from: "mallory@evil.example",
-  });
+Deno.test("the sender is the envelope's, never a From header anyone can write, and unverified without Cloudflare", async () => {
+  const { email } = incoming(reply, { from: "mallory@evil.example" });
   const fn = inbound(200, { outcome: "created", reference: "DR-NEW234", truncated: false });
   await receive(email, env, fn.fetch);
-  assertEquals(fn.posts[0].body.from, "mallory@evil.example");
+  assertEquals([fn.posts[0].body.from, fn.posts[0].body.verified], ["mallory@evil.example", false]);
+
+  // A forged Authentication-Results below Cloudflare's changes nothing: only the first one counts.
+  const forged = incoming(
+    "Authentication-Results: mx.cloudflare.net; spf=fail smtp.mailfrom=lea@drafft.so\n" +
+      reply.replace("Authentication-Results: mx.cloudflare.net;", "Authentication-Results: mx.cloudflare.net;"),
+  );
+  const again = inbound(200, { outcome: "created", reference: "DR-NEW234", truncated: false });
+  await receive(forged.email, env, again.fetch);
+  assertEquals(again.posts[0].body.verified, false);
+});
+
+Deno.test("an empty text part next to HTML: the HTML's text; a reference quoted in a blockquote is found", async () => {
+  const raw = `From: lea@drafft.so
+To: support@getdrafft.com
+Subject: Re: aide
+Content-Type: multipart/alternative; boundary="b"
+
+--b
+Content-Type: text/plain
+
+--b
+Content-Type: text/html
+
+<p>Toujours bloquée.</p><blockquote>Ta référence : DR-XYZ789</blockquote>
+--b--
+`;
+  const { email } = incoming(raw);
+  const fn = inbound(200, { outcome: "appended", reference: "DR-XYZ789", truncated: false });
+  await receive(email, env, fn.fetch);
+  assertEquals([fn.posts[0].body.text, fn.posts[0].body.reference], ["Toujours bloquée.", "DR-XYZ789"]);
+});
+
+Deno.test("their own lines cut with the history, or a text over 20 000 characters: filed, and a copy kept", async () => {
+  const quoted = reply.replace(
+    "Still stuck, sorry.",
+    "Still stuck, sorry.\nOn Saturday the guy wrote:\nsomething awful",
+  );
+  const one = incoming(quoted);
+  assertEquals(
+    await receive(
+      one.email,
+      env,
+      inbound(200, { outcome: "appended", reference: "DR-ABC234", truncated: false }).fetch,
+    ),
+    "filed, copy kept",
+  );
+  assertEquals(one.forwarded[0].reason, "filed as DR-ABC234, not all of it: text left out with the quoted history");
+
+  const long = incoming(reply.replace("Still stuck, sorry.", "x".repeat(20_001)));
+  const fn = inbound(200, { outcome: "appended", reference: "DR-ABC234", truncated: false });
+  assertEquals(await receive(long.email, env, fn.fetch), "filed, copy kept");
+  assertEquals((fn.posts[0].body.text as string).length, 20_000);
+  assertEquals(long.forwarded[0].reason, "filed as DR-ABC234, not all of it: text cut to size");
+});
+
+Deno.test("an answer that isn't a result counts as not filed", async () => {
+  const { email, forwarded } = incoming(reply);
+  assertEquals(await receive(email, env, inbound(200, { ok: true }).fetch), "kept");
+  assertEquals(forwarded[0].reason, "not filed: support-inbound answered something else than a result");
 });
 
 Deno.test("attachments: filed by name, and the whole email kept at the fallback address", async () => {

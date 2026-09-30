@@ -4,7 +4,7 @@
 //   cd supabase/functions && deno test --allow-env --allow-read=. _tests/support_inbound_test.ts
 //
 // No network: fetch answers the RPC from a script and records what it was asked.
-import { assertEquals } from "jsr:@std/assert@1";
+import { assert, assertEquals } from "jsr:@std/assert@1";
 
 const ENV: Record<string, string> = {
   SUPABASE_URL: "http://supabase.test",
@@ -61,7 +61,8 @@ const email = {
   reference: "DR-ABC123",
   messageId: "<m1@mail.test>",
   attachments: ["screenshot.png"],
-  authentication: "spf=pass dkim=pass dmarc=pass",
+  authentication: "mx.cloudflare.net; spf=pass smtp.mailfrom=lea@drafft.so",
+  verified: true,
 };
 
 Deno.test("without the Worker's secret: 401, nothing read", async () => {
@@ -81,23 +82,41 @@ Deno.test("an email: passed on as received, attachments by name only, the databa
     p_body: "Still stuck",
     p_reference: "DR-ABC123",
     p_message_id: "<m1@mail.test>",
-    p_context: { attachments: ["screenshot.png"], authentication: "spf=pass dkim=pass dmarc=pass" },
+    p_context: {
+      verified: true,
+      authentication: "mx.cloudflare.net; spf=pass smtp.mailfrom=lea@drafft.so",
+      attachments: ["screenshot.png"],
+    },
+    p_verified: true,
   }]);
 });
 
-Deno.test("no reference, no Message-ID: null, and the context stays small", async () => {
+Deno.test("no reference, no Message-ID: null, and the context stays within its bytes", async () => {
   answer = { data: { outcome: "created", reference: "DR-NEW234", truncated: false } };
-  const many = Array.from({ length: 30 }, (_, i) => `${"x".repeat(300)}-${i}.pdf`);
-  await post({ from: "new@drafft.so", subject: "Hello", text: "A question", attachments: many });
-  assertEquals([rpcs[0].p_reference, rpcs[0].p_message_id], [null, null]);
-  const names = (rpcs[0].p_context as { attachments: string[] }).attachments;
-  assertEquals([names.length, names[0].length], [10, 100]);
+  const many = Array.from({ length: 30 }, (_, i) => `${"é".repeat(95)}-${i}.pdf`);
+  await post({
+    from: "new@drafft.so",
+    subject: "Hello",
+    text: "A question",
+    attachments: many,
+    authentication: `mx.cloudflare.net; ${'dkim=pass header.b="x"; '.repeat(40)}`,
+    verified: false,
+  });
+  assertEquals([rpcs[0].p_reference, rpcs[0].p_message_id, rpcs[0].p_verified], [null, null, false]);
+  const context = rpcs[0].p_context as { attachments: string[]; authentication?: string; moreAttachments: number };
+  assert(new TextEncoder().encode(JSON.stringify(context)).length <= 1500, JSON.stringify(context).length.toString());
+  assertEquals(context.authentication, undefined, "the authentication goes first");
+  assertEquals(context.attachments.length + context.moreAttachments, 20, "then names, counted");
 });
 
 Deno.test("what can't be a message: 400; over the limits: 429; too big: 413", async () => {
   answer = { data: {} };
   assertEquals((await post({ ...email, from: "not an address" })).body.code, "invalid_email");
   assertEquals((await post("{")).body.code, "invalid_json");
+  assertEquals((await post({ ...email, verified: "yes" })).body.code, "invalid_payload");
+  assertEquals((await post({ ...email, attachments: [1] })).body.code, "invalid_payload");
+  assertEquals((await post(null)).body.code, "invalid_payload");
+  assertEquals(rpcs, [], "nothing reaches the database");
   answer = { hint: "empty_message" };
   assertEquals((await post({ ...email, text: "", subject: "" })).status, 400);
   answer = { hint: "too_many_requests" };

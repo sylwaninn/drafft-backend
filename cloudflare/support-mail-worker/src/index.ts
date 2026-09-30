@@ -10,10 +10,13 @@
 // Never lose a message: the whole email is forwarded to FALLBACK_ADDRESS (the team's mailbox, a verified
 // destination of Email Routing) whenever the function didn't take it (unreachable, an error, over the limits),
 // when it isn't a person writing (an auto-reply, a bounce, a mailing list), and as a copy when part of it
-// couldn't be filed (attachments, a text cut to size). When even that forward fails, the Worker throws: Email
+// couldn't be filed (attachments, a text cut to size, their own lines cut with the quoted history). When even that forward fails, the Worker throws: Email
 // Routing then refuses the email, and the sender's server reports or retries it.
 import PostalMime from "postal-mime";
-import { automatic, findReference, htmlToText, stripQuoted } from "./message.ts";
+import { type Inbound, MAX_TEXT, parseInboundResult } from "../../../supabase/functions/_shared/support_inbound.ts";
+import { automatic, cloudflareResults, findReference, htmlToText, stripQuoted, verifiedSender } from "./message.ts";
+
+export type { Inbound };
 
 // Minimal shapes of the Workers runtime APIs used here (no @cloudflare/workers-types dependency, so Deno
 // checks and tests this Worker like the rest of the repository).
@@ -35,42 +38,39 @@ export interface Env {
   FALLBACK_ADDRESS: string;
 }
 
-/** The most text posted: the function keeps 8000 characters in a thread, 4000 in a new request, and says so. */
-const MAX_TEXT = 20_000;
-
-/** What support-inbound receives. */
-export interface Inbound {
-  from: string;
-  subject: string;
-  text: string;
-  reference: string | null;
-  messageId: string | null;
-  attachments: string[];
-  authentication: string | null;
-}
-
 type Parsed = Awaited<ReturnType<typeof PostalMime.parse>>;
 
 /**
- * The email as support-inbound takes it. The sender is the envelope's (SMTP MAIL FROM, which SPF vouches for),
- * not the From header's, which anyone can write: only the address a request was written from may add to it.
+ * The email as support-inbound takes it (_shared/support_inbound.ts). The sender is the envelope's (SMTP MAIL FROM),
+ * not the From header's, which anyone can write, and it counts as verified only when Cloudflare's own results
+ * vouch for it: only a verified address may add to its requests or be linked to an account. `cut`: the text was
+ * longer than MAX_TEXT; `dropped`: some of what they wrote was cut with the quoted history.
  */
-export function toInbound(email: IncomingEmail, parsed: Parsed): { inbound: Inbound; cut: boolean } {
+export function toInbound(email: IncomingEmail, parsed: Parsed): { inbound: Inbound; cut: boolean; dropped: boolean } {
   const subject = (parsed.subject ?? "").trim();
-  const full = parsed.text ?? (parsed.html ? htmlToText(parsed.html) : "");
-  const text = stripQuoted(full);
+  // An empty text part next to an HTML one: the HTML says what they wrote.
+  const plain = parsed.text?.trim() ? parsed.text : "";
+  const full = plain || (parsed.html ? htmlToText(parsed.html) : "");
+  const { text, dropped } = stripQuoted(full);
   const attachments = parsed.attachments.map((a) => a.filename || a.mimeType || "attachment");
+  // The first Authentication-Results in the message (Cloudflare's own, on top), else the runtime's view of it.
+  const first = parsed.headers.find((h) => h.key.toLowerCase() === "authentication-results")?.value ??
+    email.headers.get("authentication-results")?.split(/,\s*(?=[\w.-]+\s*;)/)[0] ?? null;
+  const authentication = cloudflareResults(first);
   return {
     inbound: {
       from: email.from.trim(),
       subject,
       text: text.slice(0, MAX_TEXT),
-      reference: findReference(subject, full),
+      // In the quoted history too, <blockquote>s included: that is where a reply carries it.
+      reference: findReference(subject, plain || (parsed.html ? htmlToText(parsed.html, { quotes: true }) : "")),
       messageId: parsed.messageId?.trim() || null,
       attachments,
-      authentication: email.headers.get("authentication-results")?.slice(0, 600) ?? null,
+      authentication: authentication?.slice(0, 1000) ?? null,
+      verified: verifiedSender(email.from, authentication),
     },
     cut: text.length > MAX_TEXT,
+    dropped,
   };
 }
 
@@ -89,7 +89,7 @@ export async function receive(email: IncomingEmail, env: Env, post: typeof fetch
     if (why) {
       reason = `not filed: ${why}`;
     } else {
-      const { inbound, cut } = toInbound(email, parsed);
+      const { inbound, cut, dropped } = toInbound(email, parsed);
       const res = await post(env.SUPPORT_INBOUND_URL, {
         method: "POST",
         headers: { "content-type": "application/json", "x-support-inbound-secret": env.SUPPORT_INBOUND_SECRET },
@@ -99,15 +99,20 @@ export async function receive(email: IncomingEmail, env: Env, post: typeof fetch
       if (!res.ok) {
         reason = `not filed: support-inbound answered ${res.status} ${headerValue(await res.text())}`;
       } else {
-        const result = await res.json() as { outcome?: string; reference?: string; truncated?: boolean };
-        filed = true;
-        console.log(`support mail: ${result.outcome} ${result.reference ?? ""}`);
-        const missing = [
-          ...(inbound.attachments.length > 0 ? [`${inbound.attachments.length} attachment(s)`] : []),
-          ...(cut || result.truncated ? ["text cut to size"] : []),
-        ];
-        if (missing.length === 0) return "filed";
-        reason = `filed as ${result.reference ?? "?"}, not all of it: ${missing.join(", ")}`;
+        const result = parseInboundResult(await res.json().catch(() => null));
+        if (!result) {
+          reason = "not filed: support-inbound answered something else than a result";
+        } else {
+          filed = true;
+          console.log(`support mail: ${result.outcome} ${result.reference ?? ""}`);
+          const missing = [
+            ...(inbound.attachments.length > 0 ? [`${inbound.attachments.length} attachment(s)`] : []),
+            ...(cut || result.truncated ? ["text cut to size"] : []),
+            ...(dropped ? ["text left out with the quoted history"] : []),
+          ];
+          if (missing.length === 0) return "filed";
+          reason = `filed as ${result.reference ?? "?"}, not all of it: ${missing.join(", ")}`;
+        }
       }
     }
   } catch (error) {

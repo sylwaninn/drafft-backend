@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { automatic, findReference, htmlToText, stripQuoted } from "./message.ts";
+import { automatic, cloudflareResults, findReference, htmlToText, stripQuoted, verifiedSender } from "./message.ts";
 
 Deno.test("the reference: from the subject, else the quoted text, uppercase; none when absent", () => {
   assertEquals(findReference("Re: Help [DR-ABC234]", ""), "DR-ABC234");
@@ -23,13 +23,35 @@ Deno.test("what they wrote this time: the quoted history cut off, in every langu
     "Still stuck.\n\nFrom: drafft <no-reply@mail.getdrafft.com>\nSent: Monday, 30 September 2026 10:00\nSubject: Re",
     "Still stuck.\n-- \nLéa, sent from my phone",
   ];
-  for (const reply of replies) assertEquals(stripQuoted(reply), "Still stuck.", reply);
+  for (const reply of replies) assertEquals(stripQuoted(reply), { text: "Still stuck.", dropped: false }, reply);
 });
 
 Deno.test("inline answers keep what was written; a message that is all quote is kept whole", () => {
-  assertEquals(stripQuoted("> Did it work?\nNo.\n> And now?\nYes.\r\n"), "No.\nYes.");
-  assertEquals(stripQuoted("> only a quote"), "> only a quote");
-  assertEquals(stripQuoted("On Monday it failed again.\nThanks"), "On Monday it failed again.\nThanks");
+  assertEquals(stripQuoted("> Did it work?\nNo.\n> And now?\nYes.\r\n"), { text: "No.\nYes.", dropped: false });
+  assertEquals(stripQuoted("> only a quote"), { text: "> only a quote", dropped: false });
+  assertEquals(stripQuoted("On Monday it failed again.\nThanks"), {
+    text: "On Monday it failed again.\nThanks",
+    dropped: false,
+  });
+});
+
+Deno.test("their own lines cut with the history are reported, so the team keeps a copy", () => {
+  // "He wrote:" reads like an attribution: the abuse they quote must not vanish.
+  assertEquals(
+    stripQuoted(
+      "Hi,\nI want to report someone.\nOn Saturday, the guy I matched with wrote:\nsomething awful\nPlease block him.",
+    ),
+    { text: "Hi,\nI want to report someone.", dropped: true },
+  );
+  assertEquals(stripQuoted("Bonjour,\nLe mec avec qui j'ai matché a écrit :\nun message horrible").dropped, true);
+  // Answers written between our quoted lines.
+  assertEquals(
+    stripQuoted("See my answers below.\n\nOn Mon, drafft <support@getdrafft.com> wrote:\n> Which phone?\niPhone 15"),
+    { text: "See my answers below.", dropped: true },
+  );
+  // Our own email quoted back without ">", and a short signature: nothing of theirs.
+  assertEquals(stripQuoted("Thanks.\n\nFrom: drafft\nSent: Monday\nYour reference: DR-ABC234").dropped, false);
+  assertEquals(stripQuoted("Thanks.\n-- \nLéa\nRunner").dropped, false);
 });
 
 Deno.test("an HTML-only email as text: breaks and paragraphs kept, quotes and styles dropped", () => {
@@ -40,6 +62,30 @@ Deno.test("an HTML-only email as text: breaks and paragraphs kept, quotes and st
     ),
     "Hello there\nline 2\nA & B é❤",
   );
+  assertEquals(htmlToText("<p>Hi</p><blockquote>a<blockquote>b</blockquote>c</blockquote>"), "Hi", "nested quotes");
+  assertEquals(htmlToText("<p>Hi</p><blockquote>ref DR-ABC234</blockquote>", { quotes: true }), "Hi\nref DR-ABC234");
+});
+
+Deno.test("the sender: verified by Cloudflare's own results only, SPF for its domain or aligned DKIM", () => {
+  const cf = (results: string) => cloudflareResults(`mx.cloudflare.net; ${results}`);
+  assertEquals(cloudflareResults("mx.evil.example; spf=pass smtp.mailfrom=lea@drafft.so"), null, "not Cloudflare's");
+  assertEquals(cloudflareResults(null), null);
+  const spf = cf(
+    "spf=pass (mx.cloudflare.net: domain of lea@drafft.so designates 1.2.3.4) smtp.mailfrom=lea@drafft.so",
+  );
+  assertEquals(verifiedSender("lea@drafft.so", spf), true);
+  assertEquals(verifiedSender("mallory@gmail.com", spf), false, "SPF for another domain");
+  assertEquals(verifiedSender("lea@drafft.so", cf("spf=softfail smtp.mailfrom=lea@drafft.so; dkim=none")), false);
+  assertEquals(
+    verifiedSender("lea@mail.drafft.so", cf("spf=fail smtp.mailfrom=x; dkim=pass header.d=drafft.so")),
+    true,
+  );
+  assertEquals(
+    verifiedSender("lea@drafft.so", cf("dkim=pass header.d=evil.example; spf=none")),
+    false,
+    "DKIM unaligned",
+  );
+  assertEquals(verifiedSender("lea@drafft.so", null), false);
 });
 
 Deno.test("an auto-reply, a bounce, a list, a report: not a person writing", () => {

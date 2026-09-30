@@ -201,9 +201,8 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       note: "Vermeld hem als je ons opnieuw schrijft.",
     },
   },
-  // A data export, built: the link follows the body, one per part when it has several (renderExportReady).
-  // "Export" as the app says it (You › Privacy & data › Export my data); a reply reaches the team (Reply-To
-  // SUPPORT_INBOX).
+  // A data export, built: the link follows the body, one per part when it has several (renderExportReady). "Export" as the app says it (You ›
+  // Privacy & data › Export my data); a reply reaches the team (Reply-To the support address).
   exportReady: {
     en: {
       subject: "Your drafft export is ready",
@@ -379,7 +378,7 @@ export function renderExportReady(lang: Language, links: string[]): Rendered {
 
 // A decision by a person on the team about a member (DSA art. 17): what was decided, why (a category from
 // private.reason_categories, and the team's note when they wrote one, sent as written), the rule it applies,
-// and how to contest it. Sent by db-events (`moderation.decision`) with Reply-To SUPPORT_INBOX.
+// and how to contest it. Sent by db-events (`moderation.decision`) with Reply-To the support address.
 export type Decision = "photo_refused" | "message_deleted" | "account_review" | "account_selfie" | "account_banned";
 
 export const decisionCopy: Record<Decision, Record<Language, { subject: string; title: string; body: string }>> = {

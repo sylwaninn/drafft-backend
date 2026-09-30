@@ -559,6 +559,7 @@ Deno.test("support emails carry the reference in the subject and Reply-To the su
       body: "Try again?",
       author: "sup@drafft.so",
       sent_at: null,
+      direction: "out",
     }];
     await runEvent({ id: 9, event: "support.reply", payload: { id: 12 } });
   } finally {
@@ -587,6 +588,7 @@ Deno.test("support.received: a member's email, filed and reopened, is copied to 
     body: "Still stuck",
     author: "lea@drafft.so",
     sent_at: "2026-09-30T10:00:00Z",
+    direction: "in",
   }];
   const event = { id: 11, event: "support.received", payload: { id: 13 } };
   await runEvent(event);
@@ -597,6 +599,41 @@ Deno.test("support.received: a member's email, filed and reopened, is copied to 
   assertEquals(steps(11), ["team-email"]);
   await runEvent({ ...event, steps: ["team-email"] });
   assertEquals(world.sent.length, 1, "a replay sends nothing");
+});
+
+Deno.test("support: a member's message is never sent back to them, nor a team one copied as received", async () => {
+  reset();
+  const message = {
+    reference: "DR-ABC123",
+    email: "lea@drafft.so",
+    language: "fr",
+    topic: "Help",
+    message: "Stuck",
+    body: "Still stuck",
+    author: "lea@drafft.so",
+    sent_at: null,
+  };
+  world.rpcResults.support_reply = [{ ...message, direction: "in" }];
+  await runEvent({ id: 12, event: "support.reply", payload: { id: 14 } });
+  assertEquals([world.sent, calls("support_reply_sent")], [[], []]);
+  world.rpcResults.support_reply = [{ ...message, direction: "out" }];
+  await runEvent({ id: 13, event: "support.received", payload: { id: 14 } });
+  assertEquals(world.sent, []);
+});
+
+Deno.test("support.created: an email whose sender wasn't verified gets no acknowledgement; the team still does", async () => {
+  reset();
+  world.rpcResults.support_request = [{
+    reference: "DR-NEW234",
+    user_id: null,
+    email: "someone@else.fr",
+    language: "en",
+    topic: "Message by email",
+    message: "Hello",
+    context: { source: "email", verified: false },
+  }];
+  await runEvent({ id: 14, event: "support.created", payload: { id: 15 } });
+  assertEquals(world.sent.map((e) => e.to), ["team@drafft.so"]);
 });
 
 Deno.test("account.moderation: a replay after the email does not email again", async () => {
