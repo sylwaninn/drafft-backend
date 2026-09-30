@@ -98,8 +98,9 @@ The app-side list lives in `drafft/TODO.md`.
 - [ ] Data export (right of access): an Edge Function that bundles the profile, media keys, swipes,
       matches, sessions and Stream messages.
 - [x] Retention on the privacy policy's schedule (`privacy-purge`, see README "Privacy and data retention"):
-      reports, moderation records, the audit log, identity fingerprints, help requests, purchases, dead letters.
-      Swipes stay for the account's life, as the policy says.
+      reports, moderation records, the audit log, identity fingerprints, bans, help requests, purchases, dead
+      letters (never a failed erasure). Both daily jobs are watched by `ops_check`. Swipes stay for the
+      account's life, as the policy says.
 - [ ] Accounts kept for safety, frozen chats and their media, banned accounts' selfies: purge them on the
       policy's schedule (1 year after the case is closed, 1 year after the match ended, 6 months after the ban).
 - [ ] **Backups.** Enable Point-in-Time Recovery (or daily backups) with 30 days of retention at most before
