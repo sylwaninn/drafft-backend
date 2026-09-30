@@ -59,7 +59,7 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 
 | Area | RPCs |
 | --- | --- |
-| Onboarding / Edit profile | `accept_terms(p_version, p_sensitive_consent)`, `PATCH /rest/v1/profiles` (whitelisted columns), `set_sports`, `set_prompts`, `add_profile_media`, `reorder_media`, `delete_media`, `set_location`, `complete_onboarding` |
+| Onboarding / Edit profile | `accept_terms(p_version, p_sensitive_consent)`, `PATCH /rest/v1/profiles` (whitelisted columns), `set_sports`, `set_prompts`, `add_profile_media`, `reorder_media`, `delete_media`, `set_location`, `area_at(p_lat, p_lng)`, `complete_onboarding` |
 | Discover | `discover(p_filters, p_limit)`, `swipe(p_target, p_action, p_opener, p_note)`, `undo_last_swipe`, `start_boost` |
 | Likes, matches | `liked_me`, `my_matches`, `get_cards(p_ids, p_known)`, `unmatch` |
 | Sessions | `propose_session`, `respond_session`, `counter_session`, `cancel_session`, `upcoming_sessions` |
@@ -67,6 +67,13 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 | Moderation | `request_media_review(p_media)` (a second look at a refused photo), `submit_selfie(p_path)` (after uploading the selfie to the private Storage bucket `verification-selfies`, in the person's own folder, while a selfie is asked) |
 | Your data | `request_data_export()` (one open request at a time; the export is emailed as one or more links, see Data export below) |
 | Push | `register_push_token`, `unregister_push_token`; `PATCH /rest/v1/profiles` with `language` (en, fr, es, de, it, pt, nl) and the settings `notify_matches`, `notify_likes`, `notify_messages` (mirrored to Stream), `notify_message_previews`, `notify_reactions`, `notify_session_evening`, `notify_session_hour_before`, `notify_weekly_boost` (the app reads them back at launch) |
+
+Area: `area_at(p_lat, p_lng)` answers with the area a blurred position falls in, `{"name", "city"}`
+("Paris 11", "Lyon 4", "Annecy"), or the nearest one within 3 km, or null (outside France, or areas not
+loaded); the app then falls back to its own resolver. Nothing is stored. The areas (`private.areas`) are every
+commune of France, Paris, Lyon and Marseille by arrondissement, from Etalab's boundaries (Licence Ouverte),
+loaded by `scripts/load-areas.ts`, which `deploy.sh` runs: it loads only when codes or names differ from the
+source. Bump its `YEAR` once a year. Error: `invalid_location`.
 
 Terms and consent: gender and the genders someone wants to see can reveal their sexual orientation, lifestyle
 answers their health or beliefs, so drafft processes them on explicit consent, asked in its own step and recorded
@@ -438,6 +445,7 @@ asks them to confirm. drafft deletes the account **within 30 days at most** and 
 cp supabase/.env.example supabase/.env   # Apple and Google values for config.toml, optional
 supabase start            # ports 55420-55429, so it runs next to other Supabase projects
 supabase test db          # 217 pgTAP tests (supabase/tests/database)
+deno run -A scripts/load-areas.ts local   # the areas for area_at; again after a db reset
 scripts/local-env.sh      # once: functions/.env.local from .env.staging with local values; yours to edit after
 supabase functions serve --env-file supabase/functions/.env.local
 # in the app repository: scripts/local-backend.sh (--device for an iPhone on the same Wi-Fi)
