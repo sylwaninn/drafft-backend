@@ -301,6 +301,7 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 | Accounts kept for safety (banned, held or under an open report when deleted) | the same rows, `profiles.deleted_at`, `private.account_deletions` | 1 year after the case is closed | db-events `account.purge` (below) |
 | Verification selfies | Storage `verification-selfies` | until the check is over; a banned account's 6 months, for an appeal | db-events `selfie.delete`, `selfie.expired` (below), `delete-account` |
 | Data export archives | Storage `data-exports` | 7 days; at once when the account is deleted | `data-exports-expire`, `data-exports-sweep`, `delete-account` (see Data export below) |
+| Deletions asked for without the app (where to confirm, the outcome) | `private.staff_deletions` | until the confirmation is sent (the addresses), 30 days (the row); the audit log keeps what was done | `staff-deletions-cleanup` (see Deleting an account without the app below) |
 | IP addresses | `private.ips` | 180 days after the last open from that address | `device-reports-prune` |
 | Sign-in events with IP addresses | `auth.audit_log_entries` | not enforced yet | see [TODO.md](TODO.md) |
 | Devices (model, versions, last IP) | `private.devices` | 1 year after the last open | `device-reports-prune` |
@@ -403,29 +404,33 @@ happen (a file is 40 MiB at most, media-upload-url signs each upload's size).
 failed for good). Both are erasures: a failed one waits for the team. `delete-account` deletes the account's
 folder at once, all parts of all its exports. An account kept for safety keeps its export until it expires.
 
-## Privacy and data retention
-
 ### Deleting an account without the app
 
-A member can delete their account in the app (`delete-account`), or, without the app (what
-Google Play asks for), by writing to support@getdrafft.com, as the website says: from the account's email address,
-subject "Delete my account"; without access to it anymore, giving the account's phone number, which the team asks
-them to confirm. drafft deletes the account **within 30 days at most** and confirms by email.
+A member can delete their account in the app (`delete-account`), or, without the app (what Google Play asks for),
+by writing to support@getdrafft.com, as the website says: from the account's email address, subject "Delete my
+account"; without access to it anymore, from another address giving the account's phone number, which the team
+asks them to confirm. drafft deletes the account **within 30 days at most** and confirms by email.
 
-- **Who:** an admin (`private.staff` role `admin`), in sophros, on the account's page ("Delete account at the
-  member's request"). Support staff can't: nothing undoes a deletion, so it takes an admin, who checks who is
-  asking first (the request came from the account's email, or the phone number was confirmed).
-- **How:** `admin_account_deletion_preview(actor, user)` says beforehand whether the account will be erased or kept
-  for members' safety (banned, held or under an open report, with the basis) and where the confirmation goes.
-  `admin_delete_account(actor, user, reason, reference)` needs a reason and the request's reference (its support
-  reference `DR-XXXXXX`, or `email`), writes `account.delete` to the audit log (append-only; reason, reference,
-  expected outcome), takes the account's email and language before anything changes, and queues
-  `account.staff_delete` (one at a time per account; migration `20260930000601`).
-- **What:** db-events runs the very deletion `delete-account` runs for the member (`_shared/account_deletion.ts`):
-  kept for safety as a soft delete, or erased with its chats (except those kept for a banned or held member),
-  R2 media, selfies, data exports and the Auth user, decided again at that moment. Then it emails the address the
-  account had a confirmation in its language (`accountDeleted`, Reply-To the support address, else SUPPORT_INBOX),
-  whichever the outcome: for the member, the account is gone either way.
+- **Who:** an admin (`private.staff` role `admin`), in sophros, on the account's page. Support staff can't: nothing
+  undoes a deletion, so it takes an admin, who checks who is asking first.
+- **How:** `admin_account_deletion_preview(actor, user, reference?)` → `{status: "deleted"}`, `{status:
+  "pending"}`, or `{status: "ready", outcome: "erased" | "kept", basis?, emails, emailed}`: whether the account
+  will be erased or kept for members' safety (banned, held or under an open report, with the basis) and where the
+  confirmation goes. `admin_delete_account(actor, user, reason, reference)` → `{expected, emails, emailed}` needs a
+  reason (`reason_required`) and the request's reference: its support reference `DR-XXXXXX` (`invalid_reference`
+  when it isn't one, `unknown_reference` when no request has it) or `email`; `not_found`, `already_deleted`,
+  `already_requested` otherwise. It writes `account.delete` to the audit log (reason, reference, expected
+  outcome), keeps the addresses and language in `private.staff_deletions` (the account's email, and the
+  request's address when it differs; cleared once the confirmation is sent, the row gone after 30 days, never in
+  the queue), and queues `account.staff_delete` with the row's id (one at a time per account; migration
+  `20260930000601`).
+- **What:** db-events runs the very deletion `delete-account` runs (`_shared/erase.ts`, `deleteAccount`): kept
+  for safety as a soft delete, or erased with its chats (except those kept for a banned or held member), R2 media,
+  selfies, data exports and the Auth user, decided again at that moment. It records the real outcome
+  (`staff_deletion_done`, `account.deleted` in the audit log, `erased` or `kept`), then emails each address a
+  confirmation in the member's language (`accountDeleted`, Reply-To the support address, `SUPPORT_ADDRESS`, else
+  SUPPORT_INBOX), whichever the outcome: for the member, the account is gone either way. No address at all: the
+  team gets an email to confirm another way.
 
 ## Local development
 
