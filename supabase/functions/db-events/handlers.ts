@@ -15,6 +15,7 @@ import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_s
 import {
   deleteAccount,
   deleteAuthUser,
+  type Deletion,
   eraseChat,
   eraseChatUser,
   eraseMedia,
@@ -304,12 +305,12 @@ export const handlers: Record<string, Handler> = {
       reference: string;
       emails: string[];
       language: string | null;
-      outcome: "erased" | "kept" | null;
+      outcome: Deletion | null;
     }[];
     // Gone after 30 days (its event failed and was replayed late): the audit log has what was done.
     if (!deletion) return;
     const userId = uuid(deletion.user_id, "userId");
-    let outcome = deletion.outcome ?? ctx.value("outcome") as "erased" | "kept" | undefined;
+    let outcome = deletion.outcome ?? ctx.value("outcome") as Deletion | undefined;
     if (!outcome) {
       outcome = await deleteAccount(userId);
       await ctx.record(`outcome=${outcome}`);

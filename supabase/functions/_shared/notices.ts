@@ -65,8 +65,9 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
     },
   },
   // An account deleted by the team on the member's request (they wrote to support): the confirmation, to the
-  // account's address and the one they wrote from. Always "deleted" ("closed" is a ban's word). True whether it was erased or kept for members' safety (then it is gone for
-  // everyone and can't sign in, its data kept for the time the privacy policy says), so it never says which.
+  // account's address and the one they wrote from. Always "deleted" ("closed" is a ban's word). True whether it
+  // was erased or kept for members' safety (then it is gone for everyone and can't sign in, its data kept for the
+  // time the privacy policy says), so it never says which.
   accountDeleted: {
     en: {
       subject: "Your drafft account is deleted",
