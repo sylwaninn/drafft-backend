@@ -12,7 +12,7 @@
 import { optionalEnv } from "../_shared/env.ts";
 import { type Push, pushToUser } from "../_shared/apns.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
-import { eraseChat, eraseChatUser, eraseMedia, eraseSelfies, freezeChat } from "../_shared/erase.ts";
+import { deleteAuthUser, eraseChat, eraseChatUser, eraseMedia, eraseSelfies, freezeChat } from "../_shared/erase.ts";
 import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
 import { renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/notices.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
@@ -673,10 +673,7 @@ export const handlers: Record<string, Handler> = {
     await ctx.once("chat-user", () => eraseChatUser(userId));
     await ctx.once("media", () => eraseMedia(userId));
     await ctx.once("selfies", () => eraseSelfies(userId));
-    await ctx.once("auth", async () => {
-      const { error } = await admin.auth.admin.deleteUser(userId);
-      if (error && error.status !== 404) throw new Error(`delete auth user ${userId}: ${error.message}`);
-    });
+    await ctx.once("auth", () => deleteAuthUser(userId));
     // After the Auth user: erasing its matches tracked their chats again.
     for (const m of matches) check(await admin.rpc("chat_erased", { p_match: m }), "chat erased");
   },
@@ -694,20 +691,21 @@ export const handlers: Record<string, Handler> = {
   // match row went before chat_retention existed get tracked (public.track_frozen_chats) and erased a year
   // after their last update. Resumes from the last channel it recorded.
   async "chat.sweep"(_p: Record<string, never>, ctx) {
+    const pageSize = 30;
     let after = ctx.value("after") ?? "1970-01-01T00:00:00Z";
     for (;;) {
       const page = await viaProvider("stream", () =>
         stream().queryChannelsRequest(
           { type: "messaging", frozen: true, created_at: { $gt: after } },
           [{ created_at: 1 }],
-          { limit: 30, message_limit: 0, state: false, watch: false, presence: false },
+          { limit: pageSize, message_limit: 0, state: false, watch: false, presence: false },
         )) as { channel: { id: string; created_at?: string; updated_at?: string } }[];
       if (page.length === 0) return;
       const chats = page.map(({ channel }) => ({ id: channel.id, at: channel.updated_at ?? channel.created_at }));
       check(await admin.rpc("track_frozen_chats", { p_chats: chats }), "track frozen chats");
       after = page.at(-1)!.channel.created_at ?? after;
       await ctx.record(`after=${after}`);
-      if (page.length < 30) return;
+      if (page.length < pageSize) return;
     }
   },
 

@@ -209,8 +209,12 @@ export async function deleteAccount(userId: string): Promise<Deletion> {
   // Reported or held while the above ran: keep what is left (the database rows) instead of erasing it.
   if (await retained(userId)) return "kept";
 
-  const { error } = await admin.auth.admin.deleteUser(userId);
-  // Gone already: an earlier run got this far.
-  if (error && error.status !== 404) throw new Error(`delete auth user ${userId}: ${error.message}`);
+  await deleteAuthUser(userId);
   return "erased";
+}
+
+/** The Auth user, last: deleting it cascades through every table. Gone already: an earlier run got this far. */
+export async function deleteAuthUser(userId: string): Promise<void> {
+  const { error } = await admin.auth.admin.deleteUser(userId);
+  if (error && error.status !== 404) throw new Error(`delete auth user ${userId}: ${error.message}`);
 }
