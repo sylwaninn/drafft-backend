@@ -34,7 +34,10 @@ Principles:
   missing.
 - **Privacy.** Locations are in `private` (not exposed), snapped to ~1 km, and only rounded distances leave
   the database. Birthdates never reach cards. Profile photos and videos stay invisible until moderation
-  approves them; the voice intro isn't moderated and reaches cards as soon as it's set, and chat photos and
+  approves them and their owner saves them: the app registers a picked photo as a draft
+  (`add_profile_media(p_draft => true)`), moderated at once but never on a card, and publishes it with
+  `save_profile_media` (Save in Edit profile, the end of sign-up), which also keeps a live profile's
+  portrait (`portrait_required`); the voice intro isn't moderated and reaches cards as soon as it's set, and chat photos and
   videos are delivered first, then checked silently (`chat-media`).
 
 ## Layout
@@ -59,7 +62,7 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 
 | Area | RPCs |
 | --- | --- |
-| Onboarding / Edit profile | `accept_terms(p_version, p_sensitive_consent)`, `PATCH /rest/v1/profiles` (whitelisted columns), `set_sports`, `set_prompts`, `add_profile_media`, `reorder_media`, `delete_media`, `set_location`, `area_at(p_lat, p_lng)`, `complete_onboarding` |
+| Onboarding / Edit profile | `accept_terms(p_version, p_sensitive_consent)`, `PATCH /rest/v1/profiles` (whitelisted columns), `set_sports`, `set_prompts`, `add_profile_media(…, p_draft)`, `save_profile_media(p_ids, p_removed)`, `reorder_media`, `delete_media`, `set_location`, `area_at(p_lat, p_lng)`, `complete_onboarding` |
 | Discover | `discover(p_filters, p_limit)`, `swipe(p_target, p_action, p_opener, p_note)`, `undo_last_swipe`, `start_boost` |
 | Likes, matches | `liked_me`, `my_matches`, `get_cards(p_ids, p_known)`, `unmatch` |
 | Sessions | `propose_session`, `respond_session`, `counter_session`, `cancel_session`, `upcoming_sessions` |
@@ -304,6 +307,7 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 | --- | --- | --- | --- |
 | Account, profile, lifestyle, sports, prompts, settings, location, wallet, cards, swipes, matches, blocks, sessions, push tokens, DeviceCheck token, selfie records, export requests, terms and consent log | `auth.users`, `auth.identities`, `public.*`, `private.locations`, `private.device_checks`, `private.selfie_checks`, `private.data_requests`, `private.consent_events` | the account's life | `delete-account`: deleting the Auth user cascades through these tables (purchases, photo flags, help requests and reports' reporter are unlinked instead, `on delete set null`) |
 | Photos, videos, voice intro, chat photos and videos | R2 `u/<id>/…` | the account's life; a removed photo at once | `delete-account` (the whole prefix), db-events `media.deleted` |
+| Profile photos picked but never saved (drafts) | `public.profile_media` (`published_at` null), R2 `u/<id>/…` | deleted by the app when the person leaves without saving; 7 days at most | `media-drafts-purge` (`private.purge_media_drafts()`), db-events `media.deleted` |
 | Chat messages, and the chat photos, videos and voice messages they point to | Stream, one channel per match; R2 `u/<id>/chat/…` | the match's life; an ended match's chat is frozen, then erased 1 year after the match ended | `delete-account` erases its chats and hard-deletes the Stream user; db-events `chat.erase` (below) |
 | Accounts kept for safety (banned, held or under an open report when deleted) | the same rows, `profiles.deleted_at`, `private.account_deletions` | 1 year after the case is closed | db-events `account.purge` (below) |
 | Verification selfies | Storage `verification-selfies` | until the check is over; a banned account's 6 months, for an appeal | db-events `selfie.delete`, `selfie.expired` (below), `delete-account` |
