@@ -253,7 +253,7 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       note: "Vermeld hem als je ons opnieuw schrijft.",
     },
   },
-  // A data export, built: the link follows the body (renderExportReady). "Export" as the app says it (You ›
+  // A data export, built: the link follows the body, one per part when it has several (renderExportReady). "Export" as the app says it (You ›
   // Privacy & data › Export my data); a reply reaches the team (Reply-To SUPPORT_INBOX).
   exportReady: {
     en: {
@@ -319,6 +319,54 @@ export const exportCta: Record<Language, string> = {
   nl: "Gegevens downloaden",
 };
 
+// An export too heavy for one file (export.ts: parts of 45 MiB at most): the same email, with the number of files
+// in the body, one numbered button per part and the links in the plural. `{count}`: the parts, 2 or more;
+// `{n}`: the part a button downloads. The subject and title stay those of noticeCopy.exportReady.
+export const exportPartsCopy: Record<Language, { body: string; cta: string; note: string }> = {
+  en: {
+    body:
+      "Everything drafft keeps about you is in {count} files: your account, profile, activity and messages, with your photos and voice intro.",
+    cta: "Download part {n}",
+    note: "The links work for 7 days. Didn't ask for it? Reply to this email.",
+  },
+  fr: {
+    body:
+      "Tout ce que drafft garde sur toi tient dans {count}\u00A0fichiers\u00A0: ton compte, ton profil, ton activité et tes messages, avec tes photos et ta présentation vocale.",
+    cta: "Télécharger la partie {n}",
+    note: "Les liens sont valables 7\u00A0jours. Tu n'as rien demandé\u00A0? Réponds à cet e-mail.",
+  },
+  es: {
+    body:
+      "Todo lo que drafft guarda sobre ti está en {count} archivos: tu cuenta, tu perfil, tu actividad y tus mensajes, con tus fotos y tu presentación de voz.",
+    cta: "Descargar la parte {n}",
+    note: "Los enlaces valen durante 7 días. ¿No lo has pedido tú? Responde a este correo.",
+  },
+  de: {
+    body:
+      "Alles, was drafft über dich speichert, steckt in {count} Dateien: dein Konto, dein Profil, deine Aktivität und deine Nachrichten, mit deinen Fotos und deinem Sprach-Intro.",
+    cta: "Teil {n} herunterladen",
+    note: "Die Links gelten 7 Tage. Du hast das nicht angefordert? Antworte auf diese E-Mail.",
+  },
+  it: {
+    body:
+      "Tutto ciò che drafft conserva su di te è in {count} file: account, profilo, attività e messaggi, con le tue foto e la tua presentazione vocale.",
+    cta: "Scarica la parte {n}",
+    note: "I link sono validi per 7 giorni. Non l'hai chiesto tu? Rispondi a questa email.",
+  },
+  pt: {
+    body:
+      "Tudo o que o drafft guarda sobre ti está em {count} ficheiros: a tua conta, o teu perfil, a tua atividade e as tuas mensagens, com as tuas fotos e a tua apresentação de voz.",
+    cta: "Descarregar a parte {n}",
+    note: "Os links são válidos durante 7 dias. Não pediste isto? Responde a este email.",
+  },
+  nl: {
+    body:
+      "Alles wat drafft over je bewaart, staat in {count} bestanden: je account, je profiel, je activiteit en je berichten, met je foto's en je spraakintro.",
+    cta: "Deel {n} downloaden",
+    note: "De links zijn 7 dagen geldig. Niet aangevraagd? Beantwoord deze e-mail.",
+  },
+};
+
 /** `reference`: the support acknowledgement only. */
 export function renderNotice(kind: Notice, lang: Language, vars: { reference?: string } = {}): Rendered {
   const c = noticeCopy[kind][lang];
@@ -330,20 +378,27 @@ export function renderNotice(kind: Notice, lang: Language, vars: { reference?: s
   return { subject: c.subject, html: layout(lang, c.subject, rows), text };
 }
 
-/** The export email: its link as the button (and on its own line in the text part), then the note. */
-export function renderExportReady(lang: Language, link: string): Rendered {
+/** The export email: a button per link, numbered when the export has several parts (and each link on its own
+ * line in the text part), then the note. */
+export function renderExportReady(lang: Language, links: string[]): Rendered {
   const c = noticeCopy.exportReady[lang];
-  const rows = [
-    title(c.title),
-    paragraph(escape(c.body)),
-    `<tr><td style="padding-bottom:24px"><a href="${
+  const several = links.length > 1 ? exportPartsCopy[lang] : null;
+  const body = several ? several.body.replace("{count}", String(links.length)) : c.body;
+  const note = several ? several.note : c.note;
+  const labels = links.map((_, i) => several ? several.cta.replace("{n}", String(i + 1)) : exportCta[lang]);
+  const button = (link: string, label: string, last: boolean) =>
+    `<tr><td style="padding-bottom:${last ? 24 : 12}px"><a href="${
       escape(link)
     }" style="display:inline-block;background:${color.primary};` +
     `color:${color.ink};font-size:16px;font-weight:700;text-decoration:none;padding:14px 24px;border-radius:16px">` +
-    `${escape(exportCta[lang])}</a></td></tr>`,
-    small(c.note, color.mute),
+    `${escape(label)}</a></td></tr>`;
+  const rows = [
+    title(c.title),
+    paragraph(escape(body)),
+    ...links.map((link, i) => button(link, labels[i], i === links.length - 1)),
+    small(note, color.mute),
   ];
-  const text = [c.title, "", c.body, "", exportCta[lang], link, "", c.note].join("\n");
+  const text = [c.title, "", body, "", ...links.flatMap((link, i) => [labels[i], link, ""]), note].join("\n");
   return { subject: c.subject, html: layout(lang, c.subject, rows), text };
 }
 

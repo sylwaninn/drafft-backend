@@ -3,13 +3,14 @@
 --
 -- You > Your data > Export my data (request_data_export) queues `export.requested`, and db-events:
 --   1. claims the request (export_begin: one build at a time, taken back after 15 minutes if it stopped);
---   2. builds the archive: data.json with everything export_data() returns, the messages the person sent
---      (Stream) and their own photos, videos and voice intro (R2), zipped;
---   3. stores it in the private bucket `data-exports`, at <user id>/<request id>.zip;
---   4. emails the person a signed link valid 7 days, in their language;
---   5. marks the request fulfilled (export_ready), with the file and when it expires.
+--   2. builds the export: data.json with everything export_data() returns, the messages the person sent
+--      (Stream) and their own photos, videos and voice intro (R2), zipped in parts that each fit one Storage
+--      upload (EXPORT_MAX_BYTES), part 1 first with data.json;
+--   3. stores each part in the private bucket `data-exports`, at <user id>/<request id>-<part>.zip;
+--   4. emails the person a signed link per part, valid 7 days, in their language;
+--   5. marks the request fulfilled (export_ready), with its files and when they expire.
 -- `data-exports-expire` (pg_cron, hourly) queues `export.expired` for files past their 7 days: db-events deletes
--- the file, then export_file_deleted records it. delete-account deletes the account's folder at once.
+-- them, then export_file_deleted records it. delete-account deletes the account's folder (every part) at once.
 --
 -- request_data_export() is unchanged: one open request at a time, asking again answers its date. The team still
 -- sees requests in sophros and can fulfil one by hand (admin_fulfil_data_request).
@@ -19,12 +20,13 @@ insert into storage.buckets (id, name, public, allowed_mime_types)
 
 alter table private.data_requests
   add column started_at timestamptz,
-  add column file_path text check (char_length(file_path) <= 200),
+  -- The parts of the export, in order (at least one; a profile's files make a few at most).
+  add column file_paths text[] check (cardinality(file_paths) between 1 and 100),
   add column expires_at timestamptz,
   add column file_deleted_at timestamptz;
 
 create index data_requests_expiring_idx on private.data_requests (expires_at)
-  where file_path is not null and file_deleted_at is null;
+  where file_paths is not null and file_deleted_at is null;
 
 -- MARK: Building
 
@@ -134,8 +136,8 @@ as $$
   where exists (select 1 from person);
 $$;
 
--- Built, stored and emailed: fulfilled, the file deleted after 7 days.
-create function public.export_ready(p_id bigint, p_path text)
+-- Built, stored and emailed: fulfilled, the files deleted after 7 days.
+create function public.export_ready(p_id bigint, p_paths text[])
 returns void
 language sql
 security definer
@@ -143,7 +145,7 @@ set search_path = ''
 as $$
   update private.data_requests
     set fulfilled_at = coalesce(fulfilled_at, now()), fulfilled_by = coalesce(fulfilled_by, 'automatic'),
-        file_path = p_path, expires_at = now() + interval '7 days', started_at = null
+        file_paths = p_paths, expires_at = now() + interval '7 days', started_at = null
     where id = p_id;
 $$;
 
@@ -171,7 +173,7 @@ declare
 begin
   for v_id in
     select d.id from private.data_requests d
-    where d.file_path is not null and d.file_deleted_at is null and d.expires_at < now()
+    where d.file_paths is not null and d.file_deleted_at is null and d.expires_at < now()
       and not exists (select 1 from private.outbox o
         where o.event = 'export.expired' and o.payload ->> 'id' = d.id::text
           and (o.created_at > now() - interval '1 day' or (o.delivered_at is null and o.failed_at is null
@@ -185,15 +187,15 @@ begin
 end;
 $$;
 
--- db-events: the file of one request, to delete it.
-create function public.export_file(p_id bigint)
-returns text
+-- db-events: the files of one request (every part), to delete them.
+create function public.export_files(p_id bigint)
+returns text[]
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select file_path from private.data_requests where id = p_id and file_deleted_at is null;
+  select file_paths from private.data_requests where id = p_id and file_deleted_at is null;
 $$;
 
 update private.outbox_policies set providers = '{stream,r2,resend}' where event = 'export.requested';
@@ -201,9 +203,9 @@ insert into private.outbox_policies (event, retry_budget, expires_after, push_tt
   values ('export.expired', '24 hours', null, null, '{}');
 
 revoke all on function private.queue_export_expiries() from public, anon, authenticated;
-revoke execute on function public.export_begin(bigint), public.export_data(uuid), public.export_ready(bigint, text),
-  public.export_file_deleted(bigint), public.export_file(bigint) from public, anon, authenticated;
-grant execute on function public.export_begin(bigint), public.export_data(uuid), public.export_ready(bigint, text),
-  public.export_file_deleted(bigint), public.export_file(bigint) to service_role;
+revoke execute on function public.export_begin(bigint), public.export_data(uuid), public.export_ready(bigint, text[]),
+  public.export_file_deleted(bigint), public.export_files(bigint) from public, anon, authenticated;
+grant execute on function public.export_begin(bigint), public.export_data(uuid), public.export_ready(bigint, text[]),
+  public.export_file_deleted(bigint), public.export_files(bigint) to service_role;
 
 select cron.schedule('data-exports-expire', '12 * * * *', 'select private.queue_export_expiries()');
