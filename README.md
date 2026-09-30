@@ -69,14 +69,17 @@ and orders cards, and the rules for likes, super likes, boosts and pause: [docs/
 Terms and consent: gender and the genders someone wants to see can reveal their sexual orientation, lifestyle
 answers their health or beliefs, so drafft processes them on explicit consent, asked in its own step and recorded
 on the server. `accept_terms(p_version, p_sensitive_consent)` records, for the caller, the terms version the app
-showed (`profiles.terms_version`, `terms_accepted_at`) and, when `p_sensitive_consent` is true,
-`sensitive_consent_at`; the owner reads the three columns, only this RPC writes them. Errors: `unauthenticated`,
-`not_found`, `invalid_terms_version` (empty or over 40 characters), `sensitive_consent_required` (false or null
-before onboarding: there is no account without a gender). Once onboarded, false records the terms alone and keeps an
-earlier consent. `complete_onboarding` needs both (`terms_required`, after `phone_required`). Accounts onboarded
-before stay valid: the app asks at its next open (a `terms_version` behind its own, or no `sensitive_consent_at`).
+showed (`profiles.terms_version`, an ISO date `YYYY-MM-DD`, and `terms_accepted_at`) and, when
+`p_sensitive_consent` is true, `sensitive_consent_at`; the owner reads the three columns, only this RPC writes
+them. Every accepted call is also appended to `private.consent_events` (version, whether it gave the consent,
+when), which the export includes. Errors: `unauthenticated`, `not_found` (also for an account deleted and kept
+for safety), `invalid_terms_version` (not a `YYYY-MM-DD` date, or older than the version on record),
+`sensitive_consent_required` (false or null while no consent is on record, onboarded or not: there is no account
+without a gender). With a consent on record, false or null records the terms alone: it never withdraws the
+consent. `complete_onboarding` needs both (`terms_required`, after `phone_required`). Accounts onboarded before
+stay valid: the app asks at its next open (a `terms_version` behind its own, or no `sensitive_consent_at`).
 Withdrawing the consent is deleting the account (`delete-account`); lifestyle answers can be cleared on their own.
-The columns live on the profile: erased with it, or kept with it when the account is kept for safety.
+The columns and the log live with the profile: erased with it, or kept with it when the account is kept for safety.
 
 Realtime: subscribe to the private broadcast channel `user:<your id>`. Events: `like`, `match`,
 `match_ended`, `session`, `media`, `wallet` (any change to your wallet: purchase, refund, weekly boost,
