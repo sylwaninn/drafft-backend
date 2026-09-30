@@ -57,6 +57,8 @@ const world = {
   emailOutcome: [] as Outcome[],
   rekognition: 0,
   labels: [] as { Name: string; ParentName: string; Confidence: number }[],
+  /** DetectFaces: the faces found, or an HTTP status it fails with (an IAM user without the right). */
+  faces: [] as { Confidence: number; BoundingBox: { Width: number; Height: number } }[] | number,
   stream: [] as string[],
   streamUsers: [] as Row[],
   /** Stream channels by id: their messages. */
@@ -99,6 +101,7 @@ function reset() {
   world.emailOutcome = [];
   world.rekognition = 0;
   world.labels = [];
+  world.faces = [];
   world.stream = [];
   world.streamUsers = [];
   world.channels = {};
@@ -261,6 +264,11 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
   }
 
   if (url.host.startsWith("rekognition.")) {
+    if (request.headers.get("x-amz-target") === "RekognitionService.DetectFaces") {
+      return typeof world.faces === "number"
+        ? new Response("AccessDeniedException", { status: world.faces })
+        : respond({ FaceDetails: world.faces });
+    }
     world.rekognition++;
     return respond({ ModerationLabels: world.labels });
   }
@@ -486,6 +494,39 @@ Deno.test("media.created: verdict and flag at once; a failed refusal push is res
   assertEquals(calls("apply_media_verdict").length, 0, "no second verdict or flag");
   assertEquals(world.pushes.map((p) => p.collapse), [`photo-${media}`], "the refusal push goes out");
   assertEquals(calls("ack_event").length, 1);
+});
+
+Deno.test("media.created: the face goes with the verdict; a face check that fails leaves it unknown", async () => {
+  reset();
+  people();
+  const key = `u/${ana}/photos/3.jpg`;
+  world.tables.profile_media = [{ id: media, user_id: ana, status: "pending", key }];
+  world.rpcResults.apply_media_verdict = true;
+  world.faces = [{ Confidence: 99, BoundingBox: { Width: 0.3, Height: 0.4 } }];
+  await runEvent({ id: 7, event: "media.created", payload: { mediaId: media, userId: ana, key } });
+  assertEquals(calls("apply_media_verdict")[0].args.p_verdict, "approved");
+  assertEquals(calls("apply_media_verdict")[0].args.p_face, true);
+
+  world.rpc = [];
+  world.faces = 403;
+  await runEvent({ id: 8, event: "media.created", payload: { mediaId: media, userId: ana, key } });
+  assertEquals(calls("apply_media_verdict")[0].args.p_verdict, "approved", "the verdict still applies");
+  assertEquals(calls("apply_media_verdict")[0].args.p_face, null);
+});
+
+Deno.test("media.created: a video's poster is judged, its face never asked", async () => {
+  reset();
+  people();
+  const key = `u/${ana}/videos/1.mp4`;
+  world.tables.profile_media = [{ id: media, user_id: ana, status: "pending", key }];
+  world.rpcResults.apply_media_verdict = true;
+  world.faces = 500;
+  await runEvent({
+    id: 9,
+    event: "media.created",
+    payload: { mediaId: media, userId: ana, key, posterKey: `u/${ana}/posters/1.jpg` },
+  });
+  assertEquals(calls("apply_media_verdict")[0].args.p_face, null);
 });
 
 Deno.test("media.created: decided by a person meanwhile, the automatic verdict stays out", async () => {

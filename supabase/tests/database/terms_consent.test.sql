@@ -6,7 +6,7 @@ create extension if not exists pgtap with schema extensions;
 select plan(47);
 
 -- Everything onboarding asks for except the terms: confirmed email and phone, name, age, gender, a sport
--- and a photo.
+-- and an approved photo.
 create function pg_temp.person(p_email text) returns uuid language plpgsql as $$
 declare
   v_id uuid := gen_random_uuid();
@@ -17,8 +17,8 @@ begin
   update public.profiles set name = split_part(p_email, '@', 1), birthdate = '1995-05-05', gender = 'woman'
     where id = v_id;
   insert into public.profile_sports (user_id, sport_id, per_week, position) values (v_id, 'running', 3, 0);
-  insert into public.profile_media (user_id, key, position, width, height)
-    values (v_id, 'u/' || v_id || '/photos/a.jpg', 0, 100, 100);
+  insert into public.profile_media (user_id, key, position, width, height, status)
+    values (v_id, 'u/' || v_id || '/photos/a.jpg', 0, 100, 100, 'approved');
   return v_id;
 end $$;
 
