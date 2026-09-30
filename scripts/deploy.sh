@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Ships the backend to one environment: migrations, then Edge Functions, then (with --secrets) the
-# functions' secrets from supabase/functions/.env.<environment>.
+# functions' secrets from supabase/functions/.env.<environment>, then the areas (scripts/load-areas.ts).
 #
 #   scripts/deploy.sh staging [--secrets]
 #   scripts/deploy.sh production [--secrets]
@@ -46,5 +46,8 @@ if [ "${2:-}" = --secrets ]; then
   # Read by the CLI only, never printed.
   supabase secrets set --project-ref "$ref" --env-file "supabase/functions/.env.$env"
 fi
+
+# The areas area_at answers from (private.areas): loaded when they differ from the source, a no-op otherwise.
+deno run -A scripts/load-areas.ts "$env" --yes
 
 echo "Deployed to $env ($ref)."
