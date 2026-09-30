@@ -245,21 +245,27 @@ task completes.
 
 You › Privacy & data › Export my data calls `request_data_export()`, which queues `export.requested`
 (migration `20260930000301`). db-events claims the request (`export_begin`: one build at a time, taken back after
-15 minutes), builds a zip (`_shared/export.ts`): `data.json` with everything `export_data(user)` returns (account and
-sign-ins, the profile row with lifestyle, settings, language and consent, sports, prompts, media list, rounded
-location, wallet, likes sent, matches, sessions, blocks, reports made, holds, selfie dates, help requests and
-replies, purchases, devices and IPs, push tokens, earlier requests) plus the messages the person sent (Stream,
-every match, ended ones too), and their own photos, videos, posters and voice intro under `files/` (R2). It
-stores it in the private Storage bucket `data-exports` (`<user id>/<request id>.zip`), emails a signed link valid 7
-days in the person's language (Reply-To SUPPORT_INBOX), and marks the request fulfilled (`export_ready`). Left out
-on purpose: reports about the person (they protect whoever made them), the team's notes and audit log, likes
-received. `data-exports-expire` (hourly) queues `export.expired` 7 days on, which deletes the file;
-`delete-account` deletes the account's folder at once.
+15 minutes) and builds the export (`_shared/export.ts`): `data.json` with everything `export_data(user)` returns
+(account and sign-ins, the profile row with lifestyle, settings, language and consent, sports, prompts, media list,
+rounded location, wallet, likes sent, matches, sessions, blocks, reports made, holds, selfie dates, help requests
+and replies, purchases, devices and IPs, push tokens, earlier requests) plus the messages the person sent (Stream,
+every match, ended ones too), and their own photos, videos, posters and voice intro under `files/` (R2). Left out on
+purpose: reports about the person (they protect whoever made them), the team's notes and audit log, likes received.
 
-The archive must fit the project's Storage upload limit (50 MiB by default): files that would take it over
-`EXPORT_MAX_BYTES` (function secret, 45 MiB by default) are listed in `data.json` (`files.notIncluded`) and the team
-gets a short email to send them another way. It is the only team copy; sophros still lists requests and can
-fulfil one by hand. Raise the Storage upload limit in production, then `EXPORT_MAX_BYTES` with it.
+The export comes in parts, zips of at most `EXPORT_MAX_BYTES` each (function secret, 45 MiB by default, under the
+50 MiB a Storage upload takes by default). Part 1 holds `data.json` and the first files; the next files fill the
+next parts, in order; `data.json` lists every file with its part (`files.list`). The parts are built and stored one
+at a time, so the function holds one part in memory at most. Each goes to the private Storage bucket `data-exports`
+at `<user id>/<request id>-<part>.zip`; the person gets one email in their language with one signed link per part,
+valid 7 days and numbered when there are several (Reply-To SUPPORT_INBOX), and the request is fulfilled
+(`export_ready`, with the parts' paths). A file larger than a part on its own would stay out, listed with a note,
+and the team would get a short email to send it another way; with the default limit it can't happen (a profile
+file is 40 MiB at most, media-upload-url signs each upload's size). That is the only team copy; sophros still
+lists requests and can fulfil one by hand.
+
+`data-exports-expire` (hourly) queues `export.expired` 7 days on, which deletes every part. `delete-account` deletes
+the account's folder at once, all parts of all its exports. An account kept for safety keeps its export until it
+expires: the purge of kept accounts comes a year later.
 
 ## Local development
 
