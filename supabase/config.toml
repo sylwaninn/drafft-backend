@@ -481,3 +481,8 @@ verify_jwt = false
 # Also called signed out (a stuck sign-up): the person is read from the token when there is one.
 [functions.support]
 verify_jwt = false
+
+# Called by the support mail Worker (cloudflare/support-mail-worker), authenticated with the
+# x-support-inbound-secret header (SUPPORT_INBOUND_SECRET), like db-events.
+[functions.support-inbound]
+verify_jwt = false

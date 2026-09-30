@@ -180,9 +180,11 @@ async function toTeam(
   await ctx.once("team-email", () => sendEmail(inbox, renderTeamEmail(subject, lines), key, replyTo));
 }
 
-/** Where a member's reply to a notice goes: the team's inbox (unset locally: the sender, as before). */
-function supportInbox(): string | undefined {
-  return optionalEnv("SUPPORT_INBOX");
+/** Where a member's reply to any email about their account goes: the support address, whose mail comes back into
+ * sophros (support-inbound, README "Support by email"); until it is set, the team's mailbox (unset locally: the
+ * sender, as before). */
+function supportReplyTo(): string | undefined {
+  return optionalEnv("SUPPORT_ADDRESS") ?? optionalEnv("SUPPORT_INBOX");
 }
 
 /** Stream ban on or off from the account's current hold. Deleted since: the account and its chats are gone. */
@@ -497,7 +499,7 @@ export const handlers: Record<string, Handler> = {
             email,
             renderNotice(kind, language(profile.language)),
             `hold-lifted-${p.userId}-${p.previous}`,
-            supportInbox(),
+            supportReplyTo(),
           ),
       );
     }
@@ -523,7 +525,7 @@ export const handlers: Record<string, Handler> = {
           email,
           renderNotice("photoApproved", language(profile?.language)),
           `photo-approved-${p.mediaId}`,
-          supportInbox(),
+          supportReplyTo(),
         ),
     );
   },
@@ -560,18 +562,27 @@ export const handlers: Record<string, Handler> = {
       context: Record<string, unknown>;
     }[];
     if (!request) return;
-    await ctx.once("email", () =>
-      sendEmail(
-        request.email,
-        renderNotice("supportReceived", language(request.language), { reference: request.reference }),
-        `support-ack-${request.reference}`,
-        supportInbox(),
-      ));
+    const byEmail = request.context?.source === "email";
+    // An email whose sender Cloudflare didn't vouch for: no acknowledgement to an address that may not have written.
+    const unverifiedEmail = byEmail && request.context?.verified !== true;
+    if (!unverifiedEmail) {
+      await ctx.once("email", () =>
+        sendEmail(
+          request.email,
+          renderNotice("supportReceived", language(request.language), { reference: request.reference }),
+          `support-ack-${request.reference}`,
+          supportReplyTo(),
+        ));
+    }
+    let from = request.email;
+    if (request.user_id) from += ` (account ${request.user_id})`;
+    else if (!byEmail) from += " (signed out)";
+    if (byEmail) from += ` (by email, ${unverifiedEmail ? "sender NOT verified" : "sender verified"})`;
     await toTeam(
       ctx,
       `[support] ${request.reference} ${request.topic}`,
       [
-        ["From", `${request.email}${request.user_id ? ` (account ${request.user_id})` : " (signed out)"}`],
+        ["From", from],
         ["Language", request.language],
         ["Message", request.message],
         ["Context", JSON.stringify(request.context)],
@@ -582,34 +593,48 @@ export const handlers: Record<string, Handler> = {
     );
   },
 
-  // A reply written in sophros: emailed to the person, framed in their language; their answer goes to
-  // SUPPORT_INBOX. A failed send is recorded on the message (the dashboard shows it) and retried.
+  // A reply written in sophros: emailed to the person, framed in their language; their answer goes to the
+  // support address and back into the request (support-inbound; SUPPORT_INBOX until SUPPORT_ADDRESS is set). Only
+  // the team's messages. Whatever fails, reading the reply included, is recorded on the message (the dashboard
+  // shows it instead of "Sending") and retried; when even that can't be written, the outbox marks the message once
+  // it gives up (private.support_reply_given_up).
   async "support.reply"(p: { id: number }) {
-    const [reply] = must(await admin.rpc("support_reply", { p_id: p.id }), "support reply") as {
-      reference: string;
-      email: string;
-      language: string;
-      topic: string;
-      message: string;
-      body: string;
-      sent_at: string | null;
-    }[];
-    if (!reply || reply.sent_at) return;
     try {
-      await sendEmail(
-        reply.email,
-        renderSupportReply(language(reply.language), reply),
-        `support-reply-${p.id}`,
-        supportInbox(),
-      );
+      await sendSupportReply(p.id);
     } catch (error) {
-      check(
-        await admin.rpc("support_reply_sent", { p_id: p.id, p_error: String(error).slice(0, 500) }),
-        "support reply failed",
-      );
+      await supportReplyFailed(p.id, error);
       throw error;
     }
-    check(await admin.rpc("support_reply_sent", { p_id: p.id }), "support reply sent");
+  },
+
+  // A member's email, filed in its request and the request reopened (receive_support_email): the team's copy in
+  // SUPPORT_INBOX, next to the thread in sophros. A reply to the copy goes to the member.
+  async "support.received"(p: { id: number }, ctx) {
+    const [message] = must(await admin.rpc("support_reply", { p_id: p.id }), "support message") as {
+      reference: string;
+      email: string;
+      topic: string;
+      body: string;
+      author: string;
+      direction: "in" | "out";
+    }[];
+    if (!message) return;
+    if (message.direction !== "in") {
+      console.warn(`db-events: support.received ${p.id} is a team message, no copy`);
+      return;
+    }
+    await toTeam(
+      ctx,
+      `[support] ${message.reference} ${message.topic}: new message`,
+      [
+        ["From", message.author],
+        ["Message", message.body],
+        ["Status", "reopened, answer it in sophros"],
+      ],
+      `support-received-${p.id}`,
+      message.author,
+      message.author,
+    );
   },
 
   // A report: the team is told (the account may already be held, see reports_events).
@@ -698,7 +723,7 @@ export const handlers: Record<string, Handler> = {
           email,
           renderExportReady(language(profile?.language), links),
           `export-${id}`,
-          supportInbox(),
+          supportReplyTo(),
         ),
     );
     const omitted = ctx.value("omitted");
@@ -740,10 +765,10 @@ export const handlers: Record<string, Handler> = {
   },
 
   // A decision by a person on the team (private.record_decision): the statement of reasons, emailed in the
-  // person's language with Reply-To SUPPORT_INBOX, and pushed when no other push says it (a removed message, a
-  // review, a ban, a selfie asked again: `repeat`, the state didn't change so account.moderation pushed nothing).
-  // A removed message is told once Stream shows it removed: sophros logs the removal just before making it, so
-  // until then the event is retried, and one that never happened ends in the dead letters.
+  // person's language with Reply-To the support address, and pushed when no other push says it (a removed
+  // message, a review, a ban, a selfie asked again: `repeat`, the state didn't change so account.moderation pushed
+  // nothing). A removed message is told once Stream shows it removed: sophros logs the removal just before making
+  // it, so until then the event is retried, and one that never happened ends in the dead letters.
   async "moderation.decision"(p: { id: number; repeat?: boolean }, ctx) {
     const [decision] = must(await admin.rpc("moderation_decision", { p_id: p.id }), "decision") as {
       user_id: string;
@@ -769,7 +794,7 @@ export const handlers: Record<string, Handler> = {
           email,
           renderDecision(lang, decision.kind, decision.category, decision.terms_anchor, decision.details),
           `decision-${p.id}`,
-          supportInbox(),
+          supportReplyTo(),
         ));
     } else {
       console.warn(`db-events: decision ${p.id} not emailed, the account has no email address`);
@@ -916,6 +941,46 @@ async function pushModeration(
     // One moderation push at a time: a newer state replaces the older one on the lock screen.
     collapseId: `moderation-${p.userId}`,
   });
+}
+
+/** Emails a reply written in sophros once, and records it sent. */
+async function sendSupportReply(id: number) {
+  const [reply] = must(await admin.rpc("support_reply", { p_id: id }), "support reply") as {
+    reference: string;
+    email: string;
+    language: string;
+    topic: string;
+    message: string;
+    body: string;
+    sent_at: string | null;
+    direction: "in" | "out";
+  }[];
+  if (!reply || reply.sent_at) return;
+  // A member's own message (received by email) is never sent back to them.
+  if (reply.direction !== "out") {
+    console.warn(`db-events: support.reply ${id} is a received message, not sent`);
+    return;
+  }
+  await sendEmail(
+    reply.email,
+    renderSupportReply(language(reply.language), reply),
+    `support-reply-${id}`,
+    supportReplyTo(),
+  );
+  check(await admin.rpc("support_reply_sent", { p_id: id }), "support reply sent");
+}
+
+/** Records on the message why its reply wasn't sent. Never throws: the handler's own error is the one the outbox
+ * gets. */
+async function supportReplyFailed(id: number, error: unknown) {
+  try {
+    check(
+      await admin.rpc("support_reply_sent", { p_id: id, p_error: String(error).slice(0, 500) }),
+      "support reply failed",
+    );
+  } catch (recordError) {
+    console.error(`db-events: support.reply ${id}: the failure could not be recorded`, recordError);
+  }
 }
 
 type DueRpc = "retained_account_due" | "chat_erase_due" | "banned_selfies_due";

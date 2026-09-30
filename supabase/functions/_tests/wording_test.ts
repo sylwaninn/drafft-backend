@@ -180,3 +180,9 @@ Deno.test("an email subject says one thing in 45 characters at most", () => {
     .map((c) => `${c.where}: ${JSON.stringify(c.text)}`);
   assert(long.length === 0, `WORDING.md section 6, Email:\n${long.join("\n")}`);
 });
+
+Deno.test("the support acknowledgement's subject, its reference included, keeps to 45 characters", () => {
+  const long = languages.map((l) => notices.renderNotice("supportReceived", l, { reference: "DR-ABC123" }).subject)
+    .filter((subject) => [...subject].length > 45);
+  assert(long.length === 0, `WORDING.md section 6, Email:\n${long.join("\n")}`);
+});

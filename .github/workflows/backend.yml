@@ -66,6 +66,10 @@ jobs:
         run: deno check scripts/*.ts
       - name: Media Worker (types, signature and serving tests)
         run: deno check cloudflare/media-worker/src/*.ts && deno test cloudflare/media-worker
+      - name: Support mail Worker (types, parsing and filing tests)
+        run: |
+          deno check --config cloudflare/support-mail-worker/deno.json cloudflare/support-mail-worker/src/*.ts
+          deno test --config cloudflare/support-mail-worker/deno.json cloudflare/support-mail-worker
       - name: Unit and Edge Function auth tests (no network)
         working-directory: supabase/functions
         run: deno test --allow-env --allow-read=.,../../WORDING.md

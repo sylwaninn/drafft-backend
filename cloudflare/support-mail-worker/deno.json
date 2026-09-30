@@ -1,0 +1,7 @@
+{
+  "fmt": { "lineWidth": 120 },
+  "lint": { "rules": { "tags": ["recommended"] } },
+  // Deno reads postal-mime from its own cache; package.json only serves wrangler's bundle (npm ci).
+  "nodeModulesDir": "none",
+  "imports": { "postal-mime": "npm:postal-mime@4.0.0" }
+}
