@@ -562,8 +562,9 @@ export const handlers: Record<string, Handler> = {
       context: Record<string, unknown>;
     }[];
     if (!request) return;
+    const byEmail = request.context?.source === "email";
     // An email whose sender Cloudflare didn't vouch for: no acknowledgement to an address that may not have written.
-    const unverifiedEmail = request.context?.source === "email" && request.context?.verified !== true;
+    const unverifiedEmail = byEmail && request.context?.verified !== true;
     if (!unverifiedEmail) {
       await ctx.once("email", () =>
         sendEmail(
@@ -573,24 +574,15 @@ export const handlers: Record<string, Handler> = {
           supportReplyTo(),
         ));
     }
+    let from = request.email;
+    if (request.user_id) from += ` (account ${request.user_id})`;
+    else if (!byEmail) from += " (signed out)";
+    if (byEmail) from += ` (by email, ${unverifiedEmail ? "sender NOT verified" : "sender verified"})`;
     await toTeam(
       ctx,
       `[support] ${request.reference} ${request.topic}`,
       [
-        [
-          "From",
-          `${request.email}${
-            request.user_id
-              ? ` (account ${request.user_id})`
-              : request.context?.source === "email"
-              ? ""
-              : " (signed out)"
-          }${
-            request.context?.source === "email"
-              ? ` (by email, ${unverifiedEmail ? "sender NOT verified" : "sender verified"})`
-              : ""
-          }`,
-        ],
+        ["From", from],
         ["Language", request.language],
         ["Message", request.message],
         ["Context", JSON.stringify(request.context)],

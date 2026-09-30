@@ -1,9 +1,10 @@
 // Emails that aren't auth codes: news about the account (a hold lifted, a photo approved on a second look, a
-// decision by the team with its statement of reasons), the acknowledgement of a support request and a data export's link, in the person's language;
-// plus the team's copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register as emails.ts
-// (WORDING.md): the subject says the one thing (45 characters at most, the acknowledgement's reference included), the title repeats it, the note is the
-// one next step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject;
-// "l'équipe drafft" only names the team (the support reply's title).
+// decision by the team with its statement of reasons), the acknowledgement of a support request and a data
+// export's link, in the person's language; plus the team's copies (SUPPORT_INBOX), in English, until the
+// dashboard lists them. Same layout and register as emails.ts (WORDING.md): the subject says the one thing (45
+// characters at most, the acknowledgement's reference included), the title repeats it, the note is the one next
+// step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject; "l'équipe
+// drafft" only names the team (the support reply's title).
 import { codeBox, color, escape, layout, paragraph, type Rendered, small, title } from "./emails.ts";
 import type { Language } from "./texts.ts";
 
@@ -201,8 +202,9 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       note: "Vermeld hem als je ons opnieuw schrijft.",
     },
   },
-  // A data export, built: the link follows the body, one per part when it has several (renderExportReady). "Export" as the app says it (You ›
-  // Privacy & data › Export my data); a reply reaches the team (Reply-To the support address).
+  // A data export, built: the link follows the body, one per part when it has several (renderExportReady).
+  // "Export" as the app says it (You › Privacy & data › Export my data); a reply reaches the team (Reply-To the
+  // support address).
   exportReady: {
     en: {
       subject: "Your drafft export is ready",

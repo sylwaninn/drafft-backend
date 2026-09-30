@@ -10,8 +10,9 @@
 // Never lose a message: the whole email is forwarded to FALLBACK_ADDRESS (the team's mailbox, a verified
 // destination of Email Routing) whenever the function didn't take it (unreachable, an error, over the limits),
 // when it isn't a person writing (an auto-reply, a bounce, a mailing list), and as a copy when part of it
-// couldn't be filed (attachments, a text cut to size, their own lines cut with the quoted history). When even that forward fails, the Worker throws: Email
-// Routing then refuses the email, and the sender's server reports or retries it.
+// couldn't be filed (attachments, a text cut to size, their own lines cut with the quoted history). When even
+// that forward fails, the Worker throws: Email Routing then refuses the email, and the sender's server reports or
+// retries it.
 import PostalMime from "postal-mime";
 import { type Inbound, MAX_TEXT, parseInboundResult } from "../../../supabase/functions/_shared/support_inbound.ts";
 import { automatic, cloudflareResults, findReference, htmlToText, stripQuoted, verifiedSender } from "./message.ts";
@@ -80,47 +81,49 @@ export type Outcome = "filed" | "filed, copy kept" | "kept";
 /** A header value Email Routing accepts: printable ASCII on one line. */
 const headerValue = (text: string) => text.replace(/[^\x20-\x7e]/g, "?").slice(0, 200);
 
-export async function receive(email: IncomingEmail, env: Env, post: typeof fetch = fetch): Promise<Outcome> {
-  let reason: string;
-  let filed = false;
-  try {
-    const parsed = await PostalMime.parse(await new Response(email.raw).arrayBuffer());
-    const why = automatic(email.from, email.headers);
-    if (why) {
-      reason = `not filed: ${why}`;
-    } else {
-      const { inbound, cut, dropped } = toInbound(email, parsed);
-      const res = await post(env.SUPPORT_INBOUND_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-support-inbound-secret": env.SUPPORT_INBOUND_SECRET },
-        body: JSON.stringify(inbound),
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!res.ok) {
-        reason = `not filed: support-inbound answered ${res.status} ${headerValue(await res.text())}`;
-      } else {
-        const result = parseInboundResult(await res.json().catch(() => null));
-        if (!result) {
-          reason = "not filed: support-inbound answered something else than a result";
-        } else {
-          filed = true;
-          console.log(`support mail: ${result.outcome} ${result.reference ?? ""}`);
-          const missing = [
-            ...(inbound.attachments.length > 0 ? [`${inbound.attachments.length} attachment(s)`] : []),
-            ...(cut || result.truncated ? ["text cut to size"] : []),
-            ...(dropped ? ["text left out with the quoted history"] : []),
-          ];
-          if (missing.length === 0) return "filed";
-          reason = `filed as ${result.reference ?? "?"}, not all of it: ${missing.join(", ")}`;
-        }
-      }
-    }
-  } catch (error) {
-    reason = `not filed: ${String(error)}`;
+/** Why the whole email must also go to the fallback address, and whether support-inbound filed it anyway. */
+type Fallback = { filed: boolean; reason: string };
+
+/** Files the email with support-inbound: null when all of it was filed, else why (part of) it wasn't. */
+async function file(email: IncomingEmail, env: Env, post: typeof fetch): Promise<Fallback | null> {
+  const parsed = await PostalMime.parse(await new Response(email.raw).arrayBuffer());
+  const why = automatic(email.from, email.headers);
+  if (why) return { filed: false, reason: `not filed: ${why}` };
+  const { inbound, cut, dropped } = toInbound(email, parsed);
+  const res = await post(env.SUPPORT_INBOUND_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-support-inbound-secret": env.SUPPORT_INBOUND_SECRET },
+    body: JSON.stringify(inbound),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    return {
+      filed: false,
+      reason: `not filed: support-inbound answered ${res.status} ${headerValue(await res.text())}`,
+    };
   }
-  console.warn(`support mail: ${reason}, forwarded to the fallback address`);
-  await email.forward(env.FALLBACK_ADDRESS, new Headers({ "X-Drafft-Support": headerValue(reason) }));
-  return filed ? "filed, copy kept" : "kept";
+  const result = parseInboundResult(await res.json().catch(() => null));
+  if (!result) return { filed: false, reason: "not filed: support-inbound answered something else than a result" };
+  console.log(`support mail: ${result.outcome} ${result.reference ?? ""}`);
+  const missing: string[] = [];
+  if (inbound.attachments.length > 0) missing.push(`${inbound.attachments.length} attachment(s)`);
+  if (cut || result.truncated) missing.push("text cut to size");
+  if (dropped) missing.push("text left out with the quoted history");
+  if (missing.length === 0) return null;
+  return { filed: true, reason: `filed as ${result.reference ?? "?"}, not all of it: ${missing.join(", ")}` };
+}
+
+export async function receive(email: IncomingEmail, env: Env, post: typeof fetch = fetch): Promise<Outcome> {
+  let fallback: Fallback | null;
+  try {
+    fallback = await file(email, env, post);
+  } catch (error) {
+    fallback = { filed: false, reason: `not filed: ${String(error)}` };
+  }
+  if (fallback === null) return "filed";
+  console.warn(`support mail: ${fallback.reason}, forwarded to the fallback address`);
+  await email.forward(env.FALLBACK_ADDRESS, new Headers({ "X-Drafft-Support": headerValue(fallback.reason) }));
+  return fallback.filed ? "filed, copy kept" : "kept";
 }
 
 export default {
