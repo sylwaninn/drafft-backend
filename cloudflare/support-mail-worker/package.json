@@ -1,0 +1,9 @@
+{
+  "name": "drafft-support-mail",
+  "private": true,
+  "type": "module",
+  "description": "Email Worker: support@getdrafft.com back into sophros (see src/index.ts). Deno checks and tests it; npm only bundles it for wrangler.",
+  "dependencies": {
+    "postal-mime": "4.0.0"
+  }
+}

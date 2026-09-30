@@ -1,0 +1,32 @@
+// drafft support mail: an Email Worker that files what people write to the support address into sophros
+// (src/index.ts). No HTTP route: Cloudflare Email Routing hands it the emails (README, "Support by email").
+// Deploy (after `npm ci` here, which fetches postal-mime for the bundle):
+//   npx wrangler@4 deploy --env staging      (support-staging@getdrafft.com → the staging project)
+//   npx wrangler@4 deploy --env production   (support@getdrafft.com → the production project)
+// Secrets, per environment:
+//   npx wrangler@4 secret put SUPPORT_INBOUND_SECRET --env staging|production   (= that project's function secret)
+//   npx wrangler@4 secret put FALLBACK_ADDRESS --env staging|production         (the team's mailbox, a verified
+//                                                                               Email Routing destination)
+{
+  "name": "drafft-support-mail",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  // Email only: no workers.dev URL, no preview URLs.
+  "workers_dev": false,
+  "preview_urls": false,
+  "env": {
+    "staging": {
+      "name": "drafft-support-mail-staging",
+      "vars": {
+        "SUPPORT_INBOUND_URL": "https://rjlghcuspdtrmbimyioe.supabase.co/functions/v1/support-inbound"
+      }
+    },
+    "production": {
+      "name": "drafft-support-mail",
+      "vars": {
+        "SUPPORT_INBOUND_URL": "https://wrcpgnqwjmnirjfxpcux.supabase.co/functions/v1/support-inbound"
+      }
+    }
+  }
+}
