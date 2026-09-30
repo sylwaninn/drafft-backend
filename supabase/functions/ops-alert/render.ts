@@ -39,22 +39,27 @@ function providers(list: string[] | undefined): string {
   return known.length === 0 ? "none" : known.join(", ");
 }
 
-const name = (value: unknown) => typeof value === "string" && /^[A-Za-z_.-]{1,60}$/.test(value);
+const isName = (value: unknown) => typeof value === "string" && /^[A-Za-z_.-]{1,60}$/.test(value);
 
 function jobsBehind(list: OpsState["jobsBehind"]): string {
-  const known = (list ?? []).filter((j) => name(j?.job));
+  const known = (list ?? []).filter((j) => isName(j?.job));
   return known.length === 0 ? "none" : known.map((j) => `${j.job}: last completed ${time(j.lastRunAt)}`).join("\n");
 }
 
-// Nested counts (outbox-cleanup's dead letters by event) are summed: only numbers and names get through.
+// A nested count (outbox-cleanup's dead letters by event) is summed.
+function stepTotal(value: unknown): number {
+  if (typeof value === "object" && value !== null) {
+    return Object.values(value).reduce((sum: number, v) => sum + n(v), 0);
+  }
+  return n(value);
+}
+
+// One line per job, its steps and their counts: only names and numbers get through.
 function jobCounts(jobs: OpsState["jobs"]): string {
-  const lines = Object.entries(jobs ?? {}).filter(([job]) => name(job)).sort().map(([job, counts]) => {
-    const steps = Object.entries(counts ?? {}).filter(([step]) => name(step)).map(([step, value]) => {
-      const total = typeof value === "object" && value !== null
-        ? Object.values(value).reduce((sum: number, v) => sum + n(v), 0)
-        : n(value);
-      return `${step} ${total}`;
-    });
+  const lines = Object.entries(jobs ?? {}).filter(([job]) => isName(job)).sort().map(([job, counts]) => {
+    const steps = Object.entries(counts ?? {})
+      .filter(([step]) => isName(step))
+      .map(([step, value]) => `${step} ${stepTotal(value)}`);
     return `${job}: ${steps.length === 0 ? "nothing" : steps.join(", ")}`;
   });
   return lines.length === 0 ? "no run in the last 24 hours" : lines.join("\n");
