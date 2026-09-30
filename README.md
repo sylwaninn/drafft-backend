@@ -161,6 +161,56 @@ Support replies are written in sophros (`admin_reply_support`) and emailed by db
 framed in the person's language, with Reply-To SUPPORT_INBOX. The mailer never sends to reserved domains
 (`.test`, `.example`, `.invalid`, `.localhost`), which the demo and test accounts use.
 
+## Privacy and data retention
+
+What drafft keeps about people, where, for how long, and what enforces it, as the privacy policy promises
+("How long we keep it"). The periods are maximums: most rows go earlier, with their account. Daily jobs run
+from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000101`) takes every period from
+`private.retention_period` and records what each step deleted in `private.job_runs`.
+
+| Data | Where | Kept | Enforced by |
+| --- | --- | --- | --- |
+| Account, profile, lifestyle, sports, prompts, settings, location, wallet, cards, swipes, matches, blocks, sessions, push tokens, DeviceCheck token, selfie records, export requests, terms and consent log | `auth.users`, `auth.identities`, `public.*`, `private.locations`, `private.device_checks`, `private.selfie_checks`, `private.data_requests`, `private.consent_events` | the account's life | `delete-account`: deleting the Auth user cascades through these tables (purchases, photo flags, help requests and reports' reporter are unlinked instead, `on delete set null`) |
+| Photos, videos, voice intro, chat photos and videos | R2 `u/<id>/…` | the account's life; a removed photo at once | `delete-account` (the whole prefix), db-events `media.deleted` |
+| Chat messages | Stream, one channel per match | the match's life; an ended match's chat is frozen, then erased 1 year after the match ended | `delete-account` hard-deletes the Stream user and messages; the year after the match: see [TODO.md](TODO.md) |
+| Accounts kept for safety (banned, held or under an open report when deleted) | the same rows, `profiles.deleted_at`, `private.account_deletions` | 1 year after the case is closed | see [TODO.md](TODO.md) |
+| Verification selfies | Storage `verification-selfies` | until the check is over; a banned account's 6 months, for an appeal | db-events `selfie.delete`, `delete-account`; the 6 months: see [TODO.md](TODO.md) |
+| IP addresses | `private.ips` | 180 days after the last open from that address | `device-reports-prune` |
+| Sign-in events with IP addresses | `auth.audit_log_entries` | not enforced yet | see [TODO.md](TODO.md) |
+| Devices (model, versions, last IP) | `private.devices` | 1 year after the last open | `device-reports-prune` |
+| Verification texts sent (number, IP) | `private.sms_sends` | 30 days | `sms-sends-cleanup` |
+| Sending queue (pushes, emails, Stream and R2 calls) | `private.outbox` | delivered 7 days; dropped, discarded or failed 30 days, except a failed erasure, kept until the team replays or discards it | `outbox-cleanup` (`private.outbox_cleanup()`) |
+| Session reminders queued | `private.session_reminders` | the session's life | `on delete cascade` from the session |
+| Purchase sync calls (rate limit) | `private.purchase_sync_calls` | 1 hour, trimmed at the member's next sync; the account's life at most | `purchase_sync_begin`, `on delete cascade` |
+| Team alerts (counts only, nothing personal), job runs | `private.ops_alerts`, `private.job_runs` | 90 days | `ops-alerts-cleanup`, `privacy-purge` |
+| Reports | `public.reports` | 1 year after they're handled; open ones stay; the reporter's id goes when they delete their account | `privacy-purge` |
+| Moderation log, staff notes, photo flags, links between accounts | `private.moderation_log`, `private.staff_notes`, `public.media_flags`, `private.account_links` | 1 year, 3 years about a banned account (the entry behind a hold in force stays with the hold; a flag counts from its review) | `privacy-purge` |
+| Team access log | `private.admin_audit` | 1 year, 3 years about a banned account; append-only, the purge is the only deletion | `privacy-purge` |
+| Identity fingerprints (HMAC digests of email, phone, Apple or Google ids) | `private.identity_marks`, `private.deleted_identities` | the account's life (marks of a hold or ban), and a kept account's while it is on hold or banned, then 1 year after its deletion, 3 years for a banned account | `privacy-purge` |
+| Who was banned (the account id and dates) | `private.banned_accounts` | the account's life, then 3 years after its erasure | `privacy-purge` |
+| Help requests and replies | `private.support_requests`, `private.support_messages` | 3 years after the last exchange | `privacy-purge` |
+| Purchases | `public.purchase_events`, `private.purchase_credits` | 10 years after the event (accounting); unlinked from the account when it's deleted | `privacy-purge`, `on delete set null` |
+| Backups | Supabase | 30 days at most | dashboard setting, see [TODO.md](TODO.md) |
+| What providers keep (RevenueCat, Twilio, Resend, Rekognition, Stream, Cloudflare) | their systems | their own retention, under the processing agreements | see [TODO.md](TODO.md) |
+
+"About a banned account": `private.banned_accounts` has a row for it, written when the account is banned,
+removed if the ban is lifted, and kept 3 years after the account is erased, so a record keeps its 3 years
+whatever happened to the identity marks. The deletion record of a kept account
+(`private.account_deletions.identities`) never holds an identity in clear: which kinds existed and the
+sign-ins' providers and dates only (a check holds it to `private.identities_summary`), and `'{}'` with
+`identities_purged_at` once the purge cleared it (sophros gets that date as `identitiesPurgedAt` from
+`admin_account_deletion`). The digests in `private.deleted_identities` link a later sign-up, and `admin_users`
+finds a kept account from its full old email or phone number through them.
+`private.admin_audit` stays append-only for everyone: its delete trigger lets a row go only inside a running
+purge (recognised by its `private.job_runs` row for the current transaction, which no other role can write) and
+only once past its period.
+
+`privacy-purge` and `outbox-cleanup` are watched (`private.watched_jobs`): when one has no completed run in 26
+hours, or pg_cron recorded a failed run since the last one, `ops_check` opens an incident and the team's email
+lists it under "Daily jobs behind"; the daily summary says what each job deleted. A failed erasure event
+(`outbox_policies.erasure`: `media.deleted`, `selfie.delete`, `account.*`, `stream.user`) is never dropped: it
+keeps the incident open until someone replays or discards it in sophros.
+
 ## Local development
 
 ```sh
