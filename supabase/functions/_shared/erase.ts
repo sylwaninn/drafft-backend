@@ -104,10 +104,15 @@ export async function eraseMedia(userId: string): Promise<void> {
   await deleteKeys(await listKeys(`u/${userId}/`));
 }
 
-/** Every file of the account's folder in a private Storage bucket, page after page. */
-export async function emptyFolder(bucket: string, userId: string): Promise<void> {
+/** Every file of the account's folder in a private Storage bucket, page after page. `optional`: a bucket this
+ * project doesn't have holds nothing to delete (logged); any other failure throws. */
+export async function emptyFolder(bucket: string, userId: string, options: { optional?: boolean } = {}): Promise<void> {
   for (;;) {
     const listed = await admin.storage.from(bucket).list(userId, { limit: 1000 });
+    if (listed.error && options.optional && /bucket not found/i.test(listed.error.message)) {
+      console.warn(`erase: no ${bucket} bucket in this project, nothing to delete for ${userId}`);
+      return;
+    }
     if (listed.error) throw new Error(`list ${bucket} of ${userId}: ${listed.error.message}`);
     if (listed.data.length === 0) return;
     const removed = await admin.storage.from(bucket).remove(listed.data.map((f) => `${userId}/${f.name}`));
@@ -133,7 +138,8 @@ async function retained(userId: string): Promise<boolean> {
 export type Deletion = "kept" | "erased";
 
 /**
- * Deleting an account (delete-account). The database decides (retain_deleted_account):
+ * Deleting an account: delete-account (the member, in the app) and db-events `account.staff_delete` (an admin, on
+ * the member's request). The database decides (retain_deleted_account):
  * - banned, held or under an open report: kept for members' safety, a soft delete, all in that one
  *   transaction; db-events `account.purge` erases it a year after its case is closed;
  * - anything else: erased. Its chats with their media, its Stream user, its media, selfies and data exports go first;
@@ -157,7 +163,7 @@ export async function deleteAccount(userId: string): Promise<Deletion> {
   await eraseMedia(userId);
   await eraseSelfies(userId);
   // Data exports not expired yet: every part of every export, side by side in the account's folder.
-  await emptyFolder("data-exports", userId);
+  await emptyFolder("data-exports", userId, { optional: true });
 
   // Reported or held while the above ran: keep what is left (the database rows) instead of erasing it.
   if (await retained(userId)) return "kept";

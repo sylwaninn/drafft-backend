@@ -32,6 +32,8 @@ let channels: Record<string, { id: string; user: { id: string }; attachments: un
 let taskStatus = "completed";
 /** The account's export parts in the data-exports bucket. */
 let exportParts: string[] = [];
+/** The data-exports bucket: there, missing from the project, or failing. */
+let exportsBucket: "ok" | "missing" | "down" = "ok";
 
 globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
   const request = input instanceof Request ? input : new Request(String(input), init);
@@ -58,6 +60,11 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
   if (call === "POST /rest/v1/rpc/forget_selfies") return Response.json(null);
   if (call === "POST /storage/v1/object/list/verification-selfies") return Response.json([]);
   // An export in two parts: the folder holds both, and both go.
+  if (call === "POST /storage/v1/object/list/data-exports" && exportsBucket !== "ok") {
+    return exportsBucket === "missing"
+      ? Response.json({ statusCode: "404", error: "Bucket not found", message: "Bucket not found" }, { status: 400 })
+      : Response.json({ statusCode: "500", error: "boom", message: "boom" }, { status: 500 });
+  }
   if (call === "POST /storage/v1/object/list/data-exports") {
     return Response.json(exportParts.splice(0).map((name) => ({ name })));
   }
@@ -186,4 +193,17 @@ Deno.test("Stream's deletion failing in the background stops before the auth use
     taskStatus = "completed";
   }
   assertEquals(calls.includes(`DELETE /auth/v1/admin/users/${USER}`), false);
+});
+
+Deno.test("the data-exports bucket: missing from a project is nothing to delete; failing stops the deletion", async () => {
+  exportsBucket = "missing";
+  try {
+    assertEquals(await deleteAccount([false, false]), 204);
+    assertEquals(calls.at(-1), `DELETE /auth/v1/admin/users/${USER}`);
+    exportsBucket = "down";
+    assertEquals(await deleteAccount([false, false]), 500);
+    assertEquals(calls.includes(`DELETE /auth/v1/admin/users/${USER}`), false);
+  } finally {
+    exportsBucket = "ok";
+  }
 });

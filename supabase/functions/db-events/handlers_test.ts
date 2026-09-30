@@ -1502,3 +1502,97 @@ Deno.test("renderDecision: the team's note is escaped and keeps its lines; the r
   assert(email.html.includes("&lt;b&gt;x&lt;/b&gt;<br>line 2"), email.html);
   assert(email.text.includes("The rules are in drafft's terms of use.\nhttps://getdrafft.com/terms\n"), email.text);
 });
+
+// MARK: Deleting an account on the member's request (20260930000601)
+
+function staffDeletion(emails = ["ana@drafft.so", "ana.other@mail.fr"], outcome: string | null = null) {
+  world.rpcResults.staff_deletion = [{ user_id: ana, reference: "DR-ABC234", emails, language: "fr", outcome }];
+  world.rpcResults.retain_deleted_account = { retained: false };
+  world.rpcResults.deleted_account_chats = { keep: [], erase: [] };
+  world.objects = [`u/${ana}/photos/1.jpg`];
+}
+
+Deno.test("account.staff_delete: the app's deletion, its outcome recorded, then one confirmation to each address", async () => {
+  reset();
+  staffDeletion();
+  Deno.env.set("SUPPORT_ADDRESS", "support@drafft.so");
+  try {
+    await runEvent({ id: 60, event: "account.staff_delete", payload: { id: 5 } });
+  } finally {
+    Deno.env.delete("SUPPORT_ADDRESS");
+  }
+  assertEquals(world.erased, [`stream user ${ana} hard`, `r2 u/${ana}/photos/1.jpg`, `auth ${ana}`]);
+  assertEquals(calls("retain_deleted_account").length, 2, "asked before and after erasing, like delete-account");
+  assertEquals(calls("staff_deletion_done")[0].args, { p_id: 5, p_outcome: "erased" });
+  assertEquals(world.sent, [
+    { to: "ana@drafft.so", subject: "Ton compte drafft est supprimé", replyTo: "support@drafft.so" },
+    { to: "ana.other@mail.fr", subject: "Ton compte drafft est supprimé", replyTo: "support@drafft.so" },
+  ]);
+  assertEquals(steps(60), ["outcome=erased", "email-0", "email-1"]);
+  assertEquals(calls("staff_deletion_emailed").length, 1, "the addresses are cleared");
+
+  // Replayed: nothing deleted or sent again.
+  world.erased = [];
+  world.rpc = [];
+  world.rpcResults.staff_deletion = [{ ...(world.rpcResults.staff_deletion as Row[])[0], outcome: "erased" }];
+  await runEvent({
+    id: 60,
+    event: "account.staff_delete",
+    payload: { id: 5 },
+    steps: ["outcome=erased", "email-0", "email-1"],
+  });
+  assertEquals([world.erased, world.sent.length], [[], 2]);
+});
+
+Deno.test("account.staff_delete: kept for safety, nothing erased, the member confirmed all the same", async () => {
+  reset();
+  staffDeletion(["ana@drafft.so"]);
+  world.rpcResults.retain_deleted_account = { retained: true, basis: "report" };
+  await runEvent({ id: 61, event: "account.staff_delete", payload: { id: 6 } });
+  assertEquals(world.erased, []);
+  assertEquals(calls("staff_deletion_done")[0].args, { p_id: 6, p_outcome: "kept" });
+  assertEquals(world.sent.map((e) => [e.to, e.replyTo]), [["ana@drafft.so", "team@drafft.so"]]);
+});
+
+Deno.test("account.staff_delete: failing midway sends nothing; the retry erases and confirms", async () => {
+  reset();
+  staffDeletion(["ana@drafft.so"]);
+  world.r2DeleteStatus = 403;
+  await assertRejects(() => runEvent({ id: 62, event: "account.staff_delete", payload: { id: 7 } }));
+  assertEquals([steps(62), world.sent, calls("staff_deletion_done")], [[], [], []]);
+  assert(!world.erased.includes(`auth ${ana}`), "the account is still there");
+
+  world.r2DeleteStatus = 204;
+  await runEvent({ id: 62, event: "account.staff_delete", payload: { id: 7 } });
+  assertEquals(world.sent.map((e) => e.to), ["ana@drafft.so"]);
+});
+
+Deno.test("account.staff_delete: email down after the erasure: the retry only sends it", async () => {
+  reset();
+  staffDeletion(["ana@drafft.so"]);
+  world.emailOutcome = ["down"];
+  await assertRejects(() => runEvent({ id: 63, event: "account.staff_delete", payload: { id: 8 } }));
+  assertEquals(steps(63), ["outcome=erased"]);
+  world.rpc = [];
+  world.erased = [];
+  world.rpcResults.staff_deletion = [{ ...(world.rpcResults.staff_deletion as Row[])[0], outcome: "erased" }];
+  await runEvent({ id: 63, event: "account.staff_delete", payload: { id: 8 }, steps: ["outcome=erased"] });
+  assertEquals([calls("retain_deleted_account").length, world.erased, calls("staff_deletion_done").length], [0, [], 0]);
+  assertEquals(world.sent.map((e) => e.to), ["ana@drafft.so"]);
+});
+
+Deno.test("account.staff_delete: no address at all: the team is told; a deletion gone since is acked", async () => {
+  reset();
+  staffDeletion([]);
+  await runEvent({ id: 64, event: "account.staff_delete", payload: { id: 9 } });
+  assertEquals(world.sent.map((e) => [e.to, e.subject]), [[
+    "team@drafft.so",
+    "[account deleted] no address to confirm to",
+  ]]);
+  assertEquals(calls("staff_deletion_emailed").length, 1);
+
+  reset();
+  world.rpcResults.staff_deletion = [];
+  await runEvent({ id: 65, event: "account.staff_delete", payload: { id: 10 } });
+  assertEquals([calls("retain_deleted_account").length, calls("ack_event").length], [0, 1]);
+});

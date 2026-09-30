@@ -175,7 +175,7 @@ Deno.test("an email subject says one thing in 45 characters at most", () => {
     ...strings(notices.noticeCopy, "notices.noticeCopy"),
     ...strings(notices.decisionCopy, "notices.decisionCopy"),
   ].filter((c) => c.where.endsWith(".subject"));
-  assert(subjects.length === 7 * 14, `${subjects.length} subjects`);
+  assert(subjects.length === 7 * 15, `${subjects.length} subjects`);
   const long = subjects.filter((c) => [...c.text.replace("{code}", "123456")].length > 45)
     .map((c) => `${c.where}: ${JSON.stringify(c.text)}`);
   assert(long.length === 0, `WORDING.md section 6, Email:\n${long.join("\n")}`);

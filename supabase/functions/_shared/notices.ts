@@ -13,7 +13,8 @@ export type Notice =
   | "accountReopened"
   | "photoApproved"
   | "supportReceived"
-  | "exportReady";
+  | "exportReady"
+  | "accountDeleted";
 
 export type Copy = { subject: string; title: string; body: string; note: string };
 
@@ -61,6 +62,61 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       title: "We hebben je account gecontroleerd.",
       body: "Alles is goed: je profiel is weer zichtbaar, en je matches en chats staan er nog.",
       note: "Open drafft om verder te gaan waar je gebleven was.",
+    },
+  },
+  // An account deleted by the team on the member's request (they wrote to support): the confirmation, to the
+  // account's address and the one they wrote from. Always "deleted" ("closed" is a ban's word). True whether it
+  // was erased or kept for members' safety (then it is gone for everyone and can't sign in, its data kept for the
+  // time the privacy policy says), so it never says which.
+  accountDeleted: {
+    en: {
+      subject: "Your drafft account is deleted",
+      title: "Your account is deleted.",
+      body:
+        "As you asked, your account is deleted and your profile is gone for everyone. What we must keep, for the law or members' safety, stays only as long as our privacy policy says.",
+      note: "Thanks for the sessions. A question? Reply to this email.",
+    },
+    fr: {
+      subject: "Ton compte drafft est supprimé",
+      title: "Ton compte est supprimé.",
+      body:
+        "Comme tu l'as demandé, ton compte est supprimé et ton profil n'est plus visible par personne. Ce qu'on doit garder, pour la loi ou la sécurité des membres, n'est conservé que le temps prévu par notre politique de confidentialité.",
+      note: "Merci pour ces séances. Une question\u00A0? Réponds à cet e-mail.",
+    },
+    es: {
+      subject: "Hemos eliminado tu cuenta de drafft",
+      title: "Hemos eliminado tu cuenta.",
+      body:
+        "Como pediste, hemos eliminado tu cuenta y ya nadie puede ver tu perfil. Lo que debemos conservar, por ley o por la seguridad de los miembros, solo se guarda el tiempo que indica nuestra política de privacidad.",
+      note: "Gracias por las sesiones. ¿Alguna pregunta? Responde a este correo.",
+    },
+    de: {
+      subject: "Dein drafft-Konto ist gelöscht",
+      title: "Dein Konto ist gelöscht.",
+      body:
+        "Wie gewünscht ist dein Konto gelöscht und dein Profil für niemanden mehr sichtbar. Was wir aus rechtlichen Gründen oder zur Sicherheit der Mitglieder aufbewahren müssen, bleibt nur so lange, wie unsere Datenschutzerklärung es vorsieht.",
+      note: "Danke für die Sessions. Fragen? Antworte auf diese E-Mail.",
+    },
+    it: {
+      subject: "Il tuo account drafft è stato eliminato",
+      title: "Il tuo account è stato eliminato.",
+      body:
+        "Come hai chiesto, il tuo account è stato eliminato e il tuo profilo non è più visibile a nessuno. Ciò che dobbiamo conservare, per legge o per la sicurezza dei membri, resta solo per il tempo previsto dalla nostra informativa sulla privacy.",
+      note: "Grazie per le sessioni. Domande? Rispondi a questa email.",
+    },
+    pt: {
+      subject: "A tua conta drafft foi eliminada",
+      title: "A tua conta foi eliminada.",
+      body:
+        "Como pediste, a tua conta foi eliminada e o teu perfil já não é visível para ninguém. O que temos de guardar, por lei ou pela segurança dos membros, fica apenas o tempo previsto na nossa política de privacidade.",
+      note: "Obrigado pelas sessões. Alguma dúvida? Responde a este email.",
+    },
+    nl: {
+      subject: "Je drafft-account is verwijderd",
+      title: "Je account is verwijderd.",
+      body:
+        "Zoals je vroeg, is je account verwijderd en is je profiel voor niemand meer zichtbaar. Wat we moeten bewaren, voor de wet of de veiligheid van leden, blijft alleen zo lang als ons privacybeleid zegt.",
+      note: "Bedankt voor de sessies. Een vraag? Beantwoord deze e-mail.",
     },
   },
   // A closed account, reopened (the team looked again).

@@ -12,7 +12,16 @@
 import { optionalEnv } from "../_shared/env.ts";
 import { type Push, pushToUser } from "../_shared/apns.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
-import { deleteAuthUser, eraseChat, eraseChatUser, eraseMedia, eraseSelfies, freezeChat } from "../_shared/erase.ts";
+import {
+  deleteAccount,
+  deleteAuthUser,
+  type Deletion,
+  eraseChat,
+  eraseChatUser,
+  eraseMedia,
+  eraseSelfies,
+  freezeChat,
+} from "../_shared/erase.ts";
 import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
 import { buildExport, exportLink, partPath, removeExtraParts, removeParts, storeExport } from "../_shared/export.ts";
 import {
@@ -282,6 +291,57 @@ export const handlers: Record<string, Handler> = {
     if (error) throw new Error(`match ${p.matchId}: ${error.message}`);
     if (!match) return;
     await freezeChat(p.matchId, [match.user_a, match.user_b]);
+  },
+
+  // An account deleted by an admin on the member's request (sophros, admin_delete_account): the same deletion as
+  // delete-account (kept for safety or erased, decided again now), its real outcome recorded (staff_deletion_done,
+  // `account.deleted` in the audit log), then the confirmation in the member's language to each address it keeps
+  // (the account's, and the one the request came from), Reply-To the support address. No address at all: the team
+  // is told, to confirm another way. A retry after the deletion doesn't run it again, and each email goes once.
+  async "account.staff_delete"(p: { id: number }, ctx) {
+    const id = requestId(p.id);
+    const [deletion] = must(await admin.rpc("staff_deletion", { p_id: id }), "staff deletion") as {
+      user_id: string;
+      reference: string;
+      emails: string[];
+      language: string | null;
+      outcome: Deletion | null;
+    }[];
+    // Gone after 30 days (its event failed and was replayed late): the audit log has what was done.
+    if (!deletion) return;
+    const userId = uuid(deletion.user_id, "userId");
+    let outcome = deletion.outcome ?? ctx.value("outcome") as Deletion | undefined;
+    if (!outcome) {
+      outcome = await deleteAccount(userId);
+      await ctx.record(`outcome=${outcome}`);
+    }
+    if (!deletion.outcome) {
+      check(await admin.rpc("staff_deletion_done", { p_id: id, p_outcome: outcome }), "staff deletion done");
+    }
+    if (deletion.emails.length === 0) {
+      await toTeam(
+        ctx,
+        "[account deleted] no address to confirm to",
+        [
+          ["Account", userId],
+          ["Request", deletion.reference],
+          ["Outcome", outcome],
+          ["What to do", "The member asked for it but has no email address on record: confirm it another way."],
+        ],
+        `account-deleted-team-${id}`,
+        null,
+      );
+    }
+    for (const [i, email] of deletion.emails.entries()) {
+      await ctx.once(`email-${i}`, () =>
+        sendEmail(
+          email,
+          renderNotice("accountDeleted", language(deletion.language)),
+          `account-deleted-${id}-${i}`,
+          supportReplyTo(),
+        ));
+    }
+    check(await admin.rpc("staff_deletion_emailed", { p_id: id }), "staff deletion emailed");
   },
 
   // An account kept after its owner deleted it (retain_deleted_account): banned from chat for good, and every
