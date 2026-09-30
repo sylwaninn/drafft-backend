@@ -2,7 +2,7 @@
 -- after 7 days.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(20);
+select plan(22);
 
 create function pg_temp.person(p_email text, p_name text) returns uuid language plpgsql as $$
 declare
@@ -59,7 +59,8 @@ select is(public.export_begin((select id from r)), 'go', 'the first delivery cla
 select is(public.export_begin((select id from r)), 'busy', 'another one meanwhile waits');
 update private.data_requests set started_at = now() - interval '16 minutes' where id = (select id from r);
 select is(public.export_begin((select id from r)), 'go', 'a build that stopped is taken back after 15 minutes');
-select public.export_ready((select id from r), (select ana from ids) || '/' || (select id from r) || '.zip');
+select public.export_ready((select id from r), array[(select ana from ids) || '/' || (select id from r) || '-1.zip',
+  (select ana from ids) || '/' || (select id from r) || '-2.zip']);
 select is(public.export_begin((select id from r)), 'done', 'fulfilled: done');
 select ok((select fulfilled_by = 'automatic' and expires_at = now() + interval '7 days' from private.data_requests
   where id = (select id from r)), 'fulfilled automatically, the file kept 7 days');
@@ -68,6 +69,9 @@ select ok((select fulfilled_by = 'automatic' and expires_at = now() + interval '
 
 update private.data_requests set expires_at = now() - interval '1 minute' where id = (select id from r);
 select is(private.queue_export_expiries() + private.queue_export_expiries(), 1, 'an expired file is queued once');
+select is(cardinality(public.export_files((select id from r))), 2, 'every part of it is deleted');
+select public.export_file_deleted((select id from r));
+select is(public.export_files((select id from r)), null, 'deleted: nothing left to delete');
 
 select ok(not has_function_privilege('authenticated', 'public.export_data(uuid)', 'execute')
   and has_function_privilege('service_role', 'public.export_data(uuid)', 'execute')

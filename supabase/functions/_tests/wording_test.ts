@@ -77,7 +77,10 @@ const samples: Record<string, (l: Language) => unknown> = {
     Object.keys(notices.noticeCopy).map((kind) =>
       rendered(notices.renderNotice(kind as notices.Notice, l, { reference: "DR-ABC123" }))
     ),
-  "notices.renderExportReady": (l) => rendered(notices.renderExportReady(l, "https://drafft.test/export.zip")),
+  "notices.renderExportReady": (l) => [
+    rendered(notices.renderExportReady(l, ["https://drafft.test/export.zip"])),
+    rendered(notices.renderExportReady(l, [1, 2, 3].map((n) => `https://drafft.test/export-${n}.zip`))),
+  ],
   "notices.renderSupportReply": (l) =>
     rendered(
       notices.renderSupportReply(l, { reference: "DR-ABC123", topic: "Account", body: "Reply", message: "Question" }),
