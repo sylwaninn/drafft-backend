@@ -50,6 +50,8 @@ const world = {
   pushes: [] as { token: string; collapse: string | null; title?: string }[],
   pushOutcome: {} as Record<string, Outcome>,
   emails: [] as { to: string; key: string | null; replyTo?: string | null; subject?: string; text?: string }[],
+  /** The same emails as Resend got them: subject and Reply-To. */
+  sent: [] as { to: string; subject: string; replyTo?: string }[],
   emailOutcome: [] as Outcome[],
   rekognition: 0,
   labels: [] as { Name: string; ParentName: string; Confidence: number }[],
@@ -90,6 +92,7 @@ function reset() {
   world.pushes = [];
   world.pushOutcome = {};
   world.emails = [];
+  world.sent = [];
   world.emailOutcome = [];
   world.rekognition = 0;
   world.labels = [];
@@ -231,6 +234,7 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
       subject: body.subject,
       text: body.text,
     });
+    world.sent.push({ to: body.to[0], subject: body.subject, replyTo: body.reply_to });
     return respond({ id: crypto.randomUUID() });
   }
 
@@ -530,6 +534,69 @@ Deno.test("support.created: the team copy fails, the retry sends it alone", asyn
     "the person gets one acknowledgement",
   );
   assertEquals(world.emails[1].key, "support-team-DR-ABC123");
+});
+
+Deno.test("support emails carry the reference in the subject and Reply-To the support address", async () => {
+  reset();
+  world.rpcResults.support_request = [{
+    reference: "DR-ABC123",
+    user_id: null,
+    email: "lea@drafft.so",
+    language: "fr",
+    topic: "Help",
+    message: "Stuck",
+    context: {},
+  }];
+  Deno.env.set("SUPPORT_ADDRESS", "support@drafft.so");
+  try {
+    await runEvent({ id: 8, event: "support.created", payload: { id: 9 } });
+    world.rpcResults.support_reply = [{
+      reference: "DR-ABC123",
+      email: "lea@drafft.so",
+      language: "fr",
+      topic: "Help",
+      message: "Stuck",
+      body: "Try again?",
+      author: "sup@drafft.so",
+      sent_at: null,
+    }];
+    await runEvent({ id: 9, event: "support.reply", payload: { id: 12 } });
+  } finally {
+    Deno.env.delete("SUPPORT_ADDRESS");
+  }
+  assertEquals(world.sent, [
+    { to: "lea@drafft.so", subject: "On a bien reçu ton message [DR-ABC123]", replyTo: "support@drafft.so" },
+    { to: "team@drafft.so", subject: "[support] DR-ABC123 Help", replyTo: "lea@drafft.so" },
+    { to: "lea@drafft.so", subject: "Re: Help [DR-ABC123]", replyTo: "support@drafft.so" },
+  ]);
+
+  // Before the support address is set up, replies still reach the team's mailbox.
+  world.sent = [];
+  await runEvent({ id: 10, event: "support.reply", payload: { id: 12 } });
+  assertEquals(world.sent[0].replyTo, "team@drafft.so");
+});
+
+Deno.test("support.received: a member's email, filed and reopened, is copied to the team once", async () => {
+  reset();
+  world.rpcResults.support_reply = [{
+    reference: "DR-ABC123",
+    email: "lea@drafft.so",
+    language: "fr",
+    topic: "Help",
+    message: "Stuck",
+    body: "Still stuck",
+    author: "lea@drafft.so",
+    sent_at: "2026-09-30T10:00:00Z",
+  }];
+  const event = { id: 11, event: "support.received", payload: { id: 13 } };
+  await runEvent(event);
+  assertEquals(world.sent, [
+    { to: "team@drafft.so", subject: "[support] DR-ABC123 Help: new message", replyTo: "lea@drafft.so" },
+  ]);
+  assertEquals(world.emails[0].key, "support-received-13");
+  assertEquals(steps(11), ["team-email"]);
+  await runEvent({ ...event, steps: ["team-email"] });
+  assertEquals(world.sent.length, 1, "a replay sends nothing");
 });
 
 Deno.test("account.moderation: a replay after the email does not email again", async () => {
