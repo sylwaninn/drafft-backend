@@ -77,6 +77,19 @@ const samples: Record<string, (l: Language) => unknown> = {
     Object.keys(notices.noticeCopy).map((kind) =>
       rendered(notices.renderNotice(kind as notices.Notice, l, { reference: "DR-ABC123" }))
     ),
+  "notices.renderExportReady": (l) => [
+    rendered(notices.renderExportReady(l, ["https://drafft.test/export.zip"])),
+    rendered(notices.renderExportReady(l, [1, 2, 3].map((n) => `https://drafft.test/export-${n}.zip`))),
+  ],
+  "notices.renderDecision": (l) =>
+    Object.keys(notices.decisionCopy).flatMap((kind) => [
+      ...Object.keys(notices.reasonCopy).flatMap((category) =>
+        rendered(
+          notices.renderDecision(l, kind as notices.Decision, category, "community", "Keep it friendly, please."),
+        )
+      ),
+      ...rendered(notices.renderDecision(l, kind as notices.Decision, "other", null)),
+    ]),
   "notices.renderSupportReply": (l) =>
     rendered(
       notices.renderSupportReply(l, { reference: "DR-ABC123", topic: "Account", body: "Reply", message: "Question" }),
@@ -87,6 +100,7 @@ const samples: Record<string, (l: Language) => unknown> = {
 /** Exported functions that write no words of their own: markup helpers, parsing, sending, the team's copy. */
 const notCopy = new Set([
   "texts.language",
+  "notices.termsLink",
   "emails.codeBox",
   "emails.title",
   "emails.paragraph",
@@ -159,9 +173,16 @@ Deno.test("an email subject says one thing in 45 characters at most", () => {
   const subjects = [
     ...strings(emails.authEmailCopy, "emails.authEmailCopy"),
     ...strings(notices.noticeCopy, "notices.noticeCopy"),
+    ...strings(notices.decisionCopy, "notices.decisionCopy"),
   ].filter((c) => c.where.endsWith(".subject"));
-  assert(subjects.length === 7 * 9, `${subjects.length} subjects`);
+  assert(subjects.length === 7 * 15, `${subjects.length} subjects`);
   const long = subjects.filter((c) => [...c.text.replace("{code}", "123456")].length > 45)
     .map((c) => `${c.where}: ${JSON.stringify(c.text)}`);
+  assert(long.length === 0, `WORDING.md section 6, Email:\n${long.join("\n")}`);
+});
+
+Deno.test("the support acknowledgement's subject, its reference included, keeps to 45 characters", () => {
+  const long = languages.map((l) => notices.renderNotice("supportReceived", l, { reference: "DR-ABC123" }).subject)
+    .filter((subject) => [...subject].length > 45);
   assert(long.length === 0, `WORDING.md section 6, Email:\n${long.join("\n")}`);
 });

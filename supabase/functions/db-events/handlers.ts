@@ -12,14 +12,35 @@
 import { optionalEnv } from "../_shared/env.ts";
 import { type Push, pushToUser } from "../_shared/apns.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
+import {
+  deleteAccount,
+  deleteAuthUser,
+  type Deletion,
+  eraseChat,
+  eraseChatUser,
+  eraseMedia,
+  eraseSelfies,
+  freezeChat,
+} from "../_shared/erase.ts";
 import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
-import { renderNotice, renderSupportReply, renderTeamEmail } from "../_shared/notices.ts";
+import { buildExport, exportLink, partPath, removeExtraParts, removeParts, storeExport } from "../_shared/export.ts";
+import {
+  type Decision,
+  decisionCopy,
+  renderDecision,
+  renderExportReady,
+  renderNotice,
+  renderSupportReply,
+  renderTeamEmail,
+} from "../_shared/notices.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
-import { type Provider, ProviderError, trackProviders, viaProvider } from "../_shared/providers.ts";
+import { isGone, type Provider, ProviderError, trackProviders, viaProvider } from "../_shared/providers.ts";
 import { ensureChannel, ensureUsers, sendOnce, setChatHeld, stream } from "../_shared/stream.ts";
 import { admin, check, must } from "../_shared/supabase.ts";
 import {
+  decisionPush,
+  decisionPushAlone,
   type Language,
   language,
   likeReceived,
@@ -168,6 +189,13 @@ async function toTeam(
   await ctx.once("team-email", () => sendEmail(inbox, renderTeamEmail(subject, lines), key, replyTo));
 }
 
+/** Where a member's reply to any email about their account goes: the support address, whose mail comes back into
+ * sophros (support-inbound, README "Support by email"); until it is set, the team's mailbox (unset locally: the
+ * sender, as before). */
+function supportReplyTo(): string | undefined {
+  return optionalEnv("SUPPORT_ADDRESS") ?? optionalEnv("SUPPORT_INBOX");
+}
+
 /** Stream ban on or off from the account's current hold. Deleted since: the account and its chats are gone. */
 async function syncChatHold(userId: string) {
   const { data, error } = await admin.from("profiles").select("moderation, deleted_at").eq("id", userId)
@@ -253,8 +281,8 @@ export const handlers: Record<string, Handler> = {
   },
 
   // Unmatch, block, report, or a deleted account kept for safety: the chat disappears for both and nobody
-  // can write in it, but it is kept, never deleted, so the team can still read it in sophros (server side,
-  // with the secret). Both members leave the channel (it leaves their channel lists, and members only can
+  // can write in it, but it is kept a year (then `chat.erase`), so the team can still read it in sophros (server
+  // side, with the secret). Both members leave the channel (it leaves their channel lists, and members only can
   // read a messaging channel), then it is frozen (no message or reaction from anyone). Both calls are
   // idempotent. No channel yet (nobody wrote) or an erased account (the channel went with it): nothing to do.
   async "match.ended"(p: { matchId: string }) {
@@ -262,15 +290,58 @@ export const handlers: Record<string, Handler> = {
       .maybeSingle();
     if (error) throw new Error(`match ${p.matchId}: ${error.message}`);
     if (!match) return;
-    const channel = stream().channel("messaging", p.matchId);
-    try {
-      await viaProvider("stream", async () => {
-        await channel.removeMembers([match.user_a, match.user_b]);
-        await channel.updatePartial({ set: { frozen: true } });
-      });
-    } catch (error) {
-      if (!String(error).includes("does not exist")) throw error;
+    await freezeChat(p.matchId, [match.user_a, match.user_b]);
+  },
+
+  // An account deleted by an admin on the member's request (sophros, admin_delete_account): the same deletion as
+  // delete-account (kept for safety or erased, decided again now), its real outcome recorded (staff_deletion_done,
+  // `account.deleted` in the audit log), then the confirmation in the member's language to each address it keeps
+  // (the account's, and the one the request came from), Reply-To the support address. No address at all: the team
+  // is told, to confirm another way. A retry after the deletion doesn't run it again, and each email goes once.
+  async "account.staff_delete"(p: { id: number }, ctx) {
+    const id = requestId(p.id);
+    const [deletion] = must(await admin.rpc("staff_deletion", { p_id: id }), "staff deletion") as {
+      user_id: string;
+      reference: string;
+      emails: string[];
+      language: string | null;
+      outcome: Deletion | null;
+    }[];
+    // Gone after 30 days (its event failed and was replayed late): the audit log has what was done.
+    if (!deletion) return;
+    const userId = uuid(deletion.user_id, "userId");
+    let outcome = deletion.outcome ?? ctx.value("outcome") as Deletion | undefined;
+    if (!outcome) {
+      outcome = await deleteAccount(userId);
+      await ctx.record(`outcome=${outcome}`);
     }
+    if (!deletion.outcome) {
+      check(await admin.rpc("staff_deletion_done", { p_id: id, p_outcome: outcome }), "staff deletion done");
+    }
+    if (deletion.emails.length === 0) {
+      await toTeam(
+        ctx,
+        "[account deleted] no address to confirm to",
+        [
+          ["Account", userId],
+          ["Request", deletion.reference],
+          ["Outcome", outcome],
+          ["What to do", "The member asked for it but has no email address on record: confirm it another way."],
+        ],
+        `account-deleted-team-${id}`,
+        null,
+      );
+    }
+    for (const [i, email] of deletion.emails.entries()) {
+      await ctx.once(`email-${i}`, () =>
+        sendEmail(
+          email,
+          renderNotice("accountDeleted", language(deletion.language)),
+          `account-deleted-${id}-${i}`,
+          supportReplyTo(),
+        ));
+    }
+    check(await admin.rpc("staff_deletion_emailed", { p_id: id }), "staff deletion emailed");
   },
 
   // An account kept after its owner deleted it (retain_deleted_account): banned from chat for good, and every
@@ -483,7 +554,13 @@ export const handlers: Record<string, Handler> = {
       const kind = p.previous === "banned" ? "accountReopened" : "accountRestored";
       await ctx.once(
         "email",
-        () => sendEmail(email, renderNotice(kind, language(profile.language)), `hold-lifted-${p.userId}-${p.previous}`),
+        () =>
+          sendEmail(
+            email,
+            renderNotice(kind, language(profile.language)),
+            `hold-lifted-${p.userId}-${p.previous}`,
+            supportReplyTo(),
+          ),
       );
     }
   },
@@ -503,13 +580,19 @@ export const handlers: Record<string, Handler> = {
     if (profileError) throw new Error(`profile ${p.userId}: ${profileError.message}`);
     await ctx.once(
       "email",
-      () => sendEmail(email, renderNotice("photoApproved", language(profile?.language)), `photo-approved-${p.mediaId}`),
+      () =>
+        sendEmail(
+          email,
+          renderNotice("photoApproved", language(profile?.language)),
+          `photo-approved-${p.mediaId}`,
+          supportReplyTo(),
+        ),
     );
   },
 
-  // A person decided (review_media, from the dashboard). A refusal reaches the owner like Rekognition's:
-  // the same push, and an email too when they had asked for that second look (as an approval is, see
-  // media.approved_on_review). An approval needs nothing more: the open app hears `media` on Realtime.
+  // A person decided (review_media, from the dashboard). A refusal reaches the owner like Rekognition's: the same
+  // push. The email is the statement of reasons (`moderation.decision`, recorded with the refusal), never a second
+  // one. An approval needs nothing more: the open app hears `media` on Realtime.
   // Moderation news, not an optional notification: no notify_* setting applies (same as media.created).
   async "media.reviewed"(p: {
     mediaId: string;
@@ -524,15 +607,7 @@ export const handlers: Record<string, Handler> = {
     if (error) throw new Error(`media ${p.mediaId}: ${error.message}`);
     // Deleted, or sent for another look since: that decision will speak for itself.
     if (media?.status !== "rejected") return;
-    const lang = await pushPhotoRefused(ctx, p.userId, p.mediaId);
-    if (!p.secondLook || !lang) return;
-    const email = await accountEmail(p.userId);
-    if (!email) return;
-    // One email per decision: a photo can be refused, sent back, and refused again.
-    await ctx.once(
-      "email",
-      () => sendEmail(email, renderNotice("photoRefused", lang), `photo-refused-${p.mediaId}-${p.at}`),
-    );
+    await pushPhotoRefused(ctx, p.userId, p.mediaId);
   },
 
   // A support request: the person gets their reference, the team a copy they can reply to.
@@ -547,17 +622,27 @@ export const handlers: Record<string, Handler> = {
       context: Record<string, unknown>;
     }[];
     if (!request) return;
-    await ctx.once("email", () =>
-      sendEmail(
-        request.email,
-        renderNotice("supportReceived", language(request.language), { reference: request.reference }),
-        `support-ack-${request.reference}`,
-      ));
+    const byEmail = request.context?.source === "email";
+    // An email whose sender Cloudflare didn't vouch for: no acknowledgement to an address that may not have written.
+    const unverifiedEmail = byEmail && request.context?.verified !== true;
+    if (!unverifiedEmail) {
+      await ctx.once("email", () =>
+        sendEmail(
+          request.email,
+          renderNotice("supportReceived", language(request.language), { reference: request.reference }),
+          `support-ack-${request.reference}`,
+          supportReplyTo(),
+        ));
+    }
+    let from = request.email;
+    if (request.user_id) from += ` (account ${request.user_id})`;
+    else if (!byEmail) from += " (signed out)";
+    if (byEmail) from += ` (by email, ${unverifiedEmail ? "sender NOT verified" : "sender verified"})`;
     await toTeam(
       ctx,
       `[support] ${request.reference} ${request.topic}`,
       [
-        ["From", `${request.email}${request.user_id ? ` (account ${request.user_id})` : " (signed out)"}`],
+        ["From", from],
         ["Language", request.language],
         ["Message", request.message],
         ["Context", JSON.stringify(request.context)],
@@ -568,34 +653,48 @@ export const handlers: Record<string, Handler> = {
     );
   },
 
-  // A reply written in sophros: emailed to the person, framed in their language; their answer goes to
-  // SUPPORT_INBOX. A failed send is recorded on the message (the dashboard shows it) and retried.
+  // A reply written in sophros: emailed to the person, framed in their language; their answer goes to the
+  // support address and back into the request (support-inbound; SUPPORT_INBOX until SUPPORT_ADDRESS is set). Only
+  // the team's messages. Whatever fails, reading the reply included, is recorded on the message (the dashboard
+  // shows it instead of "Sending") and retried; when even that can't be written, the outbox marks the message once
+  // it gives up (private.support_reply_given_up).
   async "support.reply"(p: { id: number }) {
-    const [reply] = must(await admin.rpc("support_reply", { p_id: p.id }), "support reply") as {
-      reference: string;
-      email: string;
-      language: string;
-      topic: string;
-      message: string;
-      body: string;
-      sent_at: string | null;
-    }[];
-    if (!reply || reply.sent_at) return;
     try {
-      await sendEmail(
-        reply.email,
-        renderSupportReply(language(reply.language), reply),
-        `support-reply-${p.id}`,
-        optionalEnv("SUPPORT_INBOX"),
-      );
+      await sendSupportReply(p.id);
     } catch (error) {
-      check(
-        await admin.rpc("support_reply_sent", { p_id: p.id, p_error: String(error).slice(0, 500) }),
-        "support reply failed",
-      );
+      await supportReplyFailed(p.id, error);
       throw error;
     }
-    check(await admin.rpc("support_reply_sent", { p_id: p.id }), "support reply sent");
+  },
+
+  // A member's email, filed in its request and the request reopened (receive_support_email): the team's copy in
+  // SUPPORT_INBOX, next to the thread in sophros. A reply to the copy goes to the member.
+  async "support.received"(p: { id: number }, ctx) {
+    const [message] = must(await admin.rpc("support_reply", { p_id: p.id }), "support message") as {
+      reference: string;
+      email: string;
+      topic: string;
+      body: string;
+      author: string;
+      direction: "in" | "out";
+    }[];
+    if (!message) return;
+    if (message.direction !== "in") {
+      console.warn(`db-events: support.received ${p.id} is a team message, no copy`);
+      return;
+    }
+    await toTeam(
+      ctx,
+      `[support] ${message.reference} ${message.topic}: new message`,
+      [
+        ["From", message.author],
+        ["Message", message.body],
+        ["Status", "reopened, answer it in sophros"],
+      ],
+      `support-received-${p.id}`,
+      message.author,
+      message.author,
+    );
   },
 
   // A report: the team is told (the account may already be held, see reports_events).
@@ -623,20 +722,164 @@ export const handlers: Record<string, Handler> = {
     );
   },
 
-  // You > Your data > Email me my export: the team prepares it (no automatic export yet).
+  // You › Privacy & data › Export my data: the export (export.ts), in as many parts as it takes, goes to the
+  // private bucket data-exports and is recorded at once (export_stored: the parts expire 7 days on whatever happens
+  // next); the person gets one email with a link per part, valid 7 days, in their language, and the request is
+  // fulfilled. One build at a time (export_begin): a delivery arriving while another builds is retried later. A
+  // retry skips what was done: the stored parts (`parts=<n>`), the email (also idempotent at Resend). No email
+  // address on the account: nothing is built, the team is told and the request closed. The team also hears of
+  // files left out.
   async "export.requested"(p: { id: number; userId: string }, ctx) {
-    const email = await accountEmail(p.userId);
-    await toTeam(
-      ctx,
-      "[data export] request",
-      [
-        ["Account", p.userId],
-        ["Email", email ?? "(none)"],
-        ["Promised", "a download link by email, usually within 24 hours (the app says so)"],
-      ],
-      `export-${p.id}`,
-      email,
+    const id = requestId(p.id);
+    const userId = uuid(p.userId, "userId");
+    const state = must(await admin.rpc("export_begin", { p_id: id }), "export begin") as string;
+    if (state === "gone" || state === "done") return;
+    if (state === "busy") throw new Error(`export ${id}: another delivery is building it`);
+    const email = await accountEmail(userId);
+    if (!email) {
+      await toTeam(
+        ctx,
+        "[data export] no email address",
+        [
+          ["Account", userId],
+          ["Request", String(id)],
+          ["What happened", "No export was built: the account has no email address to send it to. Request closed."],
+          ["What to do", "Reach the person another way if needed; they can ask again once they add an email."],
+        ],
+        `export-team-${id}`,
+        null,
+      );
+      check(await admin.rpc("export_closed", { p_id: id, p_reason: "no_email" }), "export closed");
+      return;
+    }
+    let parts = Number(ctx.value("parts") ?? 0);
+    if (!parts) {
+      const built = await buildExport(userId, async (part, archive) => {
+        const path = partPath(userId, id, part);
+        await storeExport(path, archive);
+        return path;
+      });
+      if (!built) return;
+      await removeExtraParts(userId, id, built.paths.length);
+      const kept = must(await admin.rpc("export_stored", { p_id: id, p_paths: built.paths }), "export stored");
+      if (kept !== true) {
+        // The request went with its account while the parts were built: nothing may outlive it.
+        await removeParts(built.paths);
+        return;
+      }
+      const left = built.tooLarge.length + built.missing.length;
+      if (left > 0) await ctx.record(`omitted=${built.tooLarge.length},${built.missing.length}`);
+      await ctx.record(`parts=${built.paths.length}`);
+      parts = built.paths.length;
+    }
+    const { data: profile, error } = await admin.from("profiles").select("language").eq("id", userId).maybeSingle();
+    if (error) throw new Error(`profile ${userId}: ${error.message}`);
+    const links: string[] = [];
+    for (let part = 1; part <= parts; part++) links.push(await exportLink(partPath(userId, id, part), part, parts));
+    await ctx.once(
+      "email",
+      () =>
+        sendEmail(
+          email,
+          renderExportReady(language(profile?.language), links),
+          `export-${id}`,
+          supportReplyTo(),
+        ),
     );
+    const omitted = ctx.value("omitted");
+    if (omitted) {
+      const [tooLarge, missing] = omitted.split(",").map(Number);
+      await toTeam(
+        ctx,
+        "[data export] files left out",
+        [
+          ["Account", userId],
+          ["Larger than one part (EXPORT_MAX_BYTES)", `${tooLarge}: listed in data.json, send them another way`],
+          ["Listed in the database, missing in R2", `${missing}: listed in data.json`],
+        ],
+        `export-team-${id}`,
+        email,
+      );
+    }
+    if (must(await admin.rpc("export_ready", { p_id: id }), "export ready") !== true) {
+      console.warn(`db-events: export ${id} emailed, but its request has no stored parts any more`);
+    }
+  },
+
+  // An export past its 7 days (private.queue_export_expiries): its parts go, the request remembers it.
+  async "export.expired"(p: { id: number }) {
+    const id = requestId(p.id);
+    const { data: paths, error } = await admin.rpc("export_files", { p_id: id });
+    if (error) throw new Error(`export files ${id}: ${error.message}`);
+    if (Array.isArray(paths) && paths.length > 0) await removeParts(paths as string[]);
+    check(await admin.rpc("export_file_deleted", { p_id: id }), "export file deleted");
+  },
+
+  // Objects of the data-exports bucket no request refers to any more (private.queue_export_sweep): a build that
+  // failed for good after storing some parts. Deleted, and logged.
+  async "export.sweep"(p: { paths: string[] }) {
+    const paths = (p.paths ?? []).filter((path) => /^[0-9a-f-]{36}\/[0-9]+-[0-9]+\.zip$/.test(path));
+    if (paths.length === 0) return;
+    console.warn(`db-events: ${paths.length} export parts no request refers to, deleted`);
+    await removeParts(paths);
+  },
+
+  // A decision by a person on the team (private.record_decision): the statement of reasons, emailed in the
+  // person's language with Reply-To the support address, and pushed when no other push says it (a removed
+  // message, a review, a ban, a selfie asked again: `repeat`, the state didn't change so account.moderation pushed
+  // nothing). A removed message is told once Stream shows it removed: sophros logs the removal just before making
+  // it, so until then the event is retried, and one that never happened ends in the dead letters.
+  async "moderation.decision"(p: { id: number; repeat?: boolean }, ctx) {
+    const [decision] = must(await admin.rpc("moderation_decision", { p_id: p.id }), "decision") as {
+      user_id: string;
+      kind: Decision;
+      category: string;
+      terms_anchor: string | null;
+      details: string | null;
+      target: string | null;
+      language: string | null;
+    }[];
+    // The account was erased since: nobody to tell.
+    if (!decision) return;
+    if (!(decision.kind in decisionCopy)) throw new Error(`decision ${p.id}: unknown kind ${decision.kind}`);
+    if (decision.kind === "message_deleted" && !ctx.done("removed")) {
+      await messageRemoved(decision.target?.split("/")[1] ?? "");
+      await ctx.record("removed");
+    }
+    const lang = language(decision.language);
+    const email = await accountEmail(decision.user_id);
+    if (email) {
+      await ctx.once("email", () =>
+        sendEmail(
+          email,
+          renderDecision(lang, decision.kind, decision.category, decision.terms_anchor, decision.details),
+          `decision-${p.id}`,
+          supportReplyTo(),
+        ));
+    } else {
+      console.warn(`db-events: decision ${p.id} not emailed, the account has no email address`);
+    }
+    if (decision.kind in decisionPush) {
+      const kind = decision.kind as keyof typeof decisionPush;
+      await ctx.push("push", decision.user_id, {
+        // Without an email, the push can't point to one.
+        ...(email ? decisionPush : decisionPushAlone)[kind][lang],
+        data: { kind: "moderation" },
+        // A hold replaces the moderation push before it on the lock screen; each removed message is its own.
+        collapseId: kind === "message_deleted" ? `decision-${p.id}` : `moderation-${decision.user_id}`,
+      });
+    } else if (decision.kind === "account_selfie" && p.repeat) {
+      // Only while the selfie is still due: lifted or changed since, that change speaks for itself.
+      const { data: profile, error } = await admin.from("profiles").select("moderation").eq("id", decision.user_id)
+        .maybeSingle();
+      if (error) throw new Error(`profile ${decision.user_id}: ${error.message}`);
+      if (profile?.moderation !== "selfie") return;
+      await ctx.push("push", decision.user_id, {
+        ...moderationPush.selfieRequested[lang],
+        data: { kind: "moderation" },
+        collapseId: `moderation-${decision.user_id}`,
+      });
+    }
   },
 
   // A hold was lifted after a selfie check: the selfies go (bucket verification-selfies). Held again
@@ -646,12 +889,74 @@ export const handlers: Record<string, Handler> = {
       .maybeSingle();
     if (error) throw new Error(`profile ${p.userId}: ${error.message}`);
     if (profile?.moderation) return;
-    const paths = must(await admin.rpc("selfie_paths", { p_user: p.userId }), "selfie paths") as string[];
-    if (paths.length > 0) {
-      const removed = await admin.storage.from("verification-selfies").remove(paths);
-      if (removed.error) throw new Error(`selfies of ${p.userId}: ${removed.error.message}`);
+    await eraseSelfies(uuid(p.userId, "userId"));
+  },
+
+  // A banned account's selfies, kept 6 months for an appeal (private.queue_retention_purges). Reopened since,
+  // or banned again more recently: not due, the database says.
+  async "selfie.expired"(p: { userId: string }) {
+    const userId = uuid(p.userId, "userId");
+    if (!await due("banned_selfies_due", { p_user: userId })) return;
+    await eraseSelfies(userId);
+  },
+
+  // An account kept for safety, its case closed over a year ago: erased like delete-account erases one. Its
+  // chats were ended at its deletion, so most went a year after it (`chat.erase`); any left go here, with what
+  // either member sent in them. Then its Stream user, its media and selfies, and last its Auth user, which takes
+  // its rows with it (a banned account's moderation history stays, for its 3 years). A hold or a report
+  // reopened since keeps it: the database says whether it is still due, until the Auth user is gone.
+  async "account.purge"(p: { userId: string }, ctx) {
+    const userId = uuid(p.userId, "userId");
+    if (!ctx.done("auth") && !await due("retained_account_due", { p_user: userId })) return;
+    // Its matches, read once and kept in the steps: they go with the Auth user.
+    let ids = ctx.value("matches");
+    if (ids === undefined) {
+      const rows = must(
+        await admin.from("matches").select("id").or(`user_a.eq.${userId},user_b.eq.${userId}`),
+        "matches",
+      ) as { id: string }[];
+      ids = rows.map((m) => m.id).join(",");
+      await ctx.record(`matches=${ids}`);
     }
-    check(await admin.rpc("forget_selfies", { p_user: p.userId }), "forget selfies");
+    const matches = ids === "" ? [] : ids.split(",");
+    for (const m of matches) await ctx.once(`chat-${m}`, () => eraseChat(m));
+    await ctx.once("chat-user", () => eraseChatUser(userId));
+    await ctx.once("media", () => eraseMedia(userId));
+    await ctx.once("selfies", () => eraseSelfies(userId));
+    await ctx.once("auth", () => deleteAuthUser(userId));
+    // After the Auth user: erasing its matches tracked their chats again.
+    for (const m of matches) check(await admin.rpc("chat_erased", { p_match: m }), "chat erased");
+  },
+
+  // A chat that ended over a year ago (an ended match, or one kept when an account was deleted): its media
+  // and its channel go. Erased already with a kept account: nothing to do.
+  async "chat.erase"(p: { matchId: string }, ctx) {
+    const matchId = uuid(p.matchId, "matchId");
+    if (!ctx.done("chat") && !await due("chat_erase_due", { p_match: matchId })) return;
+    await ctx.once("chat", () => eraseChat(matchId));
+    check(await admin.rpc("chat_erased", { p_match: matchId }), "chat erased");
+  },
+
+  // Once, after migration 20260930000201: the frozen channels Stream still has, oldest first, so those whose
+  // match row went before chat_retention existed get tracked (public.track_frozen_chats) and erased a year
+  // after their last update. Resumes from the last channel it recorded.
+  async "chat.sweep"(_p: Record<string, never>, ctx) {
+    const pageSize = 30;
+    let after = ctx.value("after") ?? "1970-01-01T00:00:00Z";
+    for (;;) {
+      const page = await viaProvider("stream", () =>
+        stream().queryChannelsRequest(
+          { type: "messaging", frozen: true, created_at: { $gt: after } },
+          [{ created_at: 1 }],
+          { limit: pageSize, message_limit: 0, state: false, watch: false, presence: false },
+        )) as { channel: { id: string; created_at?: string; updated_at?: string } }[];
+      if (page.length === 0) return;
+      const chats = page.map(({ channel }) => ({ id: channel.id, at: channel.updated_at ?? channel.created_at }));
+      check(await admin.rpc("track_frozen_chats", { p_chats: chats }), "track frozen chats");
+      after = page.at(-1)!.channel.created_at ?? after;
+      await ctx.record(`after=${after}`);
+      if (page.length < pageSize) return;
+    }
   },
 
   // drafft tempo's free boost of the week was credited (private.credit_weekly_boosts). Tapping it
@@ -671,8 +976,9 @@ export const handlers: Record<string, Handler> = {
 
 /** Moderation news the person waits for, pushed: a hold lifted (reopened after a ban, a selfie approved,
  * or a review cleared), a selfie asked for, or asked again after one wasn't enough. Never a new
- * restriction (review, ban): the app's own screen says those. Only while the state is still the one this
- * event is about: a later change speaks for itself. The open app hides it (its screen already changed). */
+ * restriction (review, ban): the app's own screen says those, and a person's decision is pushed with its
+ * statement (`moderation.decision`). Only while the state is still the one this event is about: a later change
+ * speaks for itself. The open app hides it (its screen already changed). */
 async function pushModeration(
   ctx: EventContext,
   p: { userId: string; state?: string | null; previous: string | null },
@@ -695,6 +1001,82 @@ async function pushModeration(
     // One moderation push at a time: a newer state replaces the older one on the lock screen.
     collapseId: `moderation-${p.userId}`,
   });
+}
+
+/** Emails a reply written in sophros once, and records it sent. */
+async function sendSupportReply(id: number) {
+  const [reply] = must(await admin.rpc("support_reply", { p_id: id }), "support reply") as {
+    reference: string;
+    email: string;
+    language: string;
+    topic: string;
+    message: string;
+    body: string;
+    sent_at: string | null;
+    direction: "in" | "out";
+  }[];
+  if (!reply || reply.sent_at) return;
+  // A member's own message (received by email) is never sent back to them.
+  if (reply.direction !== "out") {
+    console.warn(`db-events: support.reply ${id} is a received message, not sent`);
+    return;
+  }
+  await sendEmail(
+    reply.email,
+    renderSupportReply(language(reply.language), reply),
+    `support-reply-${id}`,
+    supportReplyTo(),
+  );
+  check(await admin.rpc("support_reply_sent", { p_id: id }), "support reply sent");
+}
+
+/** Records on the message why its reply wasn't sent. Never throws: the handler's own error is the one the outbox
+ * gets. */
+async function supportReplyFailed(id: number, error: unknown) {
+  try {
+    check(
+      await admin.rpc("support_reply_sent", { p_id: id, p_error: String(error).slice(0, 500) }),
+      "support reply failed",
+    );
+  } catch (recordError) {
+    console.error(`db-events: support.reply ${id}: the failure could not be recorded`, recordError);
+  }
+}
+
+type DueRpc = "retained_account_due" | "chat_erase_due" | "banned_selfies_due";
+
+/** Whether a purge is still due, asked of the database at delivery (the state may have changed since queued). */
+async function due(rpc: DueRpc, args: Record<string, string>): Promise<boolean> {
+  const result = await admin.rpc(rpc, args);
+  check(result, rpc);
+  return result.data === true;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** A request id from a payload. */
+function requestId(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new Error(`invalid request id`);
+  return value;
+}
+
+/** An id from a payload, checked before it reaches a filter or an erasure. */
+function uuid(value: unknown, name: string): string {
+  if (typeof value !== "string" || !UUID.test(value)) throw new Error(`invalid ${name}: ${String(value).slice(0, 60)}`);
+  return value;
+}
+
+/** Throws until Stream shows the message removed (soft-deleted, or gone altogether: HTTP 404 or code 16). */
+async function messageRemoved(messageId: string) {
+  if (!messageId) throw new Error("decision: no message id");
+  try {
+    const { message } = await viaProvider("stream", () => stream().getMessage(messageId));
+    if (message.type === "deleted" || message.deleted_at) return;
+  } catch (error) {
+    if (isGone(error)) return;
+    throw error;
+  }
+  throw new Error(`decision: message ${messageId} not removed yet`);
 }
 
 async function reviewWasSelfie(userId: string): Promise<boolean> {

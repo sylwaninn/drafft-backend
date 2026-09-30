@@ -3,7 +3,7 @@
 import { StreamChat } from "npm:stream-chat@9";
 import { env } from "./env.ts";
 import { admin, must } from "./supabase.ts";
-import { viaProvider } from "./providers.ts";
+import { isGone, viaProvider } from "./providers.ts";
 import { language, messageSent, someone } from "./texts.ts";
 
 let client: StreamChat | undefined;
@@ -114,5 +114,67 @@ export async function sendOnce(
   } catch (error) {
     if (String(error).includes("already exists")) return;
     throw error;
+  }
+}
+
+/** A Stream message as the server reads it back. `user` is the sender, set by Stream; attachments and custom
+ * fields are whatever the sender's app wrote. */
+export type StreamMessage = {
+  id: string;
+  text?: string;
+  type?: string;
+  user?: { id?: unknown };
+  created_at?: string;
+  updated_at?: string;
+  deleted_at?: string;
+  quoted_message_id?: string;
+  attachments?: { type?: string; key?: unknown; poster_key?: unknown; [field: string]: unknown }[];
+  /** The latest reactions on the message (Stream returns up to 10), whoever left them. */
+  latest_reactions?: { type?: string; user?: { id?: unknown }; user_id?: unknown; created_at?: string }[];
+};
+
+const PAGE = 300;
+
+/**
+ * Every message of a match's chat, oldest first, read with the secret (an ended match's frozen channel too), or
+ * null when Stream has no such channel (nobody wrote, or erased). Asked first with a search, which never creates
+ * anything: `channel.query` on a channel Stream doesn't have would try to create it, and fail. Only a clear
+ * "gone" on the first page (the channel deleted in between) counts as no channel; any other error throws.
+ */
+export async function channelMessages(matchId: string): Promise<StreamMessage[] | null> {
+  const found = await viaProvider(
+    "stream",
+    () =>
+      stream().queryChannelsRequest({ type: "messaging", id: { $eq: matchId } }, [], {
+        limit: 1,
+        message_limit: 0,
+        state: false,
+        watch: false,
+        presence: false,
+      }),
+  );
+  if (found.length === 0) return null;
+  const channel = stream().channel("messaging", matchId);
+  let all: StreamMessage[] = [];
+  let before: string | undefined;
+  for (;;) {
+    let messages: StreamMessage[];
+    try {
+      const res = await viaProvider("stream", () =>
+        channel.query({
+          state: true,
+          watch: false,
+          presence: false,
+          messages: { limit: PAGE, ...(before ? { id_lt: before } : {}) },
+        }));
+      messages = (res.messages ?? []) as unknown as StreamMessage[];
+    } catch (error) {
+      if (before === undefined && isGone(error)) return null;
+      throw error;
+    }
+    all = [...messages, ...all];
+    // Oldest first: the next page is before the first one.
+    if (messages.length < PAGE) return all;
+    before = messages[0].id;
   }
 }

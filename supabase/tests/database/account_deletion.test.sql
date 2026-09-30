@@ -84,8 +84,8 @@ select ok((select deleted_at is not null and paused from public.profiles where i
 select is((select legal_basis || ' ' || basis || ' ' || jsonb_array_length(refs -> 'reports')
   from private.account_deletions where user_id = (select bo from ids)), 'member_safety report 1',
   'the record says why: the basis, the report, members'' safety');
-select is((select identities ->> 'email' from private.account_deletions where user_id = (select bo from ids)),
-  'bo@audit.test', 'the original email is kept in the record');
+select is((select identities from private.account_deletions where user_id = (select bo from ids)),
+  '{"email": true, "phone": false, "oauth": []}'::jsonb, 'the record says which identities there were, never their values');
 select ok((select count(*) > 0 from private.deleted_identities where user_id = (select bo from ids)),
   'its identities are digested, to link a new sign-up');
 

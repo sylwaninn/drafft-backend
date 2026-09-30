@@ -36,3 +36,23 @@ Deno.test("a reminder and a daily summary", () => {
   assertStringIncludes(daily.text, "Delivered: 120");
   assertStringIncludes(daily.text, "Dropped as stale: 2");
 });
+
+Deno.test("a daily job behind, and what the jobs deleted", () => {
+  const incident = renderOpsAlert("incident", 3, {
+    jobsBehind: [{ job: "privacy-purge", lastRunAt: "2026-09-28T03:47:00Z" }, {
+      job: "ana@example.com",
+      lastRunAt: null,
+    }],
+  });
+  assertStringIncludes(incident.text, "privacy-purge: last completed 2026-09-28 03:47 UTC");
+  assert(!incident.text.includes("@"), incident.text);
+  const daily = renderOpsAlert("daily", null, {
+    jobs: {
+      "privacy-purge": { reports: 2, admin_audit: 5 },
+      "outbox-cleanup": { delivered: 40, deadLetters: { "like.received": 3, "support.reply": 1 } },
+    },
+  });
+  assertStringIncludes(daily.text, "privacy-purge: reports 2, admin_audit 5");
+  assertStringIncludes(daily.text, "outbox-cleanup: delivered 40, deadLetters 4");
+  assertStringIncludes(renderOpsAlert("daily", null, {}).text, "no run in the last 24 hours");
+});

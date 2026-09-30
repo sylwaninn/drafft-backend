@@ -15,10 +15,19 @@ export class ProviderError extends Error {
     readonly transient: boolean,
     message: string,
     readonly status?: number,
+    /** The provider's own error code, when it has one (Stream: 16 for something it doesn't have). */
+    readonly code?: number,
   ) {
     super(message);
     this.name = "ProviderError";
   }
+}
+
+/** The provider doesn't have it: never created, or deleted already. Only a clear answer counts: HTTP 404, or
+ * Stream's code 16. */
+export function isGone(error: unknown): boolean {
+  const e = error as { status?: unknown; code?: unknown } | null;
+  return e?.status === 404 || e?.code === 16;
 }
 
 /** 408, 425, 429 and 5xx: the provider, not the request. */
@@ -64,12 +73,13 @@ export async function viaProvider<T>(provider: Provider, fn: () => Promise<T>): 
   } catch (error) {
     if (error instanceof ProviderError) throw error;
     const message = error instanceof Error ? error.message : String(error);
-    const status = (error as { status?: unknown } | null)?.status;
+    const { status, code } = (error ?? {}) as { status?: unknown; code?: unknown };
     throw new ProviderError(
       provider,
       isTransient(error),
       `${provider}: ${message}`,
       typeof status === "number" ? status : undefined,
+      typeof code === "number" ? code : undefined,
     );
   }
 }

@@ -56,13 +56,22 @@ The app-side list lives in `drafft/TODO.md`.
       asks for the SMS code, so the hook must be live before any public build.
 - [x] **Reports.** Reviewed and closed in sophros (the team's dashboard). A report never holds an account by
       itself: the team decides.
+- [ ] **sophros: reasons and conversation access.** Send `p_category` (required now) and `p_details` with
+      every decision (README, "Statements of reasons"), ask for a real reason before opening a conversation and
+      show its basis (`admin_conversation_access`), with the admin override and its `p_override_basis`. Ships
+      before this backend change.
+- [ ] **Privacy policy, team access.** Name the admin override (a legal request or members' safety) in
+      "Access by the drafft team" (drafft-web).
 - [ ] **sophros per environment.** Cloudflare Access applications (staging, production), the staff in
       `private.staff` of each database, the Workers' secrets: see the sophros README.
-- [ ] **Support replies landing back.** Replies written in sophros are emailed (db-events, `support.reply`)
-      with Reply-To SUPPORT_INBOX, so answers reach the team's mailbox, not the thread. Once the domain is on
-      Cloudflare: Email Routing for `support@getdrafft.com` to an Email Worker that reads the `[DR-XXXXXX]`
-      reference in the subject and posts the message to a `support-inbound` function (shared secret), which
-      adds it to `private.support_messages` and reopens the request.
+- [ ] **Support replies landing back.** Built (README, Support by email: the support mail Worker, `support-inbound`,
+      the reference in every support subject). Still to do by hand, in order: `SUPPORT_INBOUND_SECRET` in both
+      projects; Email Routing on `getdrafft.com` (its MX, DKIM and SPF records, replacing `v=spf1 -all`); the
+      team's mailbox as a verified destination; the Worker's secrets (`SUPPORT_INBOUND_SECRET`, `FALLBACK_ADDRESS`)
+      and deploy, staging then production; the routes `support-staging@` and `support@` to the Workers; a test
+      email to support-staging@ with a request's reference; then `SUPPORT_ADDRESS` in both projects. sophros: show
+      `direction = 'in'` messages as the member's. Later: postal-mime 4.0.1 or newer once it is past
+      the dependency age window (address parser fixes; the Worker already trusts only the envelope sender).
 - [ ] **Privacy policy.** Mention device reports (model, iOS, app version, IP and country, for safety;
       `private.ips` kept 180 days after the last open, `private.devices`, last IP included, a year) and staff
       access to conversations when investigating.
@@ -83,8 +92,8 @@ The app-side list lives in `drafft/TODO.md`.
       SUPPORT_INBOX (`ops-alert`) and replay or discard from sophros (migration 20260928000121).
 - [ ] **Orphan uploads.** A ticket used but never registered leaves an object in R2: lifecycle rule or a
       weekly sweep of keys absent from `profile_media`.
-- [ ] **Chat attachments.** Checked silently after delivery (`chat-media`), never removed; not deleted when
-      a match ends (they are deleted with the uploader's account).
+- [x] **Chat attachments.** Checked silently after delivery (`chat-media`); erased with the chat a year after
+      the match ended (`chat.erase`), or with the uploader's account.
 - [ ] **Rate limits.** Per-user limits on media-upload-url, report_user and swipe bursts; review Auth rate
       limits in `config.toml`.
 - [ ] **Monitoring.** Sentry for Edge Functions; weekly `pg_stat_statements` review; alert on slow
@@ -92,11 +101,28 @@ The app-side list lives in `drafft/TODO.md`.
 
 ## Privacy (GDPR)
 
-- [ ] Data export (right of access): an Edge Function that bundles the profile, media keys, swipes,
-      matches, sessions and Stream messages.
-- [ ] Retention: purge `swipes` passes older than N months, delivered outbox rows (done, 7 days), handled
-      reports after the legal period.
-- [ ] Data processing agreements: Supabase, Cloudflare, Stream, moderation and SMS providers.
+- [x] Terms and sensitive-data consent recorded on the server (`accept_terms`, logged in
+      `private.consent_events`, required by `complete_onboarding`). Asking accounts onboarded before at
+      their next open is the app's part (`drafft`, `feat/sensitive-data-consent`).
+- [x] Data export (right of access): built and emailed automatically (db-events `export.requested`), in
+      parts of at most `EXPORT_MAX_BYTES` (under the Storage upload limit), one link per part valid 7 days, files
+      deleted after 7 days.
+- [x] Retention on the privacy policy's schedule (`privacy-purge`, see README "Privacy and data retention"):
+      reports, moderation records, the audit log, identity fingerprints, bans, help requests, purchases, dead
+      letters (never a failed erasure). Both daily jobs are watched by `ops_check`. Swipes stay for the
+      account's life, as the policy says.
+- [x] Accounts kept for safety, frozen chats and their media, banned accounts' selfies: erased on the policy's
+      schedule (`retention-purge-external`: `account.purge`, `chat.erase`, `selfie.expired`).
+- [ ] **Backups.** Enable Point-in-Time Recovery (or daily backups) with 30 days of retention at most before
+      launch (Supabase dashboard, production): the policy says backups are erased after 30 days.
+- [ ] **Auth audit log.** `auth.audit_log_entries` keeps sign-in events with IP addresses: purge them after 180
+      days like `private.ips`, or turn the database audit log off (Auth settings).
+- [ ] **Data processing agreements** signed with Supabase, Cloudflare, Stream, AWS (Rekognition), Twilio,
+      Resend and RevenueCat (and Sentry, PostHog when added), with the transfer safeguards the policy names.
+- [ ] **Sentry and PostHog**, when added: EU region (Germany), 90 days for crash reports and 13 months at most
+      for usage statistics, PostHog only after the in-app consent, deleted with the account.
+- [ ] **support@getdrafft.com** routed to sophros (see "Support replies landing back" above): the policy and
+      the terms give it as the address for rights requests and reports of illegal content.
 
 ## Scale, when numbers ask for it
 
