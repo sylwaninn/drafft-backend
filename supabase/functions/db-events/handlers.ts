@@ -12,7 +12,15 @@
 import { optionalEnv } from "../_shared/env.ts";
 import { type Push, pushToUser } from "../_shared/apns.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
-import { deleteAuthUser, eraseChat, eraseChatUser, eraseMedia, eraseSelfies, freezeChat } from "../_shared/erase.ts";
+import {
+  deleteAccount,
+  deleteAuthUser,
+  eraseChat,
+  eraseChatUser,
+  eraseMedia,
+  eraseSelfies,
+  freezeChat,
+} from "../_shared/erase.ts";
 import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
 import { buildExport, exportLink, partPath, removeExtraParts, removeParts, storeExport } from "../_shared/export.ts";
 import {
@@ -287,6 +295,25 @@ export const handlers: Record<string, Handler> = {
   // An account kept after its owner deleted it (retain_deleted_account): banned from chat for good, and every
   // Stream token issued so far revoked, so the app still holding one can't connect. Its channels were frozen
   // by match.ended. Never in Stream (never opened the chat): the ban creates the user, the revoke then holds.
+  // An account deleted by an admin on the member's request (sophros, admin_delete_account): the same deletion as
+  // delete-account (kept for safety or erased, decided again now), then the confirmation to the address the
+  // account had, in its language; a reply reaches support. The outcome is recorded: a retry after the erasure
+  // (the account gone) doesn't run it again, and the email goes once.
+  async "account.staff_delete"(
+    p: { userId: string; email: string | null; language: string | null; reference: string },
+    ctx,
+  ) {
+    if (!ctx.value("outcome")) await ctx.record(`outcome=${await deleteAccount(p.userId)}`);
+    if (!p.email) return;
+    await ctx.once("email", () =>
+      sendEmail(
+        p.email!,
+        renderNotice("accountDeleted", language(p.language)),
+        `account-deleted-${p.userId}`,
+        optionalEnv("SUPPORT_ADDRESS") ?? optionalEnv("SUPPORT_INBOX"),
+      ));
+  },
+
   async "account.soft_deleted"(p: { userId: string }, ctx) {
     await ctx.once("ban", () => setChatHeld(p.userId, true));
     await ctx.once("revoke", () => viaProvider("stream", () => stream().revokeUserToken(p.userId, new Date())));
