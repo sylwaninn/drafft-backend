@@ -1,8 +1,8 @@
-// Emails that aren't auth codes: news about the account (a hold lifted, a photo approved or refused on a
-// second look), the acknowledgement of a support request and a data export's link, in the person's language;
-// plus the team's copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register
-// as emails.ts (WORDING.md): the subject says the one thing (45 characters at most), the title repeats it, the
-// note is the one next step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject;
+// Emails that aren't auth codes: news about the account (a hold lifted, a photo approved on a second look, a
+// decision by the team with its statement of reasons), the acknowledgement of a support request and a data export's link, in the person's language;
+// plus the team's copies (SUPPORT_INBOX), in English, until the dashboard lists them. Same layout and register as emails.ts
+// (WORDING.md): the subject says the one thing (45 characters at most), the title repeats it, the note is the
+// one next step. In French the brand speaks as "on" ("On a revu ta photo"), never "nous" as the subject;
 // "l'équipe drafft" only names the team (the support reply's title).
 import { codeBox, color, escape, layout, paragraph, type Rendered, small, title } from "./emails.ts";
 import type { Language } from "./texts.ts";
@@ -11,7 +11,6 @@ export type Notice =
   | "accountRestored"
   | "accountReopened"
   | "photoApproved"
-  | "photoRefused"
   | "supportReceived"
   | "exportReady";
 
@@ -153,58 +152,6 @@ export const noticeCopy: Record<Notice, Record<Language, Copy>> = {
       title: "Je foto is goedgekeurd.",
       body: "We hebben hem opnieuw bekeken, zoals je vroeg: hij staat nu op je profiel.",
       note: "Open drafft om je profiel te bekijken.",
-    },
-  },
-  // A refused photo, refused again after the second look the person asked for.
-  photoRefused: {
-    en: {
-      subject: "Your photo can't go on your profile",
-      title: "Your photo can't go on your profile.",
-      body:
-        "We took a second look, as you asked: it doesn't fit the drafft photo guidelines, so it stays off your profile.",
-      note: "You can add another photo anytime in drafft.",
-    },
-    fr: {
-      subject: "Ta photo ne peut pas aller sur ton profil",
-      title: "Ta photo ne peut pas aller sur ton profil.",
-      body:
-        "On l'a revue, comme tu l'as demandé\u00A0: elle ne respecte pas les règles photo de drafft, elle reste donc hors de ton profil.",
-      note: "Tu peux ajouter une autre photo quand tu veux dans drafft.",
-    },
-    es: {
-      subject: "Tu foto no puede ir en tu perfil",
-      title: "Tu foto no puede ir en tu perfil.",
-      body:
-        "La hemos vuelto a revisar, como pediste: no cumple las normas de fotos de drafft, así que se queda fuera de tu perfil.",
-      note: "Puedes añadir otra foto cuando quieras en drafft.",
-    },
-    de: {
-      subject: "Dein Foto kann nicht in dein Profil",
-      title: "Dein Foto kann nicht in dein Profil.",
-      body:
-        "Wir haben es noch einmal geprüft, wie du es wolltest: Es entspricht nicht den Foto-Richtlinien von drafft und kommt deshalb nicht in dein Profil.",
-      note: "Du kannst in drafft jederzeit ein anderes Foto hinzufügen.",
-    },
-    it: {
-      subject: "La tua foto non può andare sul profilo",
-      title: "La tua foto non può andare sul profilo.",
-      body:
-        "L'abbiamo ricontrollata, come hai chiesto: non rispetta le regole sulle foto di drafft, quindi resta fuori dal tuo profilo.",
-      note: "Puoi aggiungere un'altra foto quando vuoi su drafft.",
-    },
-    pt: {
-      subject: "A tua foto não pode ir para o perfil",
-      title: "A tua foto não pode ir para o perfil.",
-      body:
-        "Voltámos a vê-la, como pediste: não cumpre as regras de fotos do drafft, por isso fica fora do teu perfil.",
-      note: "Podes adicionar outra foto quando quiseres no drafft.",
-    },
-    nl: {
-      subject: "Je foto kan niet op je profiel",
-      title: "Je foto kan niet op je profiel.",
-      body:
-        "We hebben hem opnieuw bekeken, zoals je vroeg: hij voldoet niet aan de fotoregels van drafft en komt daarom niet op je profiel.",
-      note: "Je kunt in drafft altijd een andere foto toevoegen.",
     },
   },
   // A support request, received: its reference follows the body. Fixed text, nothing the form typed: the
@@ -442,7 +389,7 @@ export const decisionCopy: Record<Decision, Record<Language, { subject: string; 
     fr: {
       subject: "Une photo ne peut pas aller sur ton profil",
       title: "Une photo ne peut pas aller sur ton profil.",
-      body: "Une personne de l'équipe drafft a examiné une de tes photos et l'a refusée.",
+      body: "Quelqu'un de l'équipe a examiné une de tes photos et l'a refusée.",
     },
     es: {
       subject: "Una foto no puede ir en tu perfil",
@@ -479,7 +426,7 @@ export const decisionCopy: Record<Decision, Record<Language, { subject: string; 
     fr: {
       subject: "On a supprimé un de tes messages",
       title: "On a supprimé un de tes messages.",
-      body: "Une personne de l'équipe drafft a supprimé un de tes messages dans une discussion.",
+      body: "Quelqu'un de l'équipe a supprimé un de tes messages dans une discussion.",
     },
     es: {
       subject: "Hemos eliminado uno de tus mensajes",
@@ -517,7 +464,7 @@ export const decisionCopy: Record<Decision, Record<Language, { subject: string; 
       subject: "On vérifie ton compte",
       title: "On vérifie ton compte.",
       body:
-        "Jusqu'à ce qu'une personne de l'équipe drafft l'ait vérifié, ton profil est masqué et tes discussions sont en lecture seule.",
+        "Jusqu'à ce que quelqu'un de l'équipe l'ait vérifié, ton profil est masqué et tes discussions sont en lecture seule.",
     },
     es: {
       subject: "Estamos revisando tu cuenta",
@@ -601,7 +548,7 @@ export const decisionCopy: Record<Decision, Record<Language, { subject: string; 
       subject: "Ton compte drafft est fermé",
       title: "Ton compte est fermé.",
       body:
-        "Une personne de l'équipe drafft a fermé ton compte définitivement\u00A0: ton profil est masqué et tu ne peux plus t'inscrire à nouveau.",
+        "Quelqu'un de l'équipe a fermé ton compte définitivement\u00A0: ton profil est masqué et tu ne peux plus t'inscrire à nouveau.",
     },
     es: {
       subject: "Tu cuenta de drafft está cerrada",
@@ -744,13 +691,13 @@ export const reasonCopy: Record<ReasonCategory, Record<Language, string>> = {
     nl: "een beperking, blokkering of ban omzeilen",
   },
   photo_guidelines: {
-    en: "the photo doesn't fit drafft's photo guidelines",
-    fr: "la photo ne respecte pas les règles photo de drafft",
-    es: "la foto no cumple las normas de fotos de drafft",
-    de: "das Foto entspricht nicht den Foto-Richtlinien von drafft",
-    it: "la foto non rispetta le regole sulle foto di drafft",
-    pt: "a foto não cumpre as regras de fotos do drafft",
-    nl: "de foto voldoet niet aan de fotoregels van drafft",
+    en: "the photo breaks the community guidelines on profile photos",
+    fr: "la photo ne respecte pas les règles de la communauté sur les photos de profil",
+    es: "la foto no cumple las normas de la comunidad sobre las fotos de perfil",
+    de: "das Foto verstößt gegen die Community-Regeln für Profilfotos",
+    it: "la foto non rispetta le regole della community sulle foto del profilo",
+    pt: "a foto não cumpre as regras da comunidade sobre fotos de perfil",
+    nl: "de foto voldoet niet aan de communityregels voor profielfoto's",
   },
   identity_check: {
     en: "we need to confirm your photos are of you",
@@ -766,81 +713,144 @@ export const reasonCopy: Record<ReasonCategory, Record<Language, string>> = {
     fr: "un manquement aux conditions d'utilisation de drafft",
     es: "un incumplimiento de las condiciones de uso de drafft",
     de: "ein Verstoß gegen die Nutzungsbedingungen von drafft",
-    it: "una violazione delle condizioni d'uso di drafft",
+    it: "una violazione dei termini di utilizzo di drafft",
     pt: "uma violação dos termos de utilização do drafft",
     nl: "een schending van de gebruiksvoorwaarden van drafft",
   },
 };
 
-/** Around every statement: the reason line, the rule, the team's note, how to contest. */
-export const statementCopy: Record<Language, { why: string; rule: string; note: string; contest: string }> = {
+/** A section of the terms of use (private.reason_categories.terms_anchor), as its heading reads on the page. */
+export type TermsAnchor = "eligibility" | "community" | "moderation";
+
+export const termsSections: Record<TermsAnchor, Record<Language, string>> = {
+  eligibility: {
+    en: "To use drafft",
+    fr: "Pour utiliser drafft",
+    es: "Para usar drafft",
+    de: "Voraussetzungen für drafft",
+    it: "Per usare drafft",
+    pt: "Para usar o drafft",
+    nl: "Om drafft te gebruiken",
+  },
+  community: {
+    en: "Community guidelines",
+    fr: "Règles de la communauté",
+    es: "Normas de la comunidad",
+    de: "Community-Regeln",
+    it: "Regole della community",
+    pt: "Regras da comunidade",
+    nl: "Communityregels",
+  },
+  moderation: {
+    en: "Moderation and sanctions",
+    fr: "Modération et sanctions",
+    es: "Moderación y sanciones",
+    de: "Moderation und Sanktionen",
+    it: "Moderazione e sanzioni",
+    pt: "Moderação e sanções",
+    nl: "Moderatie en sancties",
+  },
+};
+
+/** The terms of use in the person's language, at a section when there is one. */
+export function termsLink(lang: Language, anchor: TermsAnchor | null): string {
+  return `https://getdrafft.com/${lang === "en" ? "" : `${lang}/`}terms${anchor ? `#${anchor}` : ""}`;
+}
+
+/** Around every statement: the reason line, the rule (a section of the terms, or the terms as a whole), the
+ * team's note, how to contest. */
+export const statementCopy: Record<
+  Language,
+  { why: string; rule: string; rules: string; note: string; contest: string }
+> = {
   en: {
     why: "Why: {reason}.",
-    rule: "The rule is in drafft's terms of use.",
+    rule: "The rule: {section}, in drafft's terms of use.",
+    rules: "The rules are in drafft's terms of use.",
     note: "A note from the team",
     contest:
       "Think it's a mistake? Reply to this email, or write to us from You › Help › Help center in drafft: someone else on the team will look at it again.",
   },
   fr: {
     why: "Pourquoi\u00A0: {reason}.",
-    rule: "La règle figure dans les conditions d'utilisation de drafft.",
+    rule: "La règle\u00A0: {section}, dans les conditions d'utilisation de drafft.",
+    rules: "Les règles figurent dans les conditions d'utilisation de drafft.",
     note: "Un mot de l'équipe",
     contest:
       "Tu penses que c'est une erreur\u00A0? Réponds à cet e-mail, ou écris-nous depuis Toi › Aide › Centre d'aide dans drafft\u00A0: une autre personne de l'équipe réexaminera la décision.",
   },
   es: {
     why: "Motivo: {reason}.",
-    rule: "La norma está en las condiciones de uso de drafft.",
+    rule: "La norma: {section}, en las condiciones de uso de drafft.",
+    rules: "Las normas están en las condiciones de uso de drafft.",
     note: "Una nota del equipo",
     contest:
       "¿Crees que es un error? Responde a este correo o escríbenos desde Tú › Ayuda › Centro de ayuda en drafft: otra persona del equipo volverá a revisarlo.",
   },
   de: {
     why: "Grund: {reason}.",
-    rule: "Die Regel steht in den Nutzungsbedingungen von drafft.",
+    rule: "Die Regel: {section}, in den Nutzungsbedingungen von drafft.",
+    rules: "Die Regeln stehen in den Nutzungsbedingungen von drafft.",
     note: "Eine Notiz vom Team",
     contest:
       "Du hältst das für einen Fehler? Antworte auf diese E-Mail oder schreib uns in drafft unter Du › Hilfe › Hilfe-Center: Eine andere Person aus dem Team prüft es noch einmal.",
   },
   it: {
     why: "Motivo: {reason}.",
-    rule: "La regola è nelle condizioni d'uso di drafft.",
+    rule: "La regola: {section}, nei termini di utilizzo di drafft.",
+    rules: "Le regole sono nei termini di utilizzo di drafft.",
     note: "Una nota del team",
     contest:
       "Pensi che sia un errore? Rispondi a questa email o scrivici da Tu › Aiuto › Centro assistenza in drafft: un'altra persona del team la riesaminerà.",
   },
   pt: {
     why: "Motivo: {reason}.",
-    rule: "A regra está nos termos de utilização do drafft.",
+    rule: "A regra: {section}, nos termos de utilização do drafft.",
+    rules: "As regras estão nos termos de utilização do drafft.",
     note: "Uma nota da equipa",
     contest:
       "Achas que é um erro? Responde a este email ou escreve-nos em Tu › Ajuda › Centro de ajuda no drafft: outra pessoa da equipa volta a analisar.",
   },
   nl: {
     why: "Reden: {reason}.",
-    rule: "De regel staat in de gebruiksvoorwaarden van drafft.",
+    rule: "De regel: {section}, in de gebruiksvoorwaarden van drafft.",
+    rules: "De regels staan in de gebruiksvoorwaarden van drafft.",
     note: "Een berichtje van het team",
     contest:
       "Denk je dat het een fout is? Beantwoord deze e-mail of schrijf ons via Jij › Hulp › Helpcentrum in drafft: iemand anders van het team bekijkt het opnieuw.",
   },
 };
 
-/** A statement of reasons. An unknown category reads as `other`; `details` is the team's note, as written. */
-export function renderDecision(lang: Language, kind: Decision, category: string, details?: string | null): Rendered {
+/** A statement of reasons: `category` and `anchor` from the decision (moderation_decision), `details` the team's
+ * note, as written. A category this file doesn't know throws: the member is never told a vaguer reason. */
+export function renderDecision(
+  lang: Language,
+  kind: Decision,
+  category: string,
+  anchor: string | null,
+  details?: string | null,
+): Rendered {
   const c = decisionCopy[kind][lang];
   const f = statementCopy[lang];
-  const reason = (reasonCopy[category as ReasonCategory] ?? reasonCopy.other)[lang];
+  if (!(category in reasonCopy)) throw new Error(`statement: unknown reason category ${category}`);
+  if (anchor !== null && !(anchor in termsSections)) throw new Error(`statement: unknown terms section ${anchor}`);
+  const section = anchor as TermsAnchor | null;
+  const reason = reasonCopy[category as ReasonCategory][lang];
   const why = f.why.replace("{reason}", reason);
+  const rule = section ? f.rule.replace("{section}", termsSections[section][lang]) : f.rules;
+  const link = termsLink(lang, section);
   const note = details?.trim();
   const rows = [
     title(c.title),
     paragraph(escape(c.body)),
     paragraph(`<strong>${escape(why)}</strong>`),
-    small(f.rule, color.body),
+    paragraph(`${escape(rule)}<br><a href="${escape(link)}" style="color:${color.ink}">${escape(link)}</a>`),
   ];
   if (note) rows.push(muted(`${escape(f.note)}<br>${escape(note).replace(/\n/g, "<br>")}`));
   rows.push(small(f.contest, color.mute));
-  const text = [c.title, "", c.body, "", why, f.rule, ...(note ? ["", f.note, note] : []), "", f.contest].join("\n");
+  const text = [c.title, "", c.body, "", why, rule, link, ...(note ? ["", f.note, note] : []), "", f.contest].join(
+    "\n",
+  );
   return { subject: c.subject, html: layout(lang, c.subject, rows), text };
 }
 

@@ -17,6 +17,7 @@ import { isReservedAddress, sendEmail } from "../_shared/mailer.ts";
 import { buildExport, exportLink, partPath, removeExtraParts, removeParts, storeExport } from "../_shared/export.ts";
 import {
   type Decision,
+  decisionCopy,
   renderDecision,
   renderExportReady,
   renderNotice,
@@ -25,11 +26,12 @@ import {
 } from "../_shared/notices.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
 import { moderateImage, moderationConfigured } from "../_shared/moderation.ts";
-import { type Provider, ProviderError, trackProviders, viaProvider } from "../_shared/providers.ts";
+import { isGone, type Provider, ProviderError, trackProviders, viaProvider } from "../_shared/providers.ts";
 import { ensureChannel, ensureUsers, sendOnce, setChatHeld, stream } from "../_shared/stream.ts";
 import { admin, check, must } from "../_shared/supabase.ts";
 import {
   decisionPush,
+  decisionPushAlone,
   type Language,
   language,
   likeReceived,
@@ -526,9 +528,9 @@ export const handlers: Record<string, Handler> = {
     );
   },
 
-  // A person decided (review_media, from the dashboard). A refusal reaches the owner like Rekognition's:
-  // the same push, and an email too when they had asked for that second look (as an approval is, see
-  // media.approved_on_review). An approval needs nothing more: the open app hears `media` on Realtime.
+  // A person decided (review_media, from the dashboard). A refusal reaches the owner like Rekognition's: the same
+  // push. The email is the statement of reasons (`moderation.decision`, recorded with the refusal), never a second
+  // one. An approval needs nothing more: the open app hears `media` on Realtime.
   // Moderation news, not an optional notification: no notify_* setting applies (same as media.created).
   async "media.reviewed"(p: {
     mediaId: string;
@@ -543,15 +545,7 @@ export const handlers: Record<string, Handler> = {
     if (error) throw new Error(`media ${p.mediaId}: ${error.message}`);
     // Deleted, or sent for another look since: that decision will speak for itself.
     if (media?.status !== "rejected") return;
-    const lang = await pushPhotoRefused(ctx, p.userId, p.mediaId);
-    if (!p.secondLook || !lang) return;
-    const email = await accountEmail(p.userId);
-    if (!email) return;
-    // One email per decision: a photo can be refused, sent back, and refused again.
-    await ctx.once(
-      "email",
-      () => sendEmail(email, renderNotice("photoRefused", lang), `photo-refused-${p.mediaId}-${p.at}`, supportInbox()),
-    );
+    await pushPhotoRefused(ctx, p.userId, p.mediaId);
   },
 
   // A support request: the person gets their reference, the team a copy they can reply to.
@@ -754,12 +748,14 @@ export const handlers: Record<string, Handler> = {
       user_id: string;
       kind: Decision;
       category: string;
+      terms_anchor: string | null;
       details: string | null;
       target: string | null;
       language: string | null;
     }[];
     // The account was erased since: nobody to tell.
     if (!decision) return;
+    if (!(decision.kind in decisionCopy)) throw new Error(`decision ${p.id}: unknown kind ${decision.kind}`);
     if (decision.kind === "message_deleted" && !ctx.done("removed")) {
       await messageRemoved(decision.target?.split("/")[1] ?? "");
       await ctx.record("removed");
@@ -770,15 +766,18 @@ export const handlers: Record<string, Handler> = {
       await ctx.once("email", () =>
         sendEmail(
           email,
-          renderDecision(lang, decision.kind, decision.category, decision.details),
+          renderDecision(lang, decision.kind, decision.category, decision.terms_anchor, decision.details),
           `decision-${p.id}`,
           supportInbox(),
         ));
+    } else {
+      console.warn(`db-events: decision ${p.id} not emailed, the account has no email address`);
     }
     if (decision.kind in decisionPush) {
       const kind = decision.kind as keyof typeof decisionPush;
       await ctx.push("push", decision.user_id, {
-        ...decisionPush[kind][lang],
+        // Without an email, the push can't point to one.
+        ...(email ? decisionPush : decisionPushAlone)[kind][lang],
         data: { kind: "moderation" },
         // A hold replaces the moderation push before it on the lock screen; each removed message is its own.
         collapseId: kind === "message_deleted" ? `decision-${p.id}` : `moderation-${decision.user_id}`,
@@ -930,15 +929,14 @@ function uuid(value: unknown, name: string): string {
   return value;
 }
 
-/** Throws until Stream shows the message removed (soft-deleted, or gone altogether). */
+/** Throws until Stream shows the message removed (soft-deleted, or gone altogether: HTTP 404 or code 16). */
 async function messageRemoved(messageId: string) {
   if (!messageId) throw new Error("decision: no message id");
   try {
     const { message } = await viaProvider("stream", () => stream().getMessage(messageId));
     if (message.type === "deleted" || message.deleted_at) return;
   } catch (error) {
-    const status = (error as { status?: unknown } | null)?.status;
-    if (status === 404 || /not found|does not exist/i.test(String(error))) return;
+    if (isGone(error)) return;
     throw error;
   }
   throw new Error(`decision: message ${messageId} not removed yet`);

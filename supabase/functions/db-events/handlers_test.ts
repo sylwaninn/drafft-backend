@@ -347,12 +347,18 @@ const fakeStream = {
   getMessage: (id: string) =>
     world.messages[id]
       ? Promise.resolve({ message: world.messages[id] })
-      : Promise.reject(Object.assign(new Error(`message ${id} not found`), { status: 404 })),
+      : world.streamFail.getMessage
+      ? Promise.reject(Object.assign(new Error("StreamChat error code -1: boom"), world.streamFail.getMessage))
+      : Promise.reject(Object.assign(new Error(`StreamChat error code 16: message ${id} not found`), {
+        status: 404,
+        code: 16,
+      })),
 };
 
 const { useStreamClientForTests } = await import("../_shared/stream.ts");
 useStreamClientForTests(fakeStream);
 const { chatMediaKeys, timing } = await import("../_shared/erase.ts");
+const { renderDecision } = await import("../_shared/notices.ts");
 timing.sleep = () => Promise.resolve();
 const { runEvent } = await import("./handlers.ts");
 
@@ -1194,6 +1200,7 @@ function decision(kind: string, target: string | null = null, details: string | 
     user_id: ana,
     kind,
     category: "harassment",
+    terms_anchor: "community",
     details,
     target,
     language: "fr",
@@ -1211,6 +1218,8 @@ Deno.test("moderation.decision: a ban is emailed with its reason and how to cont
   assertEquals(email.subject, "Ton compte drafft est fermé");
   assert(email.text?.includes("Pourquoi\u00A0: harceler, menacer ou insulter quelqu'un."), "the reason, in French");
   assert(email.text?.includes("Keep it friendly, please."), "the team's note, as written");
+  assert(email.text?.includes("La règle\u00A0: Règles de la communauté"), "the rule, by its section");
+  assert(email.text?.includes("https://getdrafft.com/fr/terms#community"), "with a link to it, in French");
   assert(email.text?.includes("Centre d'aide"), "how to contest it");
   assertEquals(world.pushes.map((p) => p.collapse), [`moderation-${ana}`]);
   assertEquals(steps(50), ["email", "push"]);
@@ -1256,4 +1265,60 @@ Deno.test("notices: a reply to a moderation email reaches the team", async () =>
   (world.tables.profiles[0] as Row).moderation = null;
   await runEvent({ id: 54, event: "account.moderation", payload: { userId: ana, previous: "review" } });
   assertEquals(world.emails.map((e) => e.replyTo), ["team@drafft.so"]);
+});
+
+Deno.test("moderation.decision: without an email address, the push says it all and points to no email", async () => {
+  reset();
+  people();
+  world.users = {};
+  decision("account_review");
+  await runEvent({ id: 55, event: "moderation.decision", payload: { id: 11 }, pushUntil: inAnHour() });
+  assertEquals(world.emails, []);
+  assertEquals(world.pushes.length, 1);
+  assertEquals(steps(55), ["push"]);
+});
+
+Deno.test("moderation.decision: a message Stream can't tell about is retried, never told as removed", async () => {
+  reset();
+  people();
+  decision("message_deleted", `${match}/msg-2`);
+  world.streamFail.getMessage = { status: 500, code: -1 };
+  await assertRejects(() => runEvent({ id: 56, event: "moderation.decision", payload: { id: 12 } }));
+  assertEquals(world.emails, []);
+
+  // Gone altogether (404, code 16): removed.
+  reset();
+  people();
+  decision("message_deleted", `${match}/msg-3`);
+  await runEvent({ id: 57, event: "moderation.decision", payload: { id: 13 }, pushUntil: inAnHour() });
+  assertEquals(world.emails.map((e) => e.key), ["decision-13"]);
+});
+
+Deno.test("moderation.decision: a category this code doesn't know fails, never told as a vaguer reason", async () => {
+  reset();
+  people();
+  decision("account_banned");
+  (world.rpcResults.moderation_decision as Row[])[0].category = "new_rule";
+  await assertRejects(() => runEvent({ id: 58, event: "moderation.decision", payload: { id: 14 } }));
+  assertEquals(world.emails, []);
+});
+
+Deno.test("media.reviewed: a refusal by a person is pushed; its email is the statement, not a second one", async () => {
+  reset();
+  people();
+  world.tables.profile_media = [{ id: media, status: "rejected" }];
+  await runEvent({
+    id: 59,
+    event: "media.reviewed",
+    payload: { mediaId: media, userId: ana, status: "rejected", secondLook: true, at: "1" },
+    pushUntil: inAnHour(),
+  });
+  assertEquals(world.emails, []);
+  assertEquals(world.pushes.length, 1);
+});
+
+Deno.test("renderDecision: the team's note is escaped and keeps its lines; the rules without a section link the terms", () => {
+  const email = renderDecision("en", "account_banned", "other", null, "<b>x</b>\nline 2");
+  assert(email.html.includes("&lt;b&gt;x&lt;/b&gt;<br>line 2"), email.html);
+  assert(email.text.includes("The rules are in drafft's terms of use.\nhttps://getdrafft.com/terms\n"), email.text);
 });

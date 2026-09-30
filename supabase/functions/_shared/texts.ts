@@ -343,6 +343,37 @@ export const decisionPush: Record<DecisionPush, Record<Language, PushText>> = {
   },
 };
 
+/** The same news for an account without an email address: nothing to point to. */
+export const decisionPushAlone: Record<DecisionPush, Record<Language, PushText>> = {
+  message_deleted: {
+    en: { title: "Message removed", body: "We removed one of your messages." },
+    fr: { title: "Message supprimé", body: "On a supprimé un de tes messages." },
+    es: { title: "Mensaje eliminado", body: "Hemos eliminado uno de tus mensajes." },
+    de: { title: "Nachricht entfernt", body: "Wir haben eine deiner Nachrichten entfernt." },
+    it: { title: "Messaggio rimosso", body: "Abbiamo rimosso un tuo messaggio." },
+    pt: { title: "Mensagem removida", body: "Removemos uma das tuas mensagens." },
+    nl: { title: "Bericht verwijderd", body: "We hebben een bericht van je verwijderd." },
+  },
+  account_review: {
+    en: { title: "Account check", body: "We're checking your account." },
+    fr: { title: "Vérification du compte", body: "On vérifie ton compte." },
+    es: { title: "Revisión de la cuenta", body: "Estamos revisando tu cuenta." },
+    de: { title: "Kontoprüfung", body: "Wir prüfen dein Konto." },
+    it: { title: "Verifica dell'account", body: "Stiamo verificando il tuo account." },
+    pt: { title: "Verificação da conta", body: "Estamos a verificar a tua conta." },
+    nl: { title: "Accountcontrole", body: "We controleren je account." },
+  },
+  account_banned: {
+    en: { title: "Account closed", body: "Your account is closed." },
+    fr: { title: "Compte fermé", body: "Ton compte est fermé." },
+    es: { title: "Cuenta cerrada", body: "Tu cuenta está cerrada." },
+    de: { title: "Konto geschlossen", body: "Dein Konto ist geschlossen." },
+    it: { title: "Account chiuso", body: "Il tuo account è chiuso." },
+    pt: { title: "Conta encerrada", body: "A tua conta foi encerrada." },
+    nl: { title: "Account gesloten", body: "Je account is gesloten." },
+  },
+};
+
 /** "Maya" / "Reacted ❤️ to “See you at 7?”", or without the message (previews off, or not text). The emoji
  * is the person's reaction, not ours. */
 export function reaction(lang: Language, name: string | null | undefined, emoji: string, text?: string): PushText {
