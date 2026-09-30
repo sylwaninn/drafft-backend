@@ -187,7 +187,8 @@ export const photoRefused: Record<Language, PushText> = {
 };
 
 /** Moderation news the person is waiting for: a hold lifted, a selfie asked for, judged. Never a new
- * restriction (review, ban): those are said by the app's own screen, not pushed. */
+ * restriction (review, ban): the app's own screen says those, and a person's decision comes with its
+ * statement of reasons (decisionPush). */
 export type ModerationPush = "restored" | "reopened" | "selfieApproved" | "selfieRequested" | "selfieRetry";
 
 const backInChats: Record<Language, string> = {
@@ -286,6 +287,90 @@ export const moderationPush: Record<ModerationPush, Record<Language, PushText>> 
     },
     pt: { title: selfieCheck.pt, body: "Com essa selfie não conseguimos confirmar que és tu: tira uma nova." },
     nl: { title: selfieCheck.nl, body: "Met die selfie konden we niet bevestigen dat jij het bent: maak een nieuwe." },
+  },
+};
+
+/** A decision by the team that no other push tells: a message removed, a review, a ban. The statement of
+ * reasons (why, the rule, how to contest) is in the email; a refused photo and a selfie request have their own
+ * pushes (photoRefused, moderationPush). */
+export type DecisionPush = "message_deleted" | "account_review" | "account_banned";
+
+export const decisionPush: Record<DecisionPush, Record<Language, PushText>> = {
+  message_deleted: {
+    en: { title: "Message removed", body: "We removed one of your messages. Your email says why." },
+    fr: { title: "Message supprimé", body: "On a supprimé un de tes messages. Ton e-mail t'explique pourquoi." },
+    es: {
+      title: "Mensaje eliminado",
+      body: "Hemos eliminado uno de tus mensajes. En tu correo te explicamos por qué.",
+    },
+    de: {
+      title: "Nachricht entfernt",
+      body: "Wir haben eine deiner Nachrichten entfernt. In deiner E-Mail steht, warum.",
+    },
+    it: { title: "Messaggio rimosso", body: "Abbiamo rimosso un tuo messaggio. Nella tua email trovi il motivo." },
+    pt: { title: "Mensagem removida", body: "Removemos uma das tuas mensagens. O teu email explica porquê." },
+    nl: { title: "Bericht verwijderd", body: "We hebben een bericht van je verwijderd. In je e-mail lees je waarom." },
+  },
+  account_review: {
+    en: { title: "Account check", body: "We're checking your account. Your email says why." },
+    fr: { title: "Vérification du compte", body: "On vérifie ton compte. Ton e-mail t'explique pourquoi." },
+    es: { title: "Revisión de la cuenta", body: "Estamos revisando tu cuenta. En tu correo te explicamos por qué." },
+    de: { title: "Kontoprüfung", body: "Wir prüfen dein Konto. In deiner E-Mail steht, warum." },
+    it: { title: "Verifica dell'account", body: "Stiamo verificando il tuo account. Nella tua email trovi il motivo." },
+    pt: { title: "Verificação da conta", body: "Estamos a verificar a tua conta. O teu email explica porquê." },
+    nl: { title: "Accountcontrole", body: "We controleren je account. In je e-mail lees je waarom." },
+  },
+  account_banned: {
+    en: { title: "Account closed", body: "Your account is closed. Your email says why and how to contest it." },
+    fr: { title: "Compte fermé", body: "Ton compte est fermé. Ton e-mail t'explique pourquoi et comment contester." },
+    es: {
+      title: "Cuenta cerrada",
+      body: "Tu cuenta está cerrada. En tu correo te explicamos por qué y cómo recurrir.",
+    },
+    de: {
+      title: "Konto geschlossen",
+      body: "Dein Konto ist geschlossen. In deiner E-Mail steht, warum und wie du widersprechen kannst.",
+    },
+    it: {
+      title: "Account chiuso",
+      body: "Il tuo account è chiuso. Nella tua email trovi il motivo e come contestarlo.",
+    },
+    pt: { title: "Conta encerrada", body: "A tua conta foi encerrada. O teu email explica porquê e como contestar." },
+    nl: {
+      title: "Account gesloten",
+      body: "Je account is gesloten. In je e-mail lees je waarom en hoe je bezwaar maakt.",
+    },
+  },
+};
+
+/** The same news for an account without an email address: nothing to point to. */
+export const decisionPushAlone: Record<DecisionPush, Record<Language, PushText>> = {
+  message_deleted: {
+    en: { title: "Message removed", body: "We removed one of your messages." },
+    fr: { title: "Message supprimé", body: "On a supprimé un de tes messages." },
+    es: { title: "Mensaje eliminado", body: "Hemos eliminado uno de tus mensajes." },
+    de: { title: "Nachricht entfernt", body: "Wir haben eine deiner Nachrichten entfernt." },
+    it: { title: "Messaggio rimosso", body: "Abbiamo rimosso un tuo messaggio." },
+    pt: { title: "Mensagem removida", body: "Removemos uma das tuas mensagens." },
+    nl: { title: "Bericht verwijderd", body: "We hebben een bericht van je verwijderd." },
+  },
+  account_review: {
+    en: { title: "Account check", body: "We're checking your account." },
+    fr: { title: "Vérification du compte", body: "On vérifie ton compte." },
+    es: { title: "Revisión de la cuenta", body: "Estamos revisando tu cuenta." },
+    de: { title: "Kontoprüfung", body: "Wir prüfen dein Konto." },
+    it: { title: "Verifica dell'account", body: "Stiamo verificando il tuo account." },
+    pt: { title: "Verificação da conta", body: "Estamos a verificar a tua conta." },
+    nl: { title: "Accountcontrole", body: "We controleren je account." },
+  },
+  account_banned: {
+    en: { title: "Account closed", body: "Your account is closed." },
+    fr: { title: "Compte fermé", body: "Ton compte est fermé." },
+    es: { title: "Cuenta cerrada", body: "Tu cuenta está cerrada." },
+    de: { title: "Konto geschlossen", body: "Dein Konto ist geschlossen." },
+    it: { title: "Account chiuso", body: "Il tuo account è chiuso." },
+    pt: { title: "Conta encerrada", body: "A tua conta foi encerrada." },
+    nl: { title: "Account gesloten", body: "Je account is gesloten." },
   },
 };
 

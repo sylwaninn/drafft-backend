@@ -94,7 +94,7 @@ select is((select array_agg(t order by t) from (
   (select array_agg(x order by x) from unnest(array[
     -- Exported.
     'private.consent_events', 'private.data_requests', 'private.device_checks', 'private.devices', 'private.ips',
-    'private.locations', 'private.moderation_log', 'private.purchase_credits', 'private.selfie_checks',
+    'private.locations', 'private.moderation_decisions', 'private.moderation_log', 'private.purchase_credits', 'private.selfie_checks',
     'private.sms_sends', 'private.support_requests', 'public.media_flags', 'public.profile_media',
     'public.profile_prompts', 'public.profile_sports', 'public.purchase_events', 'public.push_tokens',
     'public.wallets',
