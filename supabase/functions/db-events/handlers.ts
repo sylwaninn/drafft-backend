@@ -292,28 +292,60 @@ export const handlers: Record<string, Handler> = {
     await freezeChat(p.matchId, [match.user_a, match.user_b]);
   },
 
+  // An account deleted by an admin on the member's request (sophros, admin_delete_account): the same deletion as
+  // delete-account (kept for safety or erased, decided again now), its real outcome recorded (staff_deletion_done,
+  // `account.deleted` in the audit log), then the confirmation in the member's language to each address it keeps
+  // (the account's, and the one the request came from), Reply-To the support address. No address at all: the team
+  // is told, to confirm another way. A retry after the deletion doesn't run it again, and each email goes once.
+  async "account.staff_delete"(p: { id: number }, ctx) {
+    const id = requestId(p.id);
+    const [deletion] = must(await admin.rpc("staff_deletion", { p_id: id }), "staff deletion") as {
+      user_id: string;
+      reference: string;
+      emails: string[];
+      language: string | null;
+      outcome: "erased" | "kept" | null;
+    }[];
+    // Gone after 30 days (its event failed and was replayed late): the audit log has what was done.
+    if (!deletion) return;
+    const userId = uuid(deletion.user_id, "userId");
+    let outcome = deletion.outcome ?? ctx.value("outcome") as "erased" | "kept" | undefined;
+    if (!outcome) {
+      outcome = await deleteAccount(userId);
+      await ctx.record(`outcome=${outcome}`);
+    }
+    if (!deletion.outcome) {
+      check(await admin.rpc("staff_deletion_done", { p_id: id, p_outcome: outcome }), "staff deletion done");
+    }
+    if (deletion.emails.length === 0) {
+      await toTeam(
+        ctx,
+        "[account deleted] no address to confirm to",
+        [
+          ["Account", userId],
+          ["Request", deletion.reference],
+          ["Outcome", outcome],
+          ["What to do", "The member asked for it but has no email address on record: confirm it another way."],
+        ],
+        `account-deleted-team-${id}`,
+        null,
+      );
+    }
+    for (const [i, email] of deletion.emails.entries()) {
+      await ctx.once(`email-${i}`, () =>
+        sendEmail(
+          email,
+          renderNotice("accountDeleted", language(deletion.language)),
+          `account-deleted-${id}-${i}`,
+          supportReplyTo(),
+        ));
+    }
+    check(await admin.rpc("staff_deletion_emailed", { p_id: id }), "staff deletion emailed");
+  },
+
   // An account kept after its owner deleted it (retain_deleted_account): banned from chat for good, and every
   // Stream token issued so far revoked, so the app still holding one can't connect. Its channels were frozen
   // by match.ended. Never in Stream (never opened the chat): the ban creates the user, the revoke then holds.
-  // An account deleted by an admin on the member's request (sophros, admin_delete_account): the same deletion as
-  // delete-account (kept for safety or erased, decided again now), then the confirmation to the address the
-  // account had, in its language; a reply reaches support. The outcome is recorded: a retry after the erasure
-  // (the account gone) doesn't run it again, and the email goes once.
-  async "account.staff_delete"(
-    p: { userId: string; email: string | null; language: string | null; reference: string },
-    ctx,
-  ) {
-    if (!ctx.value("outcome")) await ctx.record(`outcome=${await deleteAccount(p.userId)}`);
-    if (!p.email) return;
-    await ctx.once("email", () =>
-      sendEmail(
-        p.email!,
-        renderNotice("accountDeleted", language(p.language)),
-        `account-deleted-${p.userId}`,
-        optionalEnv("SUPPORT_ADDRESS") ?? optionalEnv("SUPPORT_INBOX"),
-      ));
-  },
-
   async "account.soft_deleted"(p: { userId: string }, ctx) {
     await ctx.once("ban", () => setChatHeld(p.userId, true));
     await ctx.once("revoke", () => viaProvider("stream", () => stream().revokeUserToken(p.userId, new Date())));
