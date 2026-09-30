@@ -8,7 +8,8 @@
 --    queued (`moderation.decision`): db-events emails it in the person's language with how to contest it (the
 --    in-app help center, or a reply: Reply-To SUPPORT_INBOX, reviewed by someone else), and pushes it when no
 --    push says it already (a removed message, a review, a ban; a refused photo and a selfie request have theirs).
---    A removed message is told once Stream shows it removed.
+--    A removed message is told once Stream shows it removed. A selfie asked again while one is already due
+--    (the state stays `selfie`) is a statement too when it comes with a category, pushed as a selfie request.
 --    sophros passes `p_category` and `p_details` to admin_set_hold, admin_review_media, admin_decide_photo,
 --    admin_close_report, admin_decide_flags and admin_log ('message.delete'). Checked once, at the start: an
 --    unknown category fails with `invalid_category`, a decision that sends a statement without one with
@@ -121,9 +122,10 @@ end;
 $$;
 
 -- Records a decision about a member and queues its statement: a statement always says why
--- (`category_required`).
+-- (`category_required`). `p_repeat`: the same hold asked again (a selfie), which no state change pushes.
 create function private.record_decision(
-  p_actor text, p_user uuid, p_kind text, p_category text, p_details text, p_target text
+  p_actor text, p_user uuid, p_kind text, p_category text, p_details text, p_target text,
+  p_repeat boolean default false
 )
 returns void
 language plpgsql
@@ -140,7 +142,8 @@ begin
     values (p_user, p_kind, private.reason_category(p_category), private.decision_details(p_details), p_target,
       lower(trim(p_actor)))
     returning id into v_id;
-  perform private.emit('moderation.decision', jsonb_build_object('id', v_id));
+  perform private.emit('moderation.decision', jsonb_build_object('id', v_id)
+    || case when p_repeat then jsonb_build_object('repeat', true) else '{}' end);
 end;
 $$;
 
@@ -165,7 +168,9 @@ insert into private.outbox_policies (event, retry_budget, expires_after, push_tt
 
 -- MARK: Holds
 
--- 20260927000007, plus the member's reason when a hold is put or turned into a ban.
+-- 20260927000007, plus the member's reason when a hold is put or turned into a ban, and when a selfie is asked
+-- again with one (sophros's "Ask again": the state stays, the member gets the new reason and note). The same
+-- state again without a category, or another hold again, states nothing.
 drop function public.admin_set_hold(text, uuid, public.moderation_state, text);
 create function public.admin_set_hold(
   p_actor text, p_user uuid, p_state public.moderation_state, p_reason text,
@@ -197,6 +202,8 @@ begin
   if p_state is not null and p_state is distinct from v_current then
     perform private.record_decision(p_actor, p_user, 'account_' || case p_state when 'banned' then 'banned'
       when 'selfie' then 'selfie' else 'review' end, v_category, v_details, null);
+  elsif p_state = 'selfie' and v_current = 'selfie' and v_category is not null then
+    perform private.record_decision(p_actor, p_user, 'account_selfie', v_category, v_details, null, true);
   end if;
 end;
 $$;
@@ -594,7 +601,7 @@ $$;
 
 -- MARK: Grants and retention
 
-revoke all on function private.record_decision(text, uuid, text, text, text, text),
+revoke all on function private.record_decision(text, uuid, text, text, text, text, boolean),
   private.conversation_basis(uuid, text), private.reason_category(text), private.decision_details(text)
   from public, anon, authenticated;
 do $$

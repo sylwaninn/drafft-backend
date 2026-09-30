@@ -3,7 +3,7 @@
 -- admin's override; viewing selfies needs a reason.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(55);
+select plan(62);
 
 create function pg_temp.person(p_email text) returns uuid language plpgsql as $$
 declare
@@ -69,6 +69,9 @@ select is((select user_id::text || ' ' || kind || ' ' || category || ' ' || term
 select public.admin_set_hold('mod@drafft.test', ana, 'banned', 'insults again', 'harassment') from ids;
 select is(pg_temp.decisions((select ana from ids)), 'account_review:harassment,account_banned:harassment',
   'turned into a ban: a second statement');
+select public.admin_set_hold('mod@drafft.test', ana, 'banned', 'insults again', 'harassment') from ids;
+select is(pg_temp.decisions((select ana from ids)), 'account_review:harassment,account_banned:harassment',
+  'another hold again states nothing, even with a reason');
 select public.admin_set_hold('boss@drafft.test', ana, null, 'appeal accepted') from ids;
 select is(pg_temp.decisions((select ana from ids)), 'account_review:harassment,account_banned:harassment',
   'lifting it states nothing (the "you''re back" email says it)');
@@ -77,8 +80,24 @@ select is(pg_temp.hint(format($$select public.admin_set_hold('mod@drafft.test', 
   (select bo from ids))), 'category_required', 'a statement without a category: refused');
 select is((select moderation from public.profiles where id = (select bo from ids)), null, 'and nothing is applied');
 select public.admin_set_hold('mod@drafft.test', bo, 'selfie', 'photos look like a celebrity', 'identity_check') from ids;
-select public.admin_set_hold('mod@drafft.test', bo, 'selfie', 'still waiting', 'identity_check') from ids;
-select is(pg_temp.decisions((select bo from ids)), 'account_selfie:identity_check', 'the same hold again states nothing');
+select is((select count(*) from private.outbox where event = 'moderation.decision' and payload ? 'repeat'), 0::bigint,
+  'a first selfie request is not a repeat (account.moderation pushes it)');
+create temp table asked as select count(*) as events from private.outbox where event = 'account.moderation';
+select public.admin_set_hold('mod@drafft.test', bo, 'selfie', 'still waiting', 'fake_account',
+  'Please take the selfie in good light.') from ids;
+select is(pg_temp.decisions((select bo from ids)), 'account_selfie:identity_check,account_selfie:fake_account',
+  'a selfie asked again with a reason: a second statement');
+select is((select category || ' ' || details from private.moderation_decisions where id = (select max(id) from private.moderation_decisions)),
+  'fake_account Please take the selfie in good light.', 'with the new reason and note');
+select ok(exists (select 1 from private.outbox o where o.event = 'moderation.decision'
+    and o.payload = jsonb_build_object('id', (select max(id) from private.moderation_decisions), 'repeat', true)),
+  'queued as a repeat, so db-events pushes it');
+select is((select moderation::text from public.profiles where id = (select bo from ids)), 'selfie', 'the state stays');
+select is((select count(*) from private.outbox where event = 'account.moderation'), (select events from asked),
+  'and no state change is queued');
+select public.admin_set_hold('mod@drafft.test', bo, 'selfie', 'still waiting') from ids;
+select is(pg_temp.decisions((select bo from ids)), 'account_selfie:identity_check,account_selfie:fake_account',
+  'the same selfie again without a reason states nothing');
 select is(pg_temp.hint(format($$select public.admin_set_hold('mod@drafft.test', %L, 'banned', 'x', 'rude')$$, (select cy from ids))),
   'invalid_category', 'an unknown category is refused');
 select is(pg_temp.hint(format($$select public.admin_set_hold('mod@drafft.test', %L, 'banned', 'x', 'other', %L)$$,

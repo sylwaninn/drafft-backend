@@ -741,9 +741,10 @@ export const handlers: Record<string, Handler> = {
 
   // A decision by a person on the team (private.record_decision): the statement of reasons, emailed in the
   // person's language with Reply-To SUPPORT_INBOX, and pushed when no other push says it (a removed message, a
-  // review, a ban). A removed message is told once Stream shows it removed: sophros logs the removal just before
-  // making it, so until then the event is retried, and one that never happened ends in the dead letters.
-  async "moderation.decision"(p: { id: number }, ctx) {
+  // review, a ban, a selfie asked again: `repeat`, the state didn't change so account.moderation pushed nothing).
+  // A removed message is told once Stream shows it removed: sophros logs the removal just before making it, so
+  // until then the event is retried, and one that never happened ends in the dead letters.
+  async "moderation.decision"(p: { id: number; repeat?: boolean }, ctx) {
     const [decision] = must(await admin.rpc("moderation_decision", { p_id: p.id }), "decision") as {
       user_id: string;
       kind: Decision;
@@ -781,6 +782,17 @@ export const handlers: Record<string, Handler> = {
         data: { kind: "moderation" },
         // A hold replaces the moderation push before it on the lock screen; each removed message is its own.
         collapseId: kind === "message_deleted" ? `decision-${p.id}` : `moderation-${decision.user_id}`,
+      });
+    } else if (decision.kind === "account_selfie" && p.repeat) {
+      // Only while the selfie is still due: lifted or changed since, that change speaks for itself.
+      const { data: profile, error } = await admin.from("profiles").select("moderation").eq("id", decision.user_id)
+        .maybeSingle();
+      if (error) throw new Error(`profile ${decision.user_id}: ${error.message}`);
+      if (profile?.moderation !== "selfie") return;
+      await ctx.push("push", decision.user_id, {
+        ...moderationPush.selfieRequested[lang],
+        data: { kind: "moderation" },
+        collapseId: `moderation-${decision.user_id}`,
       });
     }
   },

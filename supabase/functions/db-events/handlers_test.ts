@@ -47,7 +47,7 @@ const world = {
   rpc: [] as { name: string; args: Row }[],
   rpcResults: {} as Record<string, unknown>,
   failRead: undefined as string | undefined,
-  pushes: [] as { token: string; collapse: string | null }[],
+  pushes: [] as { token: string; collapse: string | null; title?: string }[],
   pushOutcome: {} as Record<string, Outcome>,
   emails: [] as { to: string; key: string | null; replyTo?: string | null; subject?: string; text?: string }[],
   emailOutcome: [] as Outcome[],
@@ -211,7 +211,11 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
     const outcome = world.pushOutcome[token] ?? "ok";
     if (outcome === "network") throw new TypeError("error sending request: connection refused");
     if (outcome === "down") return respond({ reason: "ServiceUnavailable" }, 503);
-    world.pushes.push({ token, collapse: request.headers.get("apns-collapse-id") });
+    world.pushes.push({
+      token,
+      collapse: request.headers.get("apns-collapse-id"),
+      title: JSON.parse(text).aps?.alert?.title,
+    });
     return respond(undefined, 200);
   }
 
@@ -1233,6 +1237,37 @@ Deno.test("moderation.decision: a refused photo is emailed only (its push alread
   assertEquals(world.emails.map((e) => e.key), ["decision-8"]);
   assert(!world.emails[0].text?.includes("Un mot de l'équipe"), "no note when the team wrote none");
   assertEquals(world.pushes, []);
+});
+
+Deno.test("moderation.decision: a selfie asked for is emailed only (account.moderation pushes it)", async () => {
+  reset();
+  people();
+  (world.tables.profiles[0] as Row).moderation = "selfie";
+  decision("account_selfie");
+  await runEvent({ id: 56, event: "moderation.decision", payload: { id: 12 }, pushUntil: inAnHour() });
+  assertEquals(world.emails.map((e) => e.key), ["decision-12"]);
+  assertEquals(world.pushes, []);
+});
+
+Deno.test("moderation.decision: a selfie asked again is emailed and pushed, while it is still due", async () => {
+  reset();
+  people();
+  (world.tables.profiles[0] as Row).moderation = "selfie";
+  decision("account_selfie");
+  await runEvent({ id: 57, event: "moderation.decision", payload: { id: 13, repeat: true }, pushUntil: inAnHour() });
+  assertEquals(world.emails.map((e) => e.key), ["decision-13"]);
+  assert(world.emails[0].text?.includes("Keep it friendly, please."), "the new note, as written");
+  assertEquals(world.pushes.map((p) => [p.collapse, p.title]), [[`moderation-${ana}`, "Vérification par selfie"]]);
+  assertEquals(steps(57), ["email", "push"]);
+
+  reset();
+  people();
+  (world.tables.profiles[0] as Row).moderation = "review";
+  decision("account_selfie");
+  await runEvent({ id: 58, event: "moderation.decision", payload: { id: 14, repeat: true }, pushUntil: inAnHour() });
+  assertEquals(world.emails.map((e) => e.key), ["decision-14"], "the statement still goes");
+  assertEquals(world.pushes, [], "no push once the selfie was sent or the hold lifted");
+  assertEquals(calls("ack_event").length, 1);
 });
 
 Deno.test("moderation.decision: a removed message is told once Stream shows it removed", async () => {

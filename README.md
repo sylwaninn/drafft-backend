@@ -181,7 +181,7 @@ The contract for sophros (it must ship before this, see Breaking changes in the 
 
 | RPC (service role) | New parameters | Statement sent |
 | --- | --- | --- |
-| `admin_set_hold(p_actor, p_user, p_state, p_reason, p_category, p_details)` | reason category, note for the member | a hold put or changed: `account_review`, `account_selfie`, `account_banned`; none when lifted or unchanged |
+| `admin_set_hold(p_actor, p_user, p_state, p_reason, p_category, p_details)` | reason category, note for the member | a hold put or changed: `account_review`, `account_selfie`, `account_banned`; a selfie asked again with a category (the state stays `selfie`): `account_selfie`, pushed as a selfie request; none when lifted, or unchanged otherwise |
 | `admin_review_media(p_actor, p_media, p_approved, p_reason, p_category, p_details)` | same | `photo_refused`, when a photo becomes refused |
 | `admin_decide_photo(p_actor, p_media, p_reason, p_hold, p_hold_reason, p_category, p_details)` | same, for the photo and the hold | `photo_refused` for a pending photo, plus the hold's |
 | `admin_close_report(p_actor, p_report, p_resolution, p_hold, p_category, p_details)` | same, for the hold | the hold's |
