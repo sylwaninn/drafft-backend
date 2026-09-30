@@ -210,7 +210,7 @@ repository's copy of this file: keep the format.
 
 ## 7. Taglines and the start line territory
 
-### 7.1 The territory: "Meet me on the start line"
+### 7.1 The territory: the start line
 
 Start, start line, the signal, the first stride, the shared momentum of two people who show up at the
 same time. It's about *intention* (you proposed, you came), not performance, not sweat.
@@ -223,7 +223,7 @@ same time. It's about *intention* (you proposed, you came), not performance, not
 
 | # | EN | FR | Use |
 |---|---|---|---|
-| 1 | Meet me on the start line. | Rendez-vous au départ. | Hero, store subtitle, social bio |
+| 1 | Meet singles who train. | Rencontre des célibataires qui s'entraînent. | Hero, store subtitle (short form, 7.4), social bio, Play feature graphic |
 | 2 | Turn your matches into sessions. | Transforme tes matchs en séances. | Explains how it works, under the hero |
 | 3 | See you at the start line? | On se retrouve au départ ? | Push-like voice, social, ads |
 | 4 | Dating, with a start time. | Des rencontres avec une heure de départ. | Precision angle, press |
@@ -231,13 +231,24 @@ same time. It's about *intention* (you proposed, you came), not performance, not
 | 6 | From match to start line. | Du match à la ligne de départ. | Journey, onboarding, how-it-works |
 | 7 | Ready, set, meet. | À vos marques. Prêts. Rencontrez. | Events and campaigns only |
 | 8 | Better in the draft. | Dans ton sillage. | Campaigns: drafting = riding in someone's slipstream |
+| 9 | Meet me on the start line. | Rendez-vous au départ. | A confirmed session (7.3) and campaigns; never the brand line: out of context it reads oddly in French and doesn't say "dating" or "sport" |
+
+Line 1 in every language (gender-neutral where the language marks it):
+
+- en: Meet singles who train.
+- fr: Rencontre des célibataires qui s'entraînent.
+- es: Conoce a gente soltera que entrena.
+- de: Triff Singles, die trainieren.
+- it: Incontra single che si allenano.
+- pt: Conhece pessoas solteiras que treinam.
+- nl: Ontmoet singles die trainen.
 
 ### 7.3 Declensions
 
 - Match screen: "It's mutual." + "Propose a session while it's fresh." / « C'est réciproque. » +
   « Propose une séance tant que c'est frais. »
 - Session confirmed: "See you at the start line." / « Rendez-vous au départ. »
-- Website final CTA: "Meet me on the start line." / « Rendez-vous au départ. »
+- Website final CTA: "Meet singles who train." / « Rencontre des célibataires qui s'entraînent. »
 - Social: #meetmeonthestartline (campaign hashtag only).
 
 ### 7.4 Store frame
@@ -245,8 +256,8 @@ same time. It's about *intention* (you proposed, you came), not performance, not
 | Field | Limit | EN | FR |
 |---|---|---|---|
 | App name | 30 | drafft: Sports Dating | drafft : rencontre sportive |
-| Subtitle (iOS) | 30 | Meet me on the start line | Rendez-vous au départ |
-| Short description (Play) | 80 | Match on how you train, then propose a session. See you at the start line. | Matche sur ta façon de t'entraîner, propose une séance. Rendez-vous au départ. |
+| Subtitle (iOS) | 30 | Meet singles who train | Célibataires qui s'entraînent |
+| Short description (Play) | 80 | Meet singles who train, match on your sports, then propose a session. | Rencontre des célibataires qui s'entraînent, puis propose une séance. |
 
 Full store texts: `docs/wording/store.md`.
 
@@ -254,7 +265,7 @@ Full store texts: `docs/wording/store.md`.
 
 | Type | Before | After |
 |---|---|---|
-| Website hero | First dates that move. | Meet me on the start line. / Rendez-vous au départ. |
+| Website hero | First dates that move. | Meet singles who train. / Rencontre des célibataires qui s'entraînent. |
 | Website promise | Every match ends in a plan: a sport, a place, a time. | Turn your matches into sessions: pick a sport, a day, a time. |
 | Match screen | It's a match. | It's mutual. |
 | Match body | Say hi, then plan a first session. | You both train. Say hi, or propose a session while it's fresh. |
@@ -326,6 +337,14 @@ Run on every text before you validate it.
   and the "Demo text" line of the legal sheets were removed.
 - 2026-09-29: Session ideas and prompts suggest coffee, brunch, smoothies, picnics; never drinks or
   dinner, never a city-specific place (the app runs in several cities).
+- 2026-09-30: Primary line replaced by "Meet singles who train." / « Rencontre des célibataires qui
+  s'entraînent. » (store subtitle: "Meet singles who train" / « Célibataires qui s'entraînent »).
+  « Rendez-vous au départ » read oddly in French out of context and didn't say sport dating; it stays
+  for a confirmed session and campaigns (7.2 n°9). The start line remains the brand territory.
+  Rejected: "the first date is a session" (bpm), « et plus si affinités » (double meaning),
+  "it all starts with…" (Tinder), « célibataire et sportif » (masculine default).
+- 2026-09-30: Store screenshots and the Play feature graphic: rules, captions in 7 languages and the
+  pipeline in `docs/store-screenshots/`.
 - 2026-09-30: Pack names in the stores keep their capitals, as in App Store Connect and Google Play ("5 Boosts",
   "3 Super Likes"). Running copy stays lowercase (like, super like, boost). The earlier rule "lowercase, also in
   store product names" is withdrawn.
