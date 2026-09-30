@@ -47,6 +47,8 @@ const world = {
   rpc: [] as { name: string; args: Row }[],
   rpcResults: {} as Record<string, unknown>,
   failRead: undefined as string | undefined,
+  /** RPCs that answer with a server error (each call is still recorded). */
+  failRpc: [] as string[],
   pushes: [] as { token: string; collapse: string | null; title?: string }[],
   pushOutcome: {} as Record<string, Outcome>,
   emails: [] as { to: string; key: string | null; replyTo?: string | null; subject?: string; text?: string }[],
@@ -89,6 +91,7 @@ function reset() {
   world.rpc = [];
   world.rpcResults = {};
   world.failRead = undefined;
+  world.failRpc = [];
   world.pushes = [];
   world.pushOutcome = {};
   world.emails = [];
@@ -149,6 +152,7 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
     if (url.pathname.startsWith("/rest/v1/rpc/")) {
       const name = url.pathname.slice("/rest/v1/rpc/".length);
       world.rpc.push({ name, args: text ? JSON.parse(text) : {} });
+      if (world.failRpc.includes(name)) return respond({ message: "connection reset" }, 500);
       return respond(world.rpcResults[name] ?? null);
     }
     if (url.pathname.startsWith("/storage/v1/object/sign/data-exports/")) {
@@ -575,6 +579,43 @@ Deno.test("support emails carry the reference in the subject and Reply-To the su
   world.sent = [];
   await runEvent({ id: 10, event: "support.reply", payload: { id: 12 } });
   assertEquals(world.sent[0].replyTo, "team@drafft.so");
+});
+
+Deno.test("support.reply: every failure is recorded on the message, never left sending", async () => {
+  const reply = {
+    reference: "DR-ABC123",
+    email: "lea@drafft.so",
+    language: "fr",
+    topic: "Help",
+    message: "Stuck",
+    body: "Try again?",
+    author: "sup@drafft.so",
+    sent_at: null,
+    direction: "out",
+  };
+  const failure = async (setup: () => void) => {
+    reset();
+    world.rpcResults.support_reply = [reply];
+    setup();
+    await assertRejects(() => runEvent({ id: 14, event: "support.reply", payload: { id: 15 } }));
+    assertEquals(calls("ack_event").length, 0, "retried");
+    return calls("support_reply_sent").map((c) => [c.args.p_id, typeof c.args.p_error]);
+  };
+
+  // The reply can't be read.
+  assertEquals(await failure(() => world.failRpc.push("support_reply")), [[15, "string"]]);
+  assert(String(calls("support_reply_sent")[0].args.p_error).includes("support reply"), "says what failed");
+  // Resend refuses it.
+  assertEquals(await failure(() => world.emailOutcome.push("down")), [[15, "string"]]);
+  // Sent, but not recorded as sent: the retry's email has the same idempotency key.
+  assertEquals(await failure(() => world.failRpc.push("support_reply_sent")), [[15, "undefined"], [15, "string"]]);
+  assertEquals(world.emails.map((e) => e.key), ["support-reply-15"]);
+  // Nothing can be written: the handler's own error still reaches the outbox, which marks the message when it
+  // gives up (support_reply_given_up).
+  reset();
+  world.failRpc.push("support_reply", "support_reply_sent");
+  await assertRejects(() => runEvent({ id: 15, event: "support.reply", payload: { id: 15 } }), Error, "support reply");
+  assertEquals(calls("outbox_failed").length, 1);
 });
 
 Deno.test("support.received: a member's email, filed and reopened, is copied to the team once", async () => {

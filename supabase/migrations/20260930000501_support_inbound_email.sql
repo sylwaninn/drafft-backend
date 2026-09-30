@@ -19,6 +19,8 @@
 -- language. Email requests have their own limits (5 an hour per address, 200 an hour in all), apart from the
 -- app's signed-out form. Each email is taken once, by its Message-ID (private.support_inbound): the Worker may
 -- post it again.
+-- A team reply is never left "Sending": db-events records any failure on the message, and a reply the outbox
+-- gives up on is marked failed if nothing was recorded (private.support_reply_given_up).
 
 -- migration-guard: allow destructive drop - support_reply, recreated at once with the message's direction
 
@@ -219,6 +221,32 @@ $$;
 revoke execute on function public.support_reply(bigint), public.support_reply_sent(bigint, text)
   from public, anon, authenticated;
 grant execute on function public.support_reply(bigint), public.support_reply_sent(bigint, text) to service_role;
+
+-- A reply the outbox gave up on (out of its retry budget, db-events never answering, or discarded in sophros) is
+-- marked failed on its message when db-events could not record why, so sophros never shows it "Sending" forever.
+-- An error db-events recorded stays; a replay that sends it clears it (support_reply_sent).
+create function private.support_reply_given_up()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if jsonb_typeof(new.payload -> 'id') = 'number' then
+    update private.support_messages
+      set error = left(coalesce(new.last_error, 'discarded: ' || new.discard_reason, 'not sent'), 500)
+      where id = (new.payload ->> 'id')::bigint and direction = 'out' and sent_at is null and error is null;
+  end if;
+  return null;
+end;
+$$;
+
+create trigger outbox_support_reply_given_up after update of failed_at, discarded_at on private.outbox
+  for each row when (new.event = 'support.reply' and new.delivered_at is null
+    and (old.failed_at is null and new.failed_at is not null or old.discarded_at is null and new.discarded_at is not null))
+  execute function private.support_reply_given_up();
+
+revoke all on function private.support_reply_given_up() from public, anon, authenticated;
 
 -- The team's copy of a member's email (db-events reads it with support_reply).
 insert into private.outbox_policies (event, retry_budget, expires_after, push_ttl, providers)

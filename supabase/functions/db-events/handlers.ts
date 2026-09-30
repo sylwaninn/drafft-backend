@@ -594,40 +594,17 @@ export const handlers: Record<string, Handler> = {
   },
 
   // A reply written in sophros: emailed to the person, framed in their language; their answer goes to the
-  // support address and back into the request (support-inbound; SUPPORT_INBOX until SUPPORT_ADDRESS is set). A
-  // failed send is recorded on the message (the dashboard shows it) and retried. Only the team's messages.
+  // support address and back into the request (support-inbound; SUPPORT_INBOX until SUPPORT_ADDRESS is set). Only
+  // the team's messages. Whatever fails, reading the reply included, is recorded on the message (the dashboard
+  // shows it instead of "Sending") and retried; when even that can't be written, the outbox marks the message once
+  // it gives up (private.support_reply_given_up).
   async "support.reply"(p: { id: number }) {
-    const [reply] = must(await admin.rpc("support_reply", { p_id: p.id }), "support reply") as {
-      reference: string;
-      email: string;
-      language: string;
-      topic: string;
-      message: string;
-      body: string;
-      sent_at: string | null;
-      direction: "in" | "out";
-    }[];
-    if (!reply || reply.sent_at) return;
-    // A member's own message (received by email) is never sent back to them.
-    if (reply.direction !== "out") {
-      console.warn(`db-events: support.reply ${p.id} is a received message, not sent`);
-      return;
-    }
     try {
-      await sendEmail(
-        reply.email,
-        renderSupportReply(language(reply.language), reply),
-        `support-reply-${p.id}`,
-        supportReplyTo(),
-      );
+      await sendSupportReply(p.id);
     } catch (error) {
-      check(
-        await admin.rpc("support_reply_sent", { p_id: p.id, p_error: String(error).slice(0, 500) }),
-        "support reply failed",
-      );
+      await supportReplyFailed(p.id, error);
       throw error;
     }
-    check(await admin.rpc("support_reply_sent", { p_id: p.id }), "support reply sent");
   },
 
   // A member's email, filed in its request and the request reopened (receive_support_email): the team's copy in
@@ -964,6 +941,46 @@ async function pushModeration(
     // One moderation push at a time: a newer state replaces the older one on the lock screen.
     collapseId: `moderation-${p.userId}`,
   });
+}
+
+/** Emails a reply written in sophros once, and records it sent. */
+async function sendSupportReply(id: number) {
+  const [reply] = must(await admin.rpc("support_reply", { p_id: id }), "support reply") as {
+    reference: string;
+    email: string;
+    language: string;
+    topic: string;
+    message: string;
+    body: string;
+    sent_at: string | null;
+    direction: "in" | "out";
+  }[];
+  if (!reply || reply.sent_at) return;
+  // A member's own message (received by email) is never sent back to them.
+  if (reply.direction !== "out") {
+    console.warn(`db-events: support.reply ${id} is a received message, not sent`);
+    return;
+  }
+  await sendEmail(
+    reply.email,
+    renderSupportReply(language(reply.language), reply),
+    `support-reply-${id}`,
+    supportReplyTo(),
+  );
+  check(await admin.rpc("support_reply_sent", { p_id: id }), "support reply sent");
+}
+
+/** Records on the message why its reply wasn't sent. Never throws: the handler's own error is the one the outbox
+ * gets. */
+async function supportReplyFailed(id: number, error: unknown) {
+  try {
+    check(
+      await admin.rpc("support_reply_sent", { p_id: id, p_error: String(error).slice(0, 500) }),
+      "support reply failed",
+    );
+  } catch (recordError) {
+    console.error(`db-events: support.reply ${id}: the failure could not be recorded`, recordError);
+  }
 }
 
 type DueRpc = "retained_account_due" | "chat_erase_due" | "banned_selfies_due";

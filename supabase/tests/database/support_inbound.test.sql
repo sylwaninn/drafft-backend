@@ -3,7 +3,7 @@
 -- member's messages from the team's.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(37);
+select plan(42);
 
 -- The error code a statement fails with (in the hint), or null when it succeeds.
 create function pg_temp.hint(p_sql text) returns text language plpgsql as $$
@@ -136,6 +136,34 @@ select is((select count(*) from private.support_requests where signed_out), 0::b
 select is((select r -> 'replies' -> 0 ->> 'direction' || (r -> 'replies' -> 1 ->> 'direction')
   from jsonb_array_elements(public.admin_support('sup@drafft.test', false, (select reference from ref))) r),
   'outin', 'sophros sees who wrote each message');
+
+-- MARK: A reply the outbox gave up on
+
+select public.admin_reply_support('sup@drafft.test', (select id from req), 'Reply ' || i, false, gen_random_uuid())
+  from generate_series(1, 3) i;
+create temp table sent as select array_agg(id order by id) as ids from private.support_messages
+  where request_id = (select id from req) and direction = 'out';
+create function pg_temp.give_up(p_message bigint, p_discard boolean default false) returns void language sql as $$
+  update private.outbox set failed_at = case when not p_discard then now() end,
+      last_error = case when not p_discard then 'support reply: connection reset' end,
+      discarded_at = case when p_discard then now() end, discard_reason = case when p_discard then 'duplicate' end
+    where event = 'support.reply' and payload ->> 'id' = p_message::text;
+$$;
+create function pg_temp.error(p_message bigint) returns text language sql as $$
+  select error from private.support_messages where id = p_message;
+$$;
+select public.support_reply_sent(ids[2], 'resend: 422 invalid to address') from sent;
+select public.support_reply_sent(ids[3]) from sent;
+select pg_temp.give_up(i) from sent, unnest(ids[1:3]) i;
+select pg_temp.give_up(ids[4], true) from sent;
+select is(pg_temp.error((select ids[1] from sent)), 'support reply: connection reset',
+  'a reply the outbox gave up on, with nothing recorded, is marked failed: never left sending');
+select is(pg_temp.error((select ids[2] from sent)), 'resend: 422 invalid to address', 'the error db-events recorded stays');
+select is(pg_temp.error((select ids[3] from sent)), null, 'a reply already sent is left alone');
+select is(pg_temp.error((select ids[4] from sent)), 'discarded: duplicate', 'so is one discarded in sophros');
+select public.support_reply_sent(ids[1]) from sent;
+select is((select error is null and sent_at is not null from private.support_messages where id = (select ids[1] from sent)),
+  true, 'a replay that sends it clears the error');
 
 select * from finish();
 rollback;

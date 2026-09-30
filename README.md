@@ -208,6 +208,11 @@ back, or anything else written to that address, lands in sophros (migration `202
 `admin_support` returns each message's `direction`; showing the member's messages as received by email is
 sophros' part (its own pull request). Until then they read like the team's.
 
+A team reply is never left "Sending" (`sent_at` and `error` both null): whatever stops db-events from sending it,
+reading it included, is recorded on the message (`error`) and retried, and a reply the outbox gives up on (out of
+budget, or discarded) is marked failed when nothing was recorded (`private.support_reply_given_up`). A replay
+that sends it clears the error.
+
 Setting it up, per environment (production: support@getdrafft.com; staging: support-staging@getdrafft.com):
 
 1. Function secrets, in both projects (the drift check wants the same names): `SUPPORT_INBOUND_SECRET`
