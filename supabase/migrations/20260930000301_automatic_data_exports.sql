@@ -1,29 +1,43 @@
 -- Data exports, sent automatically (they were prepared by hand from the team's email, 20260927000005). What
--- the app and the privacy policy promise: "You get a link by email, usually within 24 hours, valid for 7 days."
+-- the app and the privacy policy promise: "You get a link by email, usually within 24 hours, valid for 7 days"
+-- (one link per part when the export needs several).
 --
--- You > Your data > Export my data (request_data_export) queues `export.requested`, and db-events:
+-- You › Privacy & data › Export my data (request_data_export) queues `export.requested`, and db-events:
 --   1. claims the request (export_begin: one build at a time, taken back after 15 minutes if it stopped);
---   2. builds the export: data.json with everything export_data() returns, the messages the person sent
---      (Stream) and their own photos, videos and voice intro (R2), zipped in parts that each fit one Storage
---      upload (EXPORT_MAX_BYTES), part 1 first with data.json;
---   3. stores each part in the private bucket `data-exports`, at <user id>/<request id>-<part>.zip;
---   4. emails the person a signed link per part, valid 7 days, in their language;
---   5. marks the request fulfilled (export_ready), with its files and when they expire.
+--   2. without an email address on the account, tells the team and closes the request (export_closed,
+--      `no_email`): nothing is built;
+--   3. builds the export: data.json with what export_data() returns, the messages and reactions the person sent
+--      (Stream) and their own photos, videos, voice intro and chat attachments (R2), zipped in parts that each
+--      fit one Storage upload (EXPORT_MAX_BYTES), part 1 first with data.json;
+--   4. stores each part in the private bucket `data-exports`, at <user id>/<request id>-<part>.zip, and records
+--      them at once (export_stored), so they expire 7 days on whatever happens next; a request gone meanwhile
+--      (the account erased) gets its parts deleted instead;
+--   5. emails the person a signed link per part, valid 7 days, in their language;
+--   6. marks the request fulfilled (export_ready).
 -- `data-exports-expire` (pg_cron, hourly) queues `export.expired` for files past their 7 days: db-events deletes
--- them, then export_file_deleted records it. delete-account deletes the account's folder (every part) at once.
+-- them, then export_file_deleted records it. `data-exports-sweep` (daily) queues `export.sweep` for objects no
+-- request refers to any more (a build that failed for good). delete-account deletes the account's folder (every
+-- part) at once.
 --
--- request_data_export() is unchanged: one open request at a time, asking again answers its date. The team still
--- sees requests in sophros and can fulfil one by hand (admin_fulfil_data_request).
+-- request_data_export() is unchanged: one open request at a time, asking again answers its date; a closed one
+-- (`fulfilled_at` set with a `closed_reason`) no longer counts, so asking again after adding an email works. The
+-- team still sees requests in sophros and can fulfil one by hand (admin_fulfil_data_request).
 
 insert into storage.buckets (id, name, public, allowed_mime_types)
   values ('data-exports', 'data-exports', false, array['application/zip']);
 
 alter table private.data_requests
   add column started_at timestamptz,
-  -- The parts of the export, in order (at least one; a profile's files make a few at most).
+  -- The parts of the export, in order, recorded as soon as they are stored (at least one; a profile's files
+  -- make a few at most), and when they expire.
   add column file_paths text[] check (cardinality(file_paths) between 1 and 100),
   add column expires_at timestamptz,
-  add column file_deleted_at timestamptz;
+  add column file_deleted_at timestamptz,
+  -- Done with, without an export: `fulfilled_at` is set too, with no files.
+  add column closed_reason text check (closed_reason in ('no_email')),
+  add constraint data_requests_files_expire check ((file_paths is null) = (expires_at is null)),
+  add constraint data_requests_deleted_files check (file_deleted_at is null or file_paths is not null),
+  add constraint data_requests_closed check (closed_reason is null or (fulfilled_at is not null and file_paths is null));
 
 create index data_requests_expiring_idx on private.data_requests (expires_at)
   where file_paths is not null and file_deleted_at is null;
@@ -56,10 +70,10 @@ begin
 end;
 $$;
 
--- Everything drafft keeps about one account, as its owner may read it (GDPR art. 15 and 20). Other people
--- appear by first name and id only, as the app shows them. Left out: what protects someone else (the reports
--- about this account and who made them, the team's notes) and what is only the team's (the audit log).
--- Messages come from Stream and files from R2: db-events adds them.
+-- One account's data, as its owner may read it (GDPR art. 15 and 20). Other people appear by first name and id
+-- only, as the app shows them. Left out: what protects someone else (the reports about this account and who made
+-- them, the likes received, the team's notes, links to other accounts) and what is only the team's (the audit
+-- log, who reviewed a photo). Messages and reactions come from Stream and files from R2: db-events adds them.
 create function public.export_data(p_user uuid)
 returns jsonb
 language sql
@@ -130,23 +144,77 @@ as $$
       from private.ips i where i.user_id = p_user),
     'pushTokens', (select coalesce(jsonb_agg(jsonb_build_object('environment', t.environment, 'updatedAt', t.updated_at)), '[]')
       from public.push_tokens t where t.user_id = p_user),
-    'dataRequests', (select coalesce(jsonb_agg(jsonb_build_object('createdAt', d.created_at, 'fulfilledAt', d.fulfilled_at)
-        order by d.created_at), '[]') from private.data_requests d where d.user_id = p_user)
+    'deviceCheck', (select to_jsonb(c) - 'user_id' from private.device_checks c where c.user_id = p_user),
+    'verificationTexts', (select coalesce(jsonb_agg(jsonb_build_object('phone', s.phone, 'ip', s.ip, 'sentAt', s.created_at,
+        'approvedAt', s.approved_at, 'usedAt', s.used_at) order by s.created_at), '[]')
+      from private.sms_sends s where s.user_id = p_user),
+    'credits', (select coalesce(jsonb_agg(jsonb_build_object('product', c.product_id, 'kind', c.kind, 'quantity', c.quantity,
+        'source', c.source, 'creditedAt', c.credited_at, 'refundedAt', c.refunded_at) order by c.created_at), '[]')
+      from private.purchase_credits c where c.user_id = p_user),
+    -- The automatic checks of the person's own photos and videos (profile and chat), and a person's review.
+    'mediaChecks', (select coalesce(jsonb_agg(jsonb_build_object('key', f.key, 'context', f.context, 'verdict', f.verdict,
+        'labels', f.labels, 'at', f.created_at, 'reviewedAt', f.reviewed_at) order by f.created_at), '[]')
+      from public.media_flags f where f.user_id = p_user),
+    'consents', (select coalesce(jsonb_agg(jsonb_build_object('termsVersion', e.terms_version,
+        'sensitiveDataConsent', e.sensitive_consent, 'at', e.at) order by e.at, e.id), '[]')
+      from private.consent_events e where e.user_id = p_user),
+    'dataRequests', (select coalesce(jsonb_agg(jsonb_build_object('createdAt', d.created_at, 'fulfilledAt', d.fulfilled_at,
+        'closedReason', d.closed_reason) order by d.created_at), '[]') from private.data_requests d where d.user_id = p_user)
   )
   where exists (select 1 from person);
 $$;
 
--- Built, stored and emailed: fulfilled, the files deleted after 7 days.
-create function public.export_ready(p_id bigint, p_paths text[])
+-- The parts, stored: recorded at once, so they expire 7 days on even if the email never goes. Only the request's
+-- own paths (<user id>/<request id>-<part>.zip). False when the request is gone (the account erased meanwhile):
+-- db-events then deletes the parts itself.
+create function public.export_stored(p_id bigint, p_paths text[])
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  r private.data_requests;
+begin
+  select * into r from private.data_requests where id = p_id for update;
+  if not found then
+    return false;
+  end if;
+  if coalesce(cardinality(p_paths), 0) = 0 or exists (select 1 from unnest(p_paths) x
+      where x !~ ('^' || r.user_id || '/' || r.id || '-[0-9]{1,3}\.zip$')) then
+    perform private.fail('invalid_paths', 'export parts outside the request''s own paths');
+  end if;
+  update private.data_requests set file_paths = p_paths, expires_at = now() + interval '7 days', file_deleted_at = null
+    where id = p_id;
+  return true;
+end;
+$$;
+
+-- Emailed: fulfilled. False when there is nothing stored to fulfil it with (gone, or files deleted already).
+create function public.export_ready(p_id bigint)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update private.data_requests
+    set fulfilled_at = coalesce(fulfilled_at, now()), fulfilled_by = coalesce(fulfilled_by, 'automatic'), started_at = null
+    where id = p_id and file_paths is not null and file_deleted_at is null;
+  return found;
+end;
+$$;
+
+-- No export possible (no email address to send it to): done with, and said why. The team was told.
+create function public.export_closed(p_id bigint, p_reason text)
 returns void
 language sql
 security definer
 set search_path = ''
 as $$
   update private.data_requests
-    set fulfilled_at = coalesce(fulfilled_at, now()), fulfilled_by = coalesce(fulfilled_by, 'automatic'),
-        file_paths = p_paths, expires_at = now() + interval '7 days', started_at = null
-    where id = p_id;
+    set fulfilled_at = now(), fulfilled_by = 'automatic', closed_reason = p_reason, started_at = null
+    where id = p_id and fulfilled_at is null;
 $$;
 
 -- MARK: Expiring
@@ -198,14 +266,48 @@ as $$
   select file_paths from private.data_requests where id = p_id and file_deleted_at is null;
 $$;
 
-update private.outbox_policies set providers = '{stream,r2,resend}' where event = 'export.requested';
-insert into private.outbox_policies (event, retry_budget, expires_after, push_ttl, providers)
-  values ('export.expired', '24 hours', null, null, '{}');
+-- Daily: objects of the bucket that no request refers to any more (a build that failed for good, or stopped
+-- after storing some parts), a day old at least, so a build under way keeps its own. Queued in one event, 1000
+-- at most a day. Returns how many.
+create function private.queue_export_sweep()
+returns int
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_paths text[];
+begin
+  if exists (select 1 from private.outbox where event = 'export.sweep'
+             and delivered_at is null and failed_at is null and discarded_at is null) then
+    return 0;
+  end if;
+  select coalesce(array_agg(o.name order by o.name), '{}') into v_paths from (
+    select o.name from storage.objects o
+    where o.bucket_id = 'data-exports' and o.created_at < now() - interval '1 day'
+      and not exists (select 1 from private.data_requests d
+                      where d.file_deleted_at is null and o.name = any (d.file_paths))
+    order by o.created_at limit 1000) o;
+  if cardinality(v_paths) = 0 then
+    return 0;
+  end if;
+  perform private.emit('export.sweep', jsonb_build_object('paths', to_jsonb(v_paths)));
+  return cardinality(v_paths);
+end;
+$$;
 
-revoke all on function private.queue_export_expiries() from public, anon, authenticated;
-revoke execute on function public.export_begin(bigint), public.export_data(uuid), public.export_ready(bigint, text[]),
-  public.export_file_deleted(bigint), public.export_files(bigint) from public, anon, authenticated;
-grant execute on function public.export_begin(bigint), public.export_data(uuid), public.export_ready(bigint, text[]),
-  public.export_file_deleted(bigint), public.export_files(bigint) to service_role;
+update private.outbox_policies set providers = '{stream,r2,resend}' where event = 'export.requested';
+insert into private.outbox_policies (event, retry_budget, expires_after, push_ttl, providers, erasure) values
+  ('export.expired', '24 hours', null, null, '{}', true),
+  ('export.sweep', '24 hours', null, null, '{}', true);
+
+revoke all on function private.queue_export_expiries(), private.queue_export_sweep() from public, anon, authenticated;
+revoke execute on function public.export_begin(bigint), public.export_data(uuid), public.export_stored(bigint, text[]),
+  public.export_ready(bigint), public.export_closed(bigint, text), public.export_file_deleted(bigint),
+  public.export_files(bigint) from public, anon, authenticated;
+grant execute on function public.export_begin(bigint), public.export_data(uuid), public.export_stored(bigint, text[]),
+  public.export_ready(bigint), public.export_closed(bigint, text), public.export_file_deleted(bigint),
+  public.export_files(bigint) to service_role;
 
 select cron.schedule('data-exports-expire', '12 * * * *', 'select private.queue_export_expiries()');
+select cron.schedule('data-exports-sweep', '42 4 * * *', 'select private.queue_export_sweep()');
