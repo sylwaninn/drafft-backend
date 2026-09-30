@@ -1,6 +1,7 @@
 {
   "authenticated_security_definer_function_executable_public_accept_terms_p_version text, p_sensitive_consent boolean": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_add_profile_media_p_key text, p_width integer, p_height integer, p_thumbhash text, p_kind public.media_kind, p_duration real, p_poster_key text": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
+  "authenticated_security_definer_function_executable_public_area_at_p_lat double precision, p_lng double precision": "App RPC: callable by signed-in people on purpose; returns only a public area name, reading private.areas it can't reach as invoker.",
   "authenticated_security_definer_function_executable_public_block_user_p_target uuid": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_blocked_users_": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_cancel_session_p_session uuid": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
