@@ -64,11 +64,13 @@ The app-side list lives in `drafft/TODO.md`.
       "Access by the drafft team" (drafft-web).
 - [ ] **sophros per environment.** Cloudflare Access applications (staging, production), the staff in
       `private.staff` of each database, the Workers' secrets: see the sophros README.
-- [ ] **Support replies landing back.** Replies written in sophros are emailed (db-events, `support.reply`)
-      with Reply-To SUPPORT_INBOX, so answers reach the team's mailbox, not the thread. Once the domain is on
-      Cloudflare: Email Routing for `support@getdrafft.com` to an Email Worker that reads the `[DR-XXXXXX]`
-      reference in the subject and posts the message to a `support-inbound` function (shared secret), which
-      adds it to `private.support_messages` and reopens the request.
+- [ ] **Support replies landing back.** Built (README, Support by email: the support mail Worker, `support-inbound`,
+      the reference in every support subject). Still to do by hand, in order: `SUPPORT_INBOUND_SECRET` in both
+      projects; Email Routing on `getdrafft.com` (its MX, DKIM and SPF records, replacing `v=spf1 -all`); the
+      team's mailbox as a verified destination; the Worker's secrets (`SUPPORT_INBOUND_SECRET`, `FALLBACK_ADDRESS`)
+      and deploy, staging then production; the routes `support-staging@` and `support@` to the Workers; a test
+      reply on staging; then `SUPPORT_ADDRESS` in both projects. Later: postal-mime 4.0.1 or newer once it is past
+      the dependency age window (address parser fixes; the Worker already trusts only the envelope sender).
 - [ ] **Privacy policy.** Mention device reports (model, iOS, app version, IP and country, for safety;
       `private.ips` kept 180 days after the last open, `private.devices`, last IP included, a year) and staff
       access to conversations when investigating.
