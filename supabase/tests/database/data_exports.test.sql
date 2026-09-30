@@ -101,7 +101,7 @@ select is((select array_agg(t order by t) from (
     -- Left out: copies of the profile or of a setting, the team's and safety records, rate limits.
     'private.account_deletions', 'private.account_links', 'private.admin_audit', 'private.banned_accounts',
     'private.deleted_identities', 'private.identity_marks', 'private.moderation_holds', 'private.purchase_sync_calls',
-    'private.session_reminders', 'private.staff_notes', 'public.profile_cards'
+    'private.session_reminders', 'private.staff_deletions', 'private.staff_notes', 'public.profile_cards'
   ]::text[]) x),
   'every table naming an account is exported or left out on purpose');
 
