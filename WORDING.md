@@ -7,8 +7,8 @@ states, errors, push, email, SMS, paywall, App Store / Play Store, website, scre
 
 - **Read it before writing or changing any user-facing text, in any of the 7 languages. Apply it.
   Run the [review checklist](#10-review-checklist) before you finish.**
-- Canonical file: `drafft/WORDING.md`. `drafft-backend/WORDING.md` and `drafft-web/WORDING.md` are
-  synced copies: edit only this one, then run `scripts/sync-wording.sh`.
+- Canonical file: `drafft/WORDING.md`. `drafft-backend/WORDING.md`, `drafft-web/WORDING.md` and
+  `drafft-android/WORDING.md` are synced copies: edit only this one, then run `scripts/sync-wording.sh`.
 - Every new editorial decision goes here (section 11). Other files point here, never restate rules.
 - Machine-checked: the forbidden patterns in section 5 fail CI (`scripts/ci/i18n_lint.py` here, a
   test in drafft-backend, a CI step in drafft-web).
@@ -71,7 +71,7 @@ states, errors, push, email, SMS, paywall, App Store / Play Store, website, scre
 | Level | level | niveau | The app has **no level field**: never promise matching or filtering by level. Say "every level welcome", level only in people's own words |
 | How often | "3× a week" | « 3× par semaine » | |
 | Pace (speed) / rhythm (life) | pace / rhythm | allure / rythme | |
-| Likes, super like, boost | like, super like, boost | like, super like, boost | Lowercase, also in store product names |
+| Likes, super like, boost | like, super like, boost | like, super like, boost | Lowercase in copy. Pack names in the stores keep their capitals, as in App Store Connect: "1 Boost", "5 Boosts", "3 Super Likes" (each language keeps its own spelling: ES "Superlikes", IT "Boost" and "Super Like", NL "Superlikes") |
 
 ### Core terms in all 7 languages
 
@@ -180,7 +180,7 @@ repository's copy of this file: keep the format.
 
 - **Address:** the informal "you" in every language: EN you, FR tu, ES tú (vosotros for two people,
   Spain), DE du, IT tu, PT tu (European), NL je/jij. "You two": FR vous, ES vosotros, DE ihr.
-- **Case:** sentence case everywhere (titles, buttons, store names). drafft always lowercase.
+- **Case:** sentence case everywhere (titles, buttons, store names). drafft always lowercase. The one exception: the pack names in the stores (section 4).
 - **CTAs:** a verb first, 1–3 words, 20 characters max in EN. Say what happens ("Propose a session",
   "Pick this time"), not "OK", "Continue" or "Submit" when a precise verb exists. Keep names out of
   one-line buttons ("Say hi", not "Say hi to Maximilien").
@@ -326,3 +326,6 @@ Run on every text before you validate it.
   and the "Demo text" line of the legal sheets were removed.
 - 2026-09-29: Session ideas and prompts suggest coffee, brunch, smoothies, picnics; never drinks or
   dinner, never a city-specific place (the app runs in several cities).
+- 2026-09-30: Pack names in the stores keep their capitals, as in App Store Connect and Google Play ("5 Boosts",
+  "3 Super Likes"). Running copy stays lowercase (like, super like, boost). The earlier rule "lowercase, also in
+  store product names" is withdrawn.
