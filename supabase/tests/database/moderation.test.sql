@@ -2,7 +2,7 @@
 -- and phone from signing up again.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(20);
+select plan(23);
 
 create function pg_temp.person(p_name text, p_phone text) returns uuid language plpgsql as $$
 declare
@@ -83,16 +83,23 @@ select is((select array_agg(kind order by kind) from private.identity_marks
   array['email', 'phone'], 'email and phone are banned');
 select throws_ok($$insert into auth.users (id, email, aud, role, instance_id)
     values (gen_random_uuid(), 'MIA@test.dev', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000')$$,
-  'P0001', 'this account can no longer be used on drafft', 'no new account with the email');
+  'P0001', 'this email is already used by another account', 'no new account with the email');
+select throws_ok($$insert into auth.users (id, email, aud, role, instance_id)
+    values (gen_random_uuid(), 'mia+2@test.dev', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000')$$,
+  'P0001', 'this email is already used by another account', 'nor with an alias of it');
+select throws_ok(format($$update auth.users set email_change = 'Mia+3@test.dev' where id = %L$$, (select ned from ids)),
+  'P0001', 'this email is already used by another account', 'an email change is refused when the code is asked for');
+select throws_ok(format($$update auth.users set phone_change = '33611111111' where id = %L$$, (select ned from ids)),
+  'P0001', 'this phone number is already used by another account', 'a phone change too');
 select throws_ok(format($$update auth.users set phone = '33611111111' where id = %L$$, (select ned from ids)),
-  'P0001', 'this account can no longer be used on drafft', 'nor moving the phone to another account');
+  'P0001', 'this phone number is already used by another account', 'nor moving the phone to another account');
 select lives_ok(format($$update auth.users set email = email, phone = phone, last_sign_in_at = now() where id = %L$$,
     (select mia from ids)), 'the banned account still signs in, to see why');
 
 delete from auth.users where id = (select mia from ids);
 select throws_ok($$insert into auth.users (id, email, aud, role, instance_id)
     values (gen_random_uuid(), 'mia@test.dev', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000')$$,
-  'P0001', 'this account can no longer be used on drafft', 'deleting the account doesn''t clear the ban');
+  'P0001', 'this email is already used by another account', 'deleting the account doesn''t clear the ban');
 
 -- Unbanning (a mistake) clears them.
 select public.set_moderation((select ned from ids), 'banned');
