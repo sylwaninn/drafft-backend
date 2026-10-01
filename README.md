@@ -460,6 +460,7 @@ supabase start            # ports 55420-55429, so it runs next to other Supabase
 supabase test db          # 217 pgTAP tests (supabase/tests/database)
 deno run -A scripts/load-areas.ts local   # the areas for area_at; again after a db reset
 scripts/local-env.sh      # once: functions/.env.local from .env.staging with local values; yours to edit after
+scripts/sync-vault.sh local   # the media signing secrets in the local Vault: cards get photo links (staging's Worker)
 supabase functions serve --env-file supabase/functions/.env.local
 # in the app repository: scripts/local-backend.sh (--device for an iPhone on the same Wi-Fi)
 ```
@@ -534,8 +535,11 @@ or `functions deploy` by hand.
    then the secrets as in step 4 before enabling it.
 6. R2 bucket `drafft-media`, private, served only by the media Worker (`cloudflare/media-worker`) on
    `media.getdrafft.com`: signed links of about an hour (`?exp=…&sig=…`, optional `&w=` among 160, 320,
-   640, 1080), issued by the database (cards, `media_urls`) and the Edge Functions for what the caller may
-   see. `MEDIA_SIGNING_KEY` (`openssl rand -hex 32`, one per environment) is the same in the function
+   640, 1080, 1440), issued by the database (cards, `media_urls`) and the Edge Functions for what the caller
+   may see. A photo's smaller copies (`&w=`, WebP) are made once and kept in R2 next to it
+   (`<key>.w<width>.webp`): made at approval for 320, 1080 and 1440 (db-events, `_shared/renditions.ts`), the
+   others on first view; deleted with the photo (`media.deleted`, chat erasure, the account's prefix), and
+   never served once their original is gone. Deploy the Worker after the functions that delete them. `MEDIA_SIGNING_KEY` (`openssl rand -hex 32`, one per environment) is the same in the function
    secrets, the Vault (`media_signing_key`, by `scripts/sync-vault.sh`), the Worker and sophros;
    `MEDIA_PUBLIC_URL` is the Worker's domain. The Worker also serves blurred copies at
    `/b/<mode>/<token>?exp=…&sig=…` (the Likes of a free account, `private.blur_url`): the token is the media key
