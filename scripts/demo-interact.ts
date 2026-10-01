@@ -25,7 +25,8 @@
 import { StreamChat } from "npm:stream-chat@9";
 import { guard } from "./demo/guard.ts";
 
-const DEMO = "u.email like 'demo%@drafft.test'";
+// Exactly the accounts demo-profiles.ts writes (demo001 to demo999), never a look-alike.
+const DEMO = String.raw`u.email ~ '^demo[0-9]{3}@drafft\.test$'`;
 const ACTIONS = [
   "likes",
   "superlikes",
@@ -114,12 +115,14 @@ interface Demo {
   sport: string;
 }
 
-/** Demo people who can still like the account (the swipe rule: it wants to see their gender), shuffled. */
-function likers(n: number): Promise<Demo[]> {
+/** Demo people who can still like the account (the swipe rule: it wants to see their gender), shuffled.
+ * `unswiped`: also none the account swiped, so the like added for it in `matches` is the one that counts. */
+function likers(n: number, unswiped = false): Promise<Demo[]> {
   return query<Demo>(`
 select p.id, p.name, p.sport_ids[1] as sport from public.profiles p join auth.users u on u.id = p.id
 where ${DEMO} and p.onboarded_at is not null
   and not exists (select 1 from public.swipes s where s.swiper = p.id and s.target = '${me.id}')
+  ${unswiped ? `and not exists (select 1 from public.swipes s where s.swiper = '${me.id}' and s.target = p.id)` : ""}
   and not exists (select 1 from public.matches m where (m.user_a, m.user_b) = (least(p.id, '${me.id}'::uuid), greatest(p.id, '${me.id}'::uuid)))
   and (select cardinality(interested_in) = 0 or p.gender = any (interested_in) from public.profiles where id = '${me.id}')
 order by random() limit ${n};`);
@@ -211,7 +214,7 @@ join auth.users u on u.id = p.id
 where s.swiper = '${me.id}' and s.action <> 'pass' and ${DEMO}
   and not exists (select 1 from public.swipes b where b.swiper = p.id and b.target = '${me.id}')
 order by s.created_at desc limit ${n};`);
-  const others = liked.length < n ? await likers(n - liked.length) : [];
+  const others = liked.length < n ? await likers(n - liked.length, true) : [];
   for (const d of others) {
     // The account's like, as if it had swiped them in Discover.
     await query(
