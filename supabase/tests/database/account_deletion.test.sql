@@ -134,7 +134,7 @@ set local role authenticated;
 select pg_temp.login((select di from ids));
 select is((select count(*) from public.blocked_users()), 0::bigint, 'it leaves the blocked list');
 reset role;
-select throws_ok($$ select pg_temp.person('ed@audit.test') $$, 'P0001', 'this account can no longer be used on drafft',
+select throws_ok($$ select pg_temp.person('ed@audit.test') $$, 'P0001', 'this email is already used by another account',
   'signing up again with a banned email is refused');
 
 -- MARK: Signing up again after a report
