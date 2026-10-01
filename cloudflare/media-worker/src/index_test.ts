@@ -1,5 +1,14 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { type Context, type EdgeCache, type Env, handle, type R2Bucket, type R2ObjectBody } from "./index.ts";
+import {
+  type Context,
+  type EdgeCache,
+  type Env,
+  handle,
+  type ImagesBinding,
+  type R2Bucket,
+  type R2ObjectBody,
+} from "./index.ts";
+import { sealBlurToken } from "./blur_token.ts";
 import { sign } from "./signature.ts";
 
 const secret = "test-signing-key";
@@ -153,4 +162,97 @@ Deno.test("HEAD has headers and no body", async () => {
   assertEquals(res.status, 200);
   assertEquals(res.headers.get("content-length"), "10");
   assertEquals(res.body, null);
+});
+
+// MARK: Blurred copies
+
+const photo = "u/0b6f1f5e-8f0c-4a5e-9d3b-2f8a1c7e4d10/photos/p.jpg";
+
+/** A stand-in for the Images binding that records what it was asked. */
+function images(fail = false): ImagesBinding & { asked: unknown[] } {
+  const b = {
+    asked: [] as unknown[],
+    input: (stream: ReadableStream<Uint8Array>) => ({
+      transform: (t: unknown) => ({
+        output: async (o: unknown) => {
+          b.asked.push({ ...(t as object), ...(o as object) });
+          if (fail) throw new Error("unsupported image");
+          const original = await new Response(stream).text();
+          return {
+            response: () => new Response(`blurred(${original})`, { headers: { "content-type": "image/webp" } }),
+          };
+        },
+      }),
+    }),
+  };
+  return b;
+}
+
+async function blurLink(k = photo, mode = "l1", ttl = 3600): Promise<string> {
+  const exp = Math.floor(Date.now() / 1000) + ttl;
+  const { token, sig } = await sealBlurToken(secret, k, mode, "11111111-1111-4111-8111-111111111111", exp);
+  return `https://media.test/b/${mode}/${token}?exp=${exp}&sig=${sig}`;
+}
+
+Deno.test("a blur link serves a small, strongly blurred WebP, then the CDN copy under an opaque id", async () => {
+  const b = bucket({ [photo]: bytes });
+  const img = images();
+  const cache = memoryCache();
+  const ctx = context();
+  const res = await handle(new Request(await blurLink()), { ...env(b), IMAGES: img }, ctx, cache);
+  assertEquals(res.status, 200);
+  assertEquals(await res.text(), "blurred(0123456789)");
+  assertEquals(res.headers.get("content-type"), "image/webp");
+  assertEquals(res.headers.get("cache-control")?.startsWith("private, max-age="), true);
+  assertEquals(res.headers.get("etag"), null, "nothing of the original file");
+  assertEquals(img.asked, [{ width: 200, fit: "scale-down", blur: 50, format: "image/webp", quality: 60 }]);
+  await ctx.done();
+  assertEquals(cache.keys.length, 1);
+  assertEquals(/^https:\/\/media\.test\/b\/l1\/[A-Za-z0-9_-]{43}$/.test(cache.keys[0]), true);
+  assertEquals(cache.keys[0].includes("0b6f1f5e"), false, "no person in the cache key");
+
+  // Another link to the same photo (another viewer, another quarter hour) is served from that copy.
+  const again = await handle(new Request(await blurLink(photo, "l1", 3000)), { ...env(b), IMAGES: img }, ctx, cache);
+  assertEquals(await again.text(), "blurred(0123456789)");
+  assertEquals(b.gets, 1);
+});
+
+Deno.test("a blur link never serves the original", async () => {
+  const b = bucket({ [photo]: bytes });
+  const noBinding = await handle(new Request(await blurLink()), env(b), context(), memoryCache());
+  assertEquals(noBinding.status, 404, "without the Images binding");
+  const failed = await handle(new Request(await blurLink()), { ...env(b), IMAGES: images(true) }, context(), null);
+  assertEquals(failed.status, 404, "when the transformation fails");
+});
+
+Deno.test("the same 404 for a tampered, expired, unknown-mode or non-photo blur link", async () => {
+  const b = bucket({ [photo]: bytes, [key]: bytes });
+  const e = { ...env(b), IMAGES: images() };
+  const good = new URL(await blurLink());
+  const variants: string[] = [];
+  const tampered = new URL(good);
+  tampered.searchParams.set("exp", String(Number(good.searchParams.get("exp")) + 900));
+  variants.push(tampered.href);
+  variants.push(good.href.replace("/b/l1/", "/b/l2/"));
+  variants.push(good.href.replace(/sig=[^&]+/, "sig=" + "A".repeat(43)));
+  variants.push(good.href.replace(/&sig=[^&]+/, ""));
+  variants.push(good.href.replace("/b/l1/", "/b/l1/A"));
+  variants.push(await blurLink(photo, "l1", -10));
+  variants.push(await blurLink(photo, "zz"));
+  variants.push(await blurLink(key)); // a video
+  variants.push(await blurLink("u/0b6f1f5e-8f0c-4a5e-9d3b-2f8a1c7e4d10/photos/missing.jpg"));
+  for (const v of variants) {
+    const res = await handle(new Request(v), e, context(), null);
+    assertEquals(res.status, 404, v);
+    assertEquals(res.headers.get("cache-control"), "no-store");
+  }
+});
+
+Deno.test("an ordinary link to the photo is not a way around the blur", async () => {
+  // A blur link's signature does not open the sharp path: its key never appears, and the signature
+  // is not an ordinary one.
+  const link = new URL(await blurLink());
+  const sharp = `https://media.test/${photo}?exp=${link.searchParams.get("exp")}&sig=${link.searchParams.get("sig")}`;
+  const res = await handle(new Request(sharp), env(bucket({ [photo]: bytes })), context(), null);
+  assertEquals(res.status, 404);
 });

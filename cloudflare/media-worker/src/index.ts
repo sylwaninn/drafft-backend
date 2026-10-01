@@ -8,6 +8,10 @@
 // - Range requests (video, audio) are answered from the cache, or from R2 while the cache fills.
 // - `w` asks for a smaller photo (Cloudflare Images binding). Without the binding, or when the
 //   transformation fails, the original is served.
+// - /b/<mode>/<token> serves only a blurred copy of a photo (blur_token.ts: the token hides which one,
+//   the signature binds the mode). Never the original: without the binding, or when the transformation
+//   fails, it is a 404.
+import { blurCacheId, type BlurKeys, blurKeys, openBlurToken } from "./blur_token.ts";
 import { verify } from "./signature.ts";
 
 // Minimal shapes of the Workers runtime APIs used here (no @cloudflare/workers-types dependency, so
@@ -34,7 +38,7 @@ export interface R2Bucket {
 }
 export interface ImagesBinding {
   input(stream: ReadableStream<Uint8Array>): {
-    transform(options: { width: number; fit: "scale-down" }): {
+    transform(options: { width: number; fit: "scale-down"; blur?: number }): {
       output(
         options: { format: string; quality?: number },
       ): Promise<{ response(): Response }>;
@@ -63,6 +67,22 @@ const WIDTHS = new Set([160, 320, 640, 1080]);
 /** How long the CDN keeps a copy (objects are immutable). */
 const EDGE_TTL = 30 * 24 * 3600;
 
+/**
+ * Blur modes, by the name the backend signs (private.blur_url). A new rendition is a new mode name,
+ * never a changed one: links already issued keep their meaning.
+ */
+export const BLUR_MODES: Record<string, { width: number; blur: number; quality: number }> = {
+  // Likes, free account: 200 px wide, blur radius 50 (a quarter of the width), WebP. WebP output
+  // carries no EXIF or other metadata.
+  l1: { width: 200, blur: 50, quality: 60 },
+};
+const BLUR_PATH = /^\/b\/([a-z0-9]{1,8})\/([A-Za-z0-9_-]{43,256})$/;
+/** Only photos have a blurred copy. */
+const BLURRABLE =
+  /^u\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(photos|demo)\/[A-Za-z0-9_-]{1,64}\.(jpg|heic|png)$/;
+/** How long the CDN keeps a blurred copy (per data centre; never stored in R2, see handleBlur). */
+const BLUR_EDGE_TTL = 7 * 24 * 3600;
+
 const notFound = () =>
   new Response("Not found", {
     status: 404,
@@ -85,6 +105,7 @@ export async function handle(
 ): Promise<Response> {
   if (request.method !== "GET" && request.method !== "HEAD") return notFound();
   const url = new URL(request.url);
+  if (url.pathname.startsWith("/b/")) return await handleBlur(request, url, env, ctx, cache);
   const key = url.pathname.slice(1);
   if (!KEY.test(key)) return notFound();
   const exp = url.searchParams.get("exp");
@@ -142,6 +163,60 @@ export async function handle(
   if (!cache) return clientHeaders(full);
   ctx.waitUntil(cache.put(new Request(cacheUrl), full.clone()));
   return clientHeaders(full);
+}
+
+let derived: { secret: string; keys: Promise<BlurKeys> } | null = null;
+function keysFor(secret: string): Promise<BlurKeys> {
+  if (derived?.secret !== secret) derived = { secret, keys: blurKeys(secret) };
+  return derived.keys;
+}
+
+/**
+ * A blurred copy of a photo, for a blur link. Same 404 as above for anything wrong. The copy is cached
+ * at the edge under an opaque id (not the token, not the media key), and is never written to R2: a
+ * deleted photo or account leaves no derived file behind, and no new link to it is ever issued.
+ */
+async function handleBlur(
+  request: Request,
+  url: URL,
+  env: Env,
+  ctx: Context,
+  cache: EdgeCache | null,
+): Promise<Response> {
+  const match = BLUR_PATH.exec(url.pathname);
+  const mode = match && Object.hasOwn(BLUR_MODES, match[1]) ? BLUR_MODES[match[1]] : null;
+  if (!match || !mode || !env.MEDIA_SIGNING_KEY) return notFound();
+  const keys = await keysFor(env.MEDIA_SIGNING_KEY);
+  const exp = url.searchParams.get("exp");
+  const key = await openBlurToken(keys, match[1], match[2], exp, url.searchParams.get("sig"));
+  if (!key || !BLURRABLE.test(key)) return notFound();
+
+  const cacheUrl = `${url.origin}/b/${match[1]}/${await blurCacheId(keys, match[1], key)}`;
+  const clientHeaders = (response: Response) => forClient(response, Number(exp), request.method);
+  const hit = await cache?.match(new Request(cacheUrl));
+  if (hit) return clientHeaders(hit);
+
+  const object = await env.MEDIA.get(key);
+  if (!object || !("body" in object) || !env.IMAGES) return notFound();
+  let blurred: Response;
+  try {
+    const result = await env.IMAGES.input(object.body)
+      .transform({ width: mode.width, fit: "scale-down", blur: mode.blur })
+      .output({ format: "image/webp", quality: mode.quality });
+    const response = result.response();
+    if (!response.ok || !response.body) throw new Error(`status ${response.status}`);
+    // Fresh headers: nothing of the original object (its ETag would identify the sharp file).
+    const headers = new Headers({
+      "content-type": "image/webp",
+      "cache-control": `public, max-age=${BLUR_EDGE_TTL}`,
+    });
+    blurred = new Response(response.body, { status: 200, headers });
+  } catch (error) {
+    console.error(`blur ${match[1]}: ${error instanceof Error ? error.message : error}`);
+    return notFound();
+  }
+  if (cache) ctx.waitUntil(cache.put(new Request(cacheUrl), blurred.clone()));
+  return clientHeaders(blurred);
 }
 
 function objectHeaders(object: R2Object): Headers {
