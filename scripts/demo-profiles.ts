@@ -188,7 +188,8 @@ async function demoId(n: number): Promise<string> {
 
 const pad = (n: number) => String(n).padStart(3, "0");
 const email = (n: number) => `demo${pad(n)}@${DOMAIN}`;
-const DEMO_EMAILS = `email like 'demo%@${DOMAIN}'`;
+// Exactly the accounts seed writes (demo001 to demo999), never a look-alike: purge deletes by this filter.
+const DEMO_EMAILS = String.raw`email ~ '^demo[0-9]{3}@drafft\.test$'`;
 
 interface Demo {
   n: number;
@@ -354,6 +355,12 @@ async function purge() {
   const keys = (await query(
     `select m.key from public.profile_media m join auth.users u on u.id = m.user_id where u.${DEMO_EMAILS};`,
   )).map((r) => r[0]);
+  // Their matches end first, as an account erasure does (retention_purges): the other person's apps drop the
+  // chat live (match_ended) and upcoming sessions are cancelled. A cascade delete alone would leave the chat
+  // on screen until the next reload.
+  await query(`
+update public.matches m set ended_at = now(), ended_by = u.id from auth.users u
+where u.${DEMO_EMAILS} and u.id in (m.user_a, m.user_b) and m.ended_at is null;`);
   // Deleting the account removes every row (cascade); db-events then deletes each photo, done here as well
   // so nothing stays in the bucket if an event is lost.
   const [[deleted]] = await query(
