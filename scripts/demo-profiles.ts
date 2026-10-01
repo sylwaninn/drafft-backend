@@ -5,7 +5,7 @@
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging refresh
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging purge
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging thumbhash
-//   deno run -A --env-file=supabase/functions/.env scripts/demo-profiles.ts local seed
+//   deno run -A --env-file=supabase/functions/.env.local scripts/demo-profiles.ts local seed
 //
 // seed: creates the missing demo people (100 by default, from scripts/demo/personas.ts); run it again and it
 // only adds who is missing. refresh: marks them active again (Discover hides people inactive for 30 days).
@@ -31,9 +31,10 @@ import { guard } from "./demo/guard.ts";
 
 const TERMS_VERSION = "2026-09-29";
 const DOMAIN = "drafft.test";
-// Picsum ids (landscapes and outdoor scenes), cropped to the app's 4:5 portrait.
+// Picsum ids (landscapes and outdoor scenes), cropped to the app's 4:5 portrait, at the size the app
+// uploads (2048 px on the long edge, PhotoCompressor.swift): cards load what real members' photos weigh.
 const PHOTOS = [1015, 1018, 1036, 1039, 1043];
-const WIDTH = 1080, HEIGHT = 1350;
+const WIDTH = 1638, HEIGHT = 2048;
 const USERS_PER_QUERY = 20;
 
 // [name, lat, lng, radius km, weight]: Lyon's arrondissements, Villeurbanne and the suburbs around.
