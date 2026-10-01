@@ -9,7 +9,7 @@ import { checkLine, type LineCheck } from "../_shared/sms.ts";
 
 const confirmed = { id: "u1", email_confirmed_at: "2026-09-28T10:00:00Z" };
 
-function deps(line: LineCheck, auth: { status: number; errorCode?: string } = { status: 200 }) {
+function deps(line: LineCheck, auth: { status: number; errorCode?: string; hint?: string } = { status: 200 }) {
   const calls: string[] = [];
   const d: PhoneCodeDeps = {
     reserve: (user, phone, ip) => {
@@ -85,8 +85,9 @@ Deno.test("phone-code: Lookup refusals, and Lookup down, send nothing (fail clos
 });
 
 Deno.test("phone-code: Auth's refusals keep stable codes", async () => {
-  const cases: [{ status: number; errorCode?: string }, number, string][] = [
+  const cases: [{ status: number; errorCode?: string; hint?: string }, number, string][] = [
     [{ status: 422, errorCode: "phone_exists" }, 409, "phone_taken"],
+    [{ status: 500, hint: "phone_taken" }, 409, "phone_taken"],
     [{ status: 429, errorCode: "over_sms_send_rate_limit" }, 429, "sms_limit"],
     [{ status: 500, errorCode: "hook_timeout" }, 502, "sms_failed"],
   ];

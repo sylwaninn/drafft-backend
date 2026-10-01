@@ -24,8 +24,9 @@ export interface PhoneCodeDeps {
   /** approve_sms: Lookup accepted the line. */
   approve(id: number): Promise<void>;
   checkLine(phone: string): Promise<LineCheck>;
-  /** Auth's phone change, as the person (PUT /auth/v1/user): Auth generates the code and calls the hook. */
-  startPhoneChange(phone: string): Promise<{ status: number; errorCode?: string }>;
+  /** Auth's phone change, as the person (PUT /auth/v1/user): Auth generates the code and calls the hook.
+   * `hint`: a database refusal's code (a number a banned account used is `phone_taken`). */
+  startPhoneChange(phone: string): Promise<{ status: number; errorCode?: string; hint?: string }>;
 }
 
 export async function requestPhoneCode(
@@ -51,9 +52,9 @@ export async function requestPhoneCode(
   }
   await deps.approve(reservation);
 
-  const { status, errorCode } = await deps.startPhoneChange(phone);
+  const { status, errorCode, hint } = await deps.startPhoneChange(phone);
   if (status >= 200 && status < 300) return;
-  if (errorCode === "phone_exists") throw new HttpError(409, "phone_taken");
+  if (errorCode === "phone_exists" || hint === "phone_taken") throw new HttpError(409, "phone_taken");
   if (status === 429 || errorCode?.startsWith("over_")) throw new HttpError(429, "sms_limit");
   console.error(`phone-code: auth answered ${status} ${errorCode ?? ""}`);
   throw new HttpError(502, "sms_failed");

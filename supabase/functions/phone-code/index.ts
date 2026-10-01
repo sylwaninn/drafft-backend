@@ -39,8 +39,8 @@ serve(async (req) => {
         headers: { apikey: secretKey(), authorization: `Bearer ${jwt}`, "content-type": "application/json" },
         body: JSON.stringify({ phone }),
       });
-      const answer = await res.json().catch(() => ({})) as { error_code?: string };
-      return { status: res.status, errorCode: answer.error_code };
+      const answer = await res.json().catch(() => ({})) as { error_code?: string; hint?: string };
+      return { status: res.status, errorCode: answer.error_code, hint: answer.hint };
     },
   });
   return json({});
