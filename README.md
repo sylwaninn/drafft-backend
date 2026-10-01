@@ -539,7 +539,8 @@ or `functions deploy` by hand.
    may see. A photo's smaller copies (`&w=`, WebP) are made once and kept in R2 next to it
    (`<key>.w<width>.webp`): made at approval for 320, 1080 and 1440 (db-events, `_shared/renditions.ts`), the
    others on first view; deleted with the photo (`media.deleted`, chat erasure, the account's prefix), and
-   never served once their original is gone. Deploy the Worker after the functions that delete them. `MEDIA_SIGNING_KEY` (`openssl rand -hex 32`, one per environment) is the same in the function
+   never served once their original is gone. CI deploys the Worker with each backend deploy, after the functions
+   that delete them (`CLOUDFLARE_API_TOKEN` secret, `CLOUDFLARE_ACCOUNT_ID` variable). `MEDIA_SIGNING_KEY` (`openssl rand -hex 32`, one per environment) is the same in the function
    secrets, the Vault (`media_signing_key`, by `scripts/sync-vault.sh`), the Worker and sophros;
    `MEDIA_PUBLIC_URL` is the Worker's domain. The Worker also serves blurred copies at
    `/b/<mode>/<token>?exp=…&sig=…` (the Likes of a free account, `private.blur_url`): the token is the media key
