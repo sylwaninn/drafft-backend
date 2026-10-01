@@ -4,11 +4,13 @@
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging seed [count]
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging refresh
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging purge
+//   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging thumbhash
 //   deno run -A --env-file=supabase/functions/.env scripts/demo-profiles.ts local seed
 //
 // seed: creates the missing demo people (100 by default, from scripts/demo/personas.ts); run it again and it
 // only adds who is missing. refresh: marks them active again (Discover hides people inactive for 30 days).
-// purge: deletes them all, their photos with them.
+// purge: deletes them all, their photos with them. thumbhash: gives the demo photos inserted without a
+// ThumbHash (before seed computed it) theirs, read from the files in R2; run it again and it changes nothing.
 //
 // How: each person is written straight into the database, as onboarding would leave them, through the
 // Management API (`supabase db query --linked`, the CLI's own login, no Supabase key). Accounts are
@@ -16,10 +18,14 @@
 // confirmed fictional phone number (ARCEP's +33 6 39 98 range), and no password: nobody signs in as them.
 // Photos are a few free pictures (Picsum, Unsplash licence) reused across everyone, uploaded to R2 under
 // `u/<id>/demo/` (the folder media_key_shape keeps for demo accounts) and inserted approved, so no
-// moderation runs. Locations are spread over Lyon and its suburbs, weighted like where people live.
+// moderation runs. Each photo carries the ThumbHash the app would compute (the placeholder of cards and of
+// blurred likes), from the same file: decoded (jpeg-js), scaled down to 100 px, encoded (thumbhash), so the
+// same picture always gets the same hash. Locations are spread over Lyon and its suburbs, weighted like where people live.
 //
 // Reads R2_* from the env file and never prints them.
 import { AwsClient } from "npm:aws4fetch@1";
+import jpeg from "npm:jpeg-js@0.4.4";
+import { rgbaToThumbHash } from "npm:thumbhash@0.1.1";
 import { personas } from "./demo/personas.ts";
 import { guard } from "./demo/guard.ts";
 
@@ -59,10 +65,10 @@ type Target = "staging" | "local";
 const [target, command, countArg] = Deno.args as [Target, string, string?];
 if (
   !["staging", "local"].includes(target) ||
-  !["seed", "refresh", "purge"].includes(command)
+  !["seed", "refresh", "purge", "thumbhash"].includes(command)
 ) {
   console.error(
-    "Usage: deno run -A --env-file=<env file> scripts/demo-profiles.ts staging|local seed [count]|refresh|purge",
+    "Usage: deno run -A --env-file=<env file> scripts/demo-profiles.ts staging|local seed [count]|refresh|purge|thumbhash",
   );
   Deno.exit(64);
 }
@@ -120,9 +126,21 @@ const r2 = new AwsClient({
   region: Deno.env.get("R2_REGION") ?? "auto",
 });
 // Locally the endpoint is the one the functions' container sees: from this machine, it is localhost.
-const endpoint = (Deno.env.get("R2_ENDPOINT") ?? `https://${env("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com`)
+const endpoint = (Deno.env.get("R2_ENDPOINT") ??
+  `https://${env("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com`)
   .replace("host.docker.internal", "127.0.0.1");
 const bucket = `${endpoint}/${env("R2_BUCKET")}`;
+
+async function r2Get(key: string): Promise<ArrayBuffer> {
+  for (let attempt = 1;; attempt++) {
+    const res = await r2.fetch(`${bucket}/${key}`);
+    if (res.ok) return await res.arrayBuffer();
+    await res.body?.cancel();
+    if (attempt === 3 || res.status < 500) {
+      throw new Error(`R2 GET ${key}: ${res.status}`);
+    }
+  }
+}
 
 async function r2Request(
   method: "PUT" | "DELETE",
@@ -155,6 +173,41 @@ async function pool<T>(
       await work(item);
     }
   }));
+}
+
+// MARK: ThumbHash
+
+/** The ThumbHash of a JPEG, base64 like the app sends it (add_profile_media's p_thumbhash). */
+function thumbhashOf(file: ArrayBuffer): string {
+  const image = jpeg.decode(new Uint8Array(file), {
+    useTArray: true,
+    formatAsRGBA: true,
+  });
+  // ThumbHash takes at most 100 x 100: a box filter down to that, keeping the aspect ratio.
+  const scale = Math.min(1, 100 / Math.max(image.width, image.height));
+  const w = Math.max(1, Math.round(image.width * scale)),
+    h = Math.max(1, Math.round(image.height * scale));
+  const rgba = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.floor((y * image.height) / h),
+      y1 = Math.max(y0 + 1, Math.floor(((y + 1) * image.height) / h));
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.floor((x * image.width) / w),
+        x1 = Math.max(x0 + 1, Math.floor(((x + 1) * image.width) / w));
+      const sum = [0, 0, 0, 0];
+      for (let sy = y0; sy < y1; sy++) {
+        for (let sx = x0; sx < x1; sx++) {
+          const i = (sy * image.width + sx) * 4;
+          for (let c = 0; c < 4; c++) sum[c] += image.data[i + c];
+        }
+      }
+      const n = (y1 - y0) * (x1 - x0);
+      for (let c = 0; c < 4; c++) {
+        rgba[(y * w + x) * 4 + c] = Math.round(sum[c] / n);
+      }
+    }
+  }
+  return btoa(String.fromCharCode(...rgbaToThumbHash(w, h, rgba)));
 }
 
 // MARK: People
@@ -237,7 +290,7 @@ async function demo(n: number): Promise<Demo> {
   };
 }
 
-function insertSql(d: Demo): string {
+function insertSql(d: Demo, hashes: Map<number, string>): string {
   const p = d.persona;
   const [chronotype, diet, drinks, smokes] = p.lifestyle;
   const genders = (g: string[]) => `array[${g.map(literal).join(",")}]::public.gender[]`;
@@ -279,10 +332,12 @@ insert into public.profile_sports (user_id, sport_id, per_week, position) values
 insert into public.profile_prompts (user_id, position, question, answer) values ${
     p.prompts.map(([q, a], i) => `('${d.id}', ${i}, ${literal(q)}, ${literal(a)})`).join(", ")
   };
-insert into public.profile_media (user_id, kind, key, position, width, height, status) values ${
-    d.photos.map((ph, i) => `('${d.id}', 'photo', ${literal(ph.key)}, ${i}, ${WIDTH}, ${HEIGHT}, 'approved')`).join(
-      ", ",
-    )
+insert into public.profile_media (user_id, kind, key, position, width, height, thumbhash, status) values ${
+    d.photos.map((ph, i) =>
+      `('${d.id}', 'photo', ${literal(ph.key)}, ${i}, ${WIDTH}, ${HEIGHT}, ${
+        literal(hashes.get(ph.picsum)!)
+      }, 'approved')`
+    ).join(", ")
   };
 insert into private.locations (user_id, geo) values ('${d.id}', ${point});
 update public.wallets set super_likes = 5 where user_id = '${d.id}';
@@ -319,6 +374,9 @@ async function seed() {
     if (!res.ok) throw new Error(`picsum ${id}: HTTP ${res.status}`);
     images.set(id, await res.arrayBuffer());
   }
+  const hashes = new Map(
+    [...images].map(([id, file]) => [id, thumbhashOf(file)]),
+  );
   const uploads = missing.flatMap((d) => d.photos);
   await pool(
     uploads,
@@ -330,7 +388,9 @@ async function seed() {
   for (let i = 0; i < missing.length; i += USERS_PER_QUERY) {
     const batch = missing.slice(i, i + USERS_PER_QUERY);
     // One statement (the local API prepares it), one transaction: a batch lands whole or not at all.
-    await query(`do $demo$ begin\n${batch.map(insertSql).join("")}\nend $demo$;\n`);
+    await query(
+      `do $demo$ begin\n${batch.map((d) => insertSql(d, hashes)).join("")}\nend $demo$;\n`,
+    );
     console.log(
       `${Math.min(i + USERS_PER_QUERY, missing.length)} / ${missing.length} people created`,
     );
@@ -372,8 +432,42 @@ where u.${DEMO_EMAILS} and u.id in (m.user_a, m.user_b) and m.ended_at is null;`
   );
 }
 
+async function thumbhash() {
+  const rows = await query(`
+select m.key from public.profile_media m join auth.users u on u.id = m.user_id
+where u.${DEMO_EMAILS} and m.kind = 'photo' and m.thumbhash is null;`);
+  if (rows.length === 0) {
+    console.log(`Every demo photo in ${target} has its ThumbHash.`);
+    return;
+  }
+  // Demo photos are a few pictures reused by everyone (p<position>-<picsum id>.jpg): one file read per picture,
+  // from R2, so the hash is the one of what the bucket serves.
+  const byPicture = new Map<string, string[]>();
+  for (const [key] of rows) {
+    const picture = /\/demo\/p\d+-(\d+)\.jpg$/.exec(key)?.[1];
+    if (!picture) throw new Error(`unexpected demo photo key ${key}`);
+    byPicture.set(picture, [...(byPicture.get(picture) ?? []), key]);
+  }
+  const values: string[] = [];
+  for (const keys of byPicture.values()) {
+    const hash = thumbhashOf(await r2Get(keys[0]));
+    values.push(...keys.map((k) => `(${literal(k)}, ${literal(hash)})`));
+  }
+  // Each updated row rebuilds its person's card (profile_media_card trigger): the card's media carries the
+  // hash and its version moves on, so apps and liked_me pick it up.
+  const [[updated]] = await query(`
+with done as (
+  update public.profile_media m set thumbhash = v.hash
+  from (values ${values.join(", ")}) as v(key, hash)
+  where m.key = v.key and m.thumbhash is null
+  returning 1)
+select count(*) from done;`);
+  console.log(`${updated} demo photos given their ThumbHash in ${target}.`);
+}
+
 try {
-  await ({ seed, refresh, purge })[command as "seed" | "refresh" | "purge"]();
+  await ({ seed, refresh, purge, thumbhash })
+    [command as "seed" | "refresh" | "purge" | "thumbhash"]();
 } finally {
   await Deno.remove(dir, { recursive: true });
 }
