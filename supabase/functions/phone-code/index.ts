@@ -27,6 +27,15 @@ serve(async (req) => {
       const { error } = await admin.rpc("approve_sms", { p_id: id });
       if (error) throw new Error(`approve_sms: ${error.message}`);
     },
+    banned: async (userId, phone) => {
+      const { data, error } = await admin.rpc("identity_is_banned", {
+        p_kind: "phone",
+        p_value: phone,
+        p_user: userId,
+      });
+      if (error) throw new Error(`identity_is_banned: ${error.message}`);
+      return data === true;
+    },
     checkLine: (phone) =>
       checkLine(phone, {
         sid: optionalEnv("TWILIO_LOOKUP_API_KEY_SID"),

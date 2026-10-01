@@ -53,6 +53,18 @@ Deno.serve(async (req) => {
     if (kind === "newEmail") {
       // One code, to the new address (double_confirm_changes is off): whichever token Auth filled in.
       if (!user.new_email) throw new Error("email_change without new_email");
+      // An address a banned account used: no code goes out. Auth then writes the change, which the
+      // database refuses as `email_taken` (20261001000201), and the app says it's already used.
+      const { data: banned, error } = await admin.rpc("identity_is_banned", {
+        p_kind: "email",
+        p_value: user.new_email,
+        p_user: user.id,
+      });
+      if (error) throw new Error(`identity_is_banned: ${error.message}`);
+      if (banned === true) {
+        console.warn("auth-email: email_change to an address a banned account used, not sent");
+        return hookOk();
+      }
       to = user.new_email;
       vars = { code: data.token || data.token_new, email: user.new_email };
     } else {

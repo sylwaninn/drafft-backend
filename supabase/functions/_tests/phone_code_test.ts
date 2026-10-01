@@ -20,6 +20,10 @@ function deps(line: LineCheck, auth: { status: number; errorCode?: string; hint?
       calls.push(`approve ${id}`);
       return Promise.resolve();
     },
+    banned: (user, phone) => {
+      calls.push(`banned ${user} ${phone}`);
+      return Promise.resolve(false);
+    },
     checkLine: (phone) => {
       calls.push(`lookup ${phone}`);
       return Promise.resolve(line);
@@ -60,7 +64,13 @@ Deno.test("phone-code: any country goes to Lookup (no prefix list)", async () =>
   for (const phone of ["+81312345678", "+2348031234567", "+5511912345678", "+33612345678"]) {
     const f = deps("ok");
     await requestPhoneCode(confirmed, phone, "203.0.113.7", f.deps);
-    assertEquals(f.calls, [`reserve u1 ${phone} 203.0.113.7`, `lookup ${phone}`, "approve 7", `auth ${phone}`]);
+    assertEquals(f.calls, [
+      `reserve u1 ${phone} 203.0.113.7`,
+      `banned u1 ${phone}`,
+      `lookup ${phone}`,
+      "approve 7",
+      `auth ${phone}`,
+    ]);
   }
 });
 
@@ -69,6 +79,16 @@ Deno.test("phone-code: the limit is checked before Lookup", async () => {
   f.deps.reserve = () => Promise.reject(new HttpError(429, "sms_limit"));
   await refused(requestPhoneCode(confirmed, "+33612345678", undefined, f.deps), 429, "sms_limit");
   assertEquals(f.calls, []);
+});
+
+Deno.test("phone-code: a number a banned account used → phone_taken, counted but no Lookup and no SMS", async () => {
+  const f = deps("ok");
+  f.deps.banned = (user, phone) => {
+    f.calls.push(`banned ${user} ${phone}`);
+    return Promise.resolve(true);
+  };
+  await refused(requestPhoneCode(confirmed, "+33612345678", undefined, f.deps), 409, "phone_taken");
+  assertEquals(f.calls, ["reserve u1 +33612345678 undefined", "banned u1 +33612345678"]);
 });
 
 Deno.test("phone-code: Lookup refusals, and Lookup down, send nothing (fail closed)", async () => {
@@ -80,7 +100,7 @@ Deno.test("phone-code: Lookup refusals, and Lookup down, send nothing (fail clos
   for (const [line, status, code] of cases) {
     const f = deps(line);
     await refused(requestPhoneCode(confirmed, "+33612345678", undefined, f.deps), status, code);
-    assertEquals(f.calls, ["reserve u1 +33612345678 undefined", "lookup +33612345678"], line);
+    assertEquals(f.calls, ["reserve u1 +33612345678 undefined", "banned u1 +33612345678", "lookup +33612345678"], line);
   }
 });
 

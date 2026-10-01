@@ -6,6 +6,9 @@
 --   `banned`: only their owner can use them.
 -- - Refused when the code is asked for (`email_change`, `phone_change` set by Auth), not after the code
 --   is typed: the change used to be accepted, the code sent, then turned down with a server error.
+-- - No code goes out to such an address or number: Auth calls the Send Email / Send SMS hook before it
+--   writes `email_change` / `phone_change`, so the trigger alone would still send one. auth-email skips
+--   the email and phone-code refuses before Lookup (`public.identity_is_banned`).
 
 create or replace function private.identity_banned(p_kind text, p_value text, p_user uuid)
 returns boolean
@@ -50,3 +53,18 @@ create trigger auth_users_refuse_banned before insert or update of email, phone,
   on auth.users for each row execute function private.refuse_banned_identity();
 
 revoke execute on function private.identity_banned(text, text, uuid) from public, anon, authenticated;
+
+-- For auth-email and phone-code (service role): an email or phone number a banned account other than
+-- `p_user` used. They answer it like a taken one, so the reply says nothing about a ban.
+create function public.identity_is_banned(p_kind text, p_value text, p_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p_kind in ('email', 'phone') and private.identity_banned(p_kind, p_value, p_user);
+$$;
+
+revoke execute on function public.identity_is_banned(text, text, uuid) from public, anon, authenticated;
+grant execute on function public.identity_is_banned(text, text, uuid) to service_role;

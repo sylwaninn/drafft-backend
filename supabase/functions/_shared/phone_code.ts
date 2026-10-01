@@ -4,6 +4,8 @@
 //   1. the account's email is confirmed          email_unconfirmed (403)
 //   2. the number is E.164                       phone_invalid (400)
 //   3. the send is reserved under the limits     sms_limit (429), per number, account and IP (reserve_sms)
+//      and the number isn't one a banned account  phone_taken (409), like a taken one: says nothing of a
+//      used (identity_is_banned)                  ban, and no SMS goes out (Auth texts before it writes)
 //   4. Twilio Lookup says it's a mobile line     phone_invalid (400), phone_unsupported (400),
 //                                                phone_check_unavailable (503, fails closed)
 //   5. Auth starts the phone change              phone_taken (409), sms_limit (429), sms_failed (502)
@@ -23,6 +25,8 @@ export interface PhoneCodeDeps {
   reserve(userId: string, phone: string, ip: string | undefined): Promise<number>;
   /** approve_sms: Lookup accepted the line. */
   approve(id: number): Promise<void>;
+  /** identity_is_banned: a banned account other than this one used the number. */
+  banned(userId: string, phone: string): Promise<boolean>;
   checkLine(phone: string): Promise<LineCheck>;
   /** Auth's phone change, as the person (PUT /auth/v1/user): Auth generates the code and calls the hook.
    * `hint`: a database refusal's code (a number a banned account used is `phone_taken`). */
@@ -40,6 +44,7 @@ export async function requestPhoneCode(
   if (!isE164(phone)) throw new HttpError(400, "phone_invalid");
 
   const reservation = await deps.reserve(user.id, phone, ip);
+  if (await deps.banned(user.id, phone)) throw new HttpError(409, "phone_taken");
   switch (await deps.checkLine(phone)) {
     case "ok":
       break;
