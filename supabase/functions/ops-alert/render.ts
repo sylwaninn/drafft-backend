@@ -35,7 +35,7 @@ function byEvent(counts: Record<string, number> | undefined): string {
 }
 
 function providers(list: string[] | undefined): string {
-  const known = (list ?? []).filter((p) => ["stream", "apns", "resend", "twilio", "r2"].includes(p));
+  const known = (list ?? []).filter((p) => ["stream", "apns", "fcm", "resend", "twilio", "r2"].includes(p));
   return known.length === 0 ? "none" : known.join(", ");
 }
 

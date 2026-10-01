@@ -7,7 +7,7 @@
 // successes close a half-open circuit, the failure that stopped the handler names its provider.
 import { AsyncLocalStorage } from "node:async_hooks";
 
-export type Provider = "stream" | "apns" | "resend" | "twilio" | "r2";
+export type Provider = "stream" | "apns" | "fcm" | "resend" | "twilio" | "r2";
 
 export class ProviderError extends Error {
   constructor(

@@ -15,7 +15,7 @@
   "authenticated_security_definer_function_executable_public_media_urls_p_keys text[]": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_my_matches_": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_propose_session_p_match uuid, p_proposal jsonb": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
-  "authenticated_security_definer_function_executable_public_register_push_token_p_token text, p_environment text": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
+  "authenticated_security_definer_function_executable_public_register_push_token_p_token text, p_environment text, p_platform text": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_reorder_media_p_ids uuid[]": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_report_app_open_p_install uuid, p_device jsonb": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",
   "authenticated_security_definer_function_executable_public_report_user_p_target uuid, p_reason public.report_reason, p_details text": "App RPC: callable by signed-in people on purpose, checks auth.uid() itself.",

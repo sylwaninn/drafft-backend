@@ -12,6 +12,14 @@ import { unzipSync } from "npm:fflate@0.8.2";
 const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
 const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
 const pem = `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...pkcs8))}\n-----END PRIVATE KEY-----`;
+// And a throwaway RSA key for the FCM service account.
+const rsa = await crypto.subtle.generateKey(
+  { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+  true,
+  ["sign", "verify"],
+);
+const rsaPkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", rsa.privateKey));
+const rsaPem = `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...rsaPkcs8))}\n-----END PRIVATE KEY-----`;
 
 const ENV: Record<string, string> = {
   SUPABASE_URL: "http://supabase.test",
@@ -21,6 +29,11 @@ const ENV: Record<string, string> = {
   APNS_TEAM_ID: "TEAM",
   APNS_BUNDLE_ID: "so.drafft.app",
   APNS_PRIVATE_KEY: pem,
+  FCM_SERVICE_ACCOUNT: JSON.stringify({
+    project_id: "drafft-test",
+    client_email: "push@drafft-test.iam.gserviceaccount.com",
+    private_key: rsaPem,
+  }),
   EMAIL_FROM: "drafft <no-reply@mail.drafft.test>",
   RESEND_API_KEY: "test-resend",
   SUPPORT_INBOX: "team@drafft.so",
@@ -39,7 +52,7 @@ for (const name of ["MAILPIT_URL", "EMAIL_REAL", "MODERATION_MODE"]) Deno.env.de
 // MARK: The world
 
 type Row = Record<string, unknown>;
-type Outcome = "ok" | "down" | "network";
+type Outcome = "ok" | "down" | "network" | "gone";
 
 const world = {
   tables: {} as Record<string, Row[]>,
@@ -49,7 +62,7 @@ const world = {
   failRead: undefined as string | undefined,
   /** RPCs that answer with a server error (each call is still recorded). */
   failRpc: [] as string[],
-  pushes: [] as { token: string; collapse: string | null; title?: string }[],
+  pushes: [] as { token: string; collapse: string | null; title?: string; channel?: string }[],
   pushOutcome: {} as Record<string, Outcome>,
   emails: [] as { to: string; key: string | null; replyTo?: string | null; subject?: string; text?: string }[],
   /** The same emails as Resend got them: subject and Reply-To. */
@@ -213,6 +226,11 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
       for (const row of select(table, url.searchParams)) Object.assign(row, JSON.parse(text));
       return respond(undefined, 204);
     }
+    if (request.method === "DELETE" && table === "push_tokens") {
+      const gone = new Set(select(table, url.searchParams));
+      world.tables[table] = world.tables[table].filter((row) => !gone.has(row));
+      return respond(undefined, 204);
+    }
     return respond(undefined, 204);
   }
 
@@ -227,6 +245,29 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
       title: JSON.parse(text).aps?.alert?.title,
     });
     return respond(undefined, 200);
+  }
+
+  if (url.host === "oauth2.googleapis.com") {
+    return respond({ access_token: "fcm-access", expires_in: 3600, token_type: "Bearer" });
+  }
+
+  if (url.host === "fcm.googleapis.com") {
+    const message = JSON.parse(text).message;
+    const outcome = world.pushOutcome[message.token] ?? "ok";
+    if (outcome === "network") throw new TypeError("error sending request: connection refused");
+    if (outcome === "down") return respond({ error: { code: 503, status: "UNAVAILABLE" } }, 503);
+    if (outcome === "gone") {
+      return respond({
+        error: { code: 404, status: "NOT_FOUND", details: [{ errorCode: "UNREGISTERED" }] },
+      }, 404);
+    }
+    world.pushes.push({
+      token: message.token,
+      collapse: message.android?.collapse_key ?? null,
+      title: message.notification?.title,
+      channel: message.android?.notification?.channel_id,
+    });
+    return respond({ name: `projects/drafft-test/messages/${world.pushes.length}` });
   }
 
   if (url.host === "api.resend.com") {
@@ -467,6 +508,38 @@ Deno.test("pushToUser: one device down and one served is not a failure (no secon
   assertEquals(world.pushes.map((p) => p.token), ["bo-phone"]);
   assertEquals(calls("ack_event").length, 1);
   assertEquals(steps(3), ["push"]);
+});
+
+Deno.test("pushToUser: an Android phone gets it through FCM, on the channel of its kind", async () => {
+  reset();
+  people();
+  world.tables.push_tokens.push({ user_id: bo, token: "bo-android", environment: "production", platform: "android" });
+  await runEvent({ id: 30, event: "like.received", payload: { from: ana, to: bo, superLike: false } });
+  assertEquals(world.pushes.map((p) => [p.token, p.channel ?? null]), [["bo-phone", null], ["bo-android", "likes"]]);
+  assertEquals(world.pushes[1].collapse, "likes");
+  assertEquals(calls("ack_event")[0].args.p_providers, ["apns", "fcm"]);
+});
+
+Deno.test("pushToUser: an uninstalled Android app's token is removed, not retried", async () => {
+  reset();
+  people();
+  world.tables.push_tokens = [{ user_id: bo, token: "bo-android", environment: "production", platform: "android" }];
+  world.pushOutcome["bo-android"] = "gone";
+  await runEvent({ id: 31, event: "like.received", payload: { from: ana, to: bo, superLike: false } });
+  assertEquals(world.tables.push_tokens, []);
+  assertEquals(calls("ack_event").length, 1);
+});
+
+Deno.test("pushToUser: FCM down for every device of a person is a transient failure named fcm", async () => {
+  reset();
+  people();
+  world.tables.push_tokens = [{ user_id: bo, token: "bo-android", environment: "production", platform: "android" }];
+  world.pushOutcome["bo-android"] = "down";
+  await assertRejects(() =>
+    runEvent({ id: 32, event: "like.received", payload: { from: ana, to: bo, superLike: false } })
+  );
+  const failed = calls("outbox_failed")[0].args;
+  assertEquals([failed.p_provider, failed.p_transient], ["fcm", true]);
 });
 
 Deno.test("media.created: verdict and flag at once; a failed refusal push is resent without a second verdict", async () => {
