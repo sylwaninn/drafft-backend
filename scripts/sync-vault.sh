@@ -52,11 +52,11 @@ value_of() {
 media_url=$(value_of MEDIA_PUBLIC_URL)
 media_key=$(value_of MEDIA_SIGNING_KEY)
 case "$media_url$media_key" in *"'"*) echo "MEDIA_PUBLIC_URL and MEDIA_SIGNING_KEY can't contain a quote." >&2; exit 1 ;; esac
-[ -n "$media_key" ] || echo "No MEDIA_SIGNING_KEY in $file: media links stay unsigned (public bucket only)." >&2
 if [ "$env" = local ]; then
-  [ -n "$media_key" ] || exit 1
+  [ -n "$media_key" ] || { echo "No MEDIA_SIGNING_KEY in $file: staging's media Worker needs it." >&2; exit 1; }
   media_url=$STAGING_MEDIA_URL
 fi
+[ -n "$media_key" ] || echo "No MEDIA_SIGNING_KEY in $file: media links stay unsigned (public bucket only)." >&2
 
 upsert() { # name value
   printf "select case when exists (select 1 from vault.secrets where name = '%s')
