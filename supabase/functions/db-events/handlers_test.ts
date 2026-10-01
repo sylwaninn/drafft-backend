@@ -46,6 +46,8 @@ const ENV: Record<string, string> = {
   AWS_REKOGNITION_SECRET_ACCESS_KEY: "aws",
   STREAM_API_KEY: "stream",
   STREAM_API_SECRET: "stream",
+  MEDIA_PUBLIC_URL: "https://media.test",
+  MEDIA_SIGNING_KEY: "test-signing-key",
 };
 for (const [name, value] of Object.entries(ENV)) Deno.env.set(name, value);
 for (const name of ["MAILPIT_URL", "EMAIL_REAL", "MODERATION_MODE"]) Deno.env.delete(name);
@@ -99,9 +101,12 @@ const world = {
   sizes: {} as Record<string, number>,
   /** Stream messages by id, as getMessage reads them. */
   messages: {} as Record<string, Row>,
+  /** Renditions asked of the media Worker: `<key> w<width>`. */
+  warmed: [] as string[],
 };
 
 function reset() {
+  world.warmed = [];
   world.tables = {};
   world.users = {};
   world.rpc = [];
@@ -295,7 +300,9 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
     }
     if (request.method === "DELETE") {
       if (world.r2DeleteStatus !== 204) return new Response(null, { status: world.r2DeleteStatus });
-      world.erased.push(`r2 ${decodeURIComponent(url.pathname.split("/").slice(2).join("/"))}`);
+      const deleted = decodeURIComponent(url.pathname.split("/").slice(2).join("/"));
+      world.erased.push(`r2 ${deleted}`);
+      world.objects = world.objects.filter((k) => k !== deleted);
       return new Response(null, { status: 204 });
     }
     const key = decodeURIComponent(url.pathname.split("/").slice(2).join("/"));
@@ -303,6 +310,11 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
     if (size < 0) return new Response(null, { status: 404 });
     if (request.method === "HEAD") return new Response(null, { status: 200, headers: { "content-length": `${size}` } });
     return new Response(new Uint8Array(size).fill(7), { status: 200 });
+  }
+
+  if (url.host === "media.test") {
+    world.warmed.push(`${url.pathname.slice(1)} w${url.searchParams.get("w")}`);
+    return new Response("webp", { status: 200 });
   }
 
   if (url.host.startsWith("rekognition.")) {
@@ -1090,12 +1102,9 @@ Deno.test("account.purge: its chats, Stream user, media and selfies, then the Au
   assertEquals(world.erased.slice(0, n).sort(), media);
   assertEquals(world.erased.slice(n, n + 2), [`stream channel ${match} hard`, `stream user ${ana} hard`]);
   assertEquals(world.stream.filter((c) => c.startsWith("task")).length, 2, "waits for Stream's task");
-  assertEquals(
-    world.erased.slice(n + 2, n + 4).sort(),
-    [`r2 u/${ana}/chat/p1.jpg`, `r2 u/${ana}/photos/a.jpg`],
-    "its prefix only (renditions are under it: listed, not guessed)",
-  );
-  assertEquals(world.erased.slice(n + 4), [`selfies ${ana}/s1.jpg`, `auth ${ana}`]);
+  // Its prefix only (renditions are under it: listed, not guessed); its chat photo went with the chat.
+  assertEquals(world.erased.slice(n + 2, n + 3), [`r2 u/${ana}/photos/a.jpg`]);
+  assertEquals(world.erased.slice(n + 3), [`selfies ${ana}/s1.jpg`, `auth ${ana}`]);
   assertEquals(steps(40), [
     `matches=${match},${match2}`,
     `chat-${match}`,
@@ -1608,6 +1617,28 @@ Deno.test("media.reviewed: a refusal by a person is pushed; its email is the sta
   });
   assertEquals(world.emails, []);
   assertEquals(world.pushes.length, 1);
+});
+
+Deno.test("media.reviewed: an approval has the photo's main renditions made at once", async () => {
+  reset();
+  people();
+  const key = `u/${ana}/photos/a1.jpg`;
+  world.tables.profile_media = [{ id: media, status: "approved", key }];
+  await runEvent({
+    id: 60,
+    event: "media.reviewed",
+    payload: { mediaId: media, userId: ana, status: "approved", secondLook: false, at: "1" },
+  });
+  assertEquals(world.warmed.sort(), [`${key} w1080`, `${key} w1440`, `${key} w320`]);
+  assertEquals(world.pushes, []);
+});
+
+Deno.test("media.deleted: the photo first, then every rendition the Worker may have kept", async () => {
+  reset();
+  const key = `u/${ana}/photos/a1.jpg`;
+  await runEvent({ id: 61, event: "media.deleted", payload: { keys: [key, `u/${ana}/voice/v.m4a`] } });
+  assertEquals(world.erased.slice(0, 2).sort(), [`r2 ${key}`, `r2 u/${ana}/voice/v.m4a`]);
+  assertEquals(world.erased.slice(2).sort(), withRenditions(key).slice(1).map((k) => `r2 ${k}`).sort());
 });
 
 Deno.test("renderDecision: the team's note is escaped and keeps its lines; the rules without a section link the terms", () => {

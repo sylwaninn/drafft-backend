@@ -33,6 +33,8 @@ let channels: Record<string, { id: string; user: { id: string }; attachments: un
 let taskStatus = "completed";
 /** The account's export parts in the data-exports bucket. */
 let exportParts: string[] = [];
+/** R2: what the account's prefix holds (a deleted key is gone from the next listing). */
+let r2Objects: string[] = [];
 /** The data-exports bucket: there, missing from the project, or failing. */
 let exportsBucket: "ok" | "missing" | "down" = "ok";
 
@@ -42,9 +44,12 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
   if (url.host.endsWith("r2.cloudflarestorage.com")) {
     if (url.searchParams.get("list-type") === "2") {
       calls.push(`r2 list ${url.searchParams.get("prefix")}`);
-      return new Response(`<ListBucketResult><Key>u/${USER}/photos/photo.jpg</Key></ListBucketResult>`);
+      const keys = r2Objects.filter((k) => k.startsWith(url.searchParams.get("prefix") ?? ""));
+      return new Response(`<ListBucketResult>${keys.map((k) => `<Key>${k}</Key>`).join("")}</ListBucketResult>`);
     }
-    calls.push(`r2 ${request.method.toLowerCase()} ${decodeURIComponent(url.pathname.split("/").slice(2).join("/"))}`);
+    const key = decodeURIComponent(url.pathname.split("/").slice(2).join("/"));
+    calls.push(`r2 ${request.method.toLowerCase()} ${key}`);
+    if (request.method === "DELETE") r2Objects = r2Objects.filter((k) => k !== key);
     return new Response(null, { status: 204 });
   }
   const call = `${request.method} ${url.pathname}`;
@@ -118,6 +123,7 @@ Deno.serve = serve;
 
 async function deleteAccount(answers: boolean[], chats = { keep: [], erase: [] } as typeof chatsAnswer) {
   calls.length = 0;
+  r2Objects = [`u/${USER}/photos/photo.jpg`];
   retainAnswers = answers;
   chatsAnswer = chats;
   const response = await handler!(
@@ -157,6 +163,8 @@ Deno.test("any other account: chats, Stream user, media, selfies, exports and th
     `stream hard ${USER}`,
     `r2 list u/${USER}/`,
     `r2 delete u/${USER}/photos/photo.jpg`,
+    // Listed again: empty, nothing written meanwhile.
+    `r2 list u/${USER}/`,
     "POST /storage/v1/object/list/verification-selfies",
     "POST /rest/v1/rpc/forget_selfies",
     "POST /storage/v1/object/list/data-exports",

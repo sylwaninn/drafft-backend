@@ -17,7 +17,22 @@ export const renditionKey = (key: string, width: number) => `${key}.w${width}.we
 
 /** An object and every rendition that may be kept for it: what deleting it removes. */
 export function withRenditions(key: string): string[] {
-  return RESIZABLE.test(key) ? [key, ...RENDITION_WIDTHS.map((w) => renditionKey(key, w))] : [key];
+  return [key, ...renditionsOf(key)];
+}
+
+/** The renditions that may be kept for an object (none for what the Worker doesn't resize). */
+export function renditionsOf(key: string): string[] {
+  return RESIZABLE.test(key) ? RENDITION_WIDTHS.map((w) => renditionKey(key, w)) : [];
+}
+
+/**
+ * Deletes objects with their renditions: the originals first, then the renditions. A rendition the
+ * Worker was still writing looks at its original once written and deletes itself if it's gone, so in
+ * this order no copy outlives its photo.
+ */
+export async function deleteWithRenditions(keys: string[], remove: (key: string) => Promise<void>): Promise<void> {
+  await Promise.all(keys.map(remove));
+  await Promise.all(keys.flatMap(renditionsOf).map(remove));
 }
 
 /**
@@ -37,7 +52,8 @@ export async function warmRenditions(key: string, fetcher: typeof fetch = fetch)
   if (!url.includes("sig=")) return;
   await Promise.all(WARM_WIDTHS.map(async (width) => {
     try {
-      const res = await fetcher(`${url}&w=${width}`);
+      // A Worker that hangs must not hold the event (and its retries) until the function's time runs out.
+      const res = await fetcher(`${url}&w=${width}`, { signal: AbortSignal.timeout(15_000) });
       await res.body?.cancel();
       if (!res.ok) console.warn(`renditions ${key} w${width}: HTTP ${res.status}`);
     } catch (error) {
