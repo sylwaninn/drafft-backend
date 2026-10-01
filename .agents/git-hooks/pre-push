@@ -1,9 +1,12 @@
 #!/bin/sh
-# Refuses pushes to main (workspace .claude/rules/commits.md): work on a branch and open a pull request.
-while read -r local_ref local_sha remote_ref remote_sha; do
-  if [ "$remote_ref" = "refs/heads/main" ]; then
-    echo "pre-push: pushing to main is forbidden. Push a branch and open a pull request." >&2
-    exit 1
-  fi
+# Refuses pushes to main and staging (workspace .claude/rules/commits.md): staging changes through pull
+# requests, main only through the release workflow. Work on a branch and open a pull request into staging.
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main | refs/heads/staging)
+      echo "pre-push: pushing to ${remote_ref#refs/heads/} is forbidden. Push a branch and open a pull request into staging." >&2
+      exit 1
+      ;;
+  esac
 done
 exit 0
