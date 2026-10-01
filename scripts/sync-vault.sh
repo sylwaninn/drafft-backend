@@ -7,7 +7,11 @@
 #   media_base_url        MEDIA_PUBLIC_URL, where the media Worker serves signed links (when set)
 #   media_signing_key     MEDIA_SIGNING_KEY, the key those links are signed with (when set)
 # Creates them or replaces their value. Prints nothing secret.
+# local: only media_base_url (staging's media Worker: the local stack uses staging's bucket) and
+# media_signing_key (MEDIA_SIGNING_KEY of supabase/functions/.env.local), into the local database
+# (seed.sql already sets the others); without them cards come with no photo link.
 #
+#   scripts/sync-vault.sh local
 #   scripts/sync-vault.sh staging
 #   echo production | scripts/sync-vault.sh production
 set -euo pipefail
@@ -15,9 +19,11 @@ cd "$(dirname "$0")/.."
 
 PRODUCTION_REF=wrcpgnqwjmnirjfxpcux
 STAGING_REF=rjlghcuspdtrmbimyioe
+STAGING_MEDIA_URL=https://media-staging.getdrafft.com
 
 env=${1:-}
 case "$env" in
+  local) ref=""; purchases="" ;;
   staging) ref=$STAGING_REF; purchases=SANDBOX ;;
   production)
     ref=$PRODUCTION_REF
@@ -25,16 +31,18 @@ case "$env" in
     read -r -p "Write the PRODUCTION Vault ($ref)? Type 'production' to go on: " answer
     [ "$answer" = production ] || { echo "Stopped."; exit 1; }
     ;;
-  *) echo "Usage: $0 staging|production" >&2; exit 64 ;;
+  *) echo "Usage: $0 local|staging|production" >&2; exit 64 ;;
 esac
 
 file="supabase/functions/.env.$env"
-# Only this line, without running the file: `KEY=value`, `KEY = value`, quoted or not.
-line=$(grep -E '^[[:space:]]*(export[[:space:]]+)?DB_EVENTS_SECRET[[:space:]]*=' "$file" | tail -n 1 || true)
-[ -n "$line" ] || { echo "No DB_EVENTS_SECRET line in $file." >&2; exit 1; }
-secret=$(printf %s "$line" | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')
-[ -n "$secret" ] || { echo "DB_EVENTS_SECRET is empty in $file: set it (openssl rand -hex 32)." >&2; exit 1; }
-case "$secret" in *"'"*) echo "DB_EVENTS_SECRET can't contain a quote." >&2; exit 1 ;; esac
+if [ "$env" != local ]; then
+  # Only this line, without running the file: `KEY=value`, `KEY = value`, quoted or not.
+  line=$(grep -E '^[[:space:]]*(export[[:space:]]+)?DB_EVENTS_SECRET[[:space:]]*=' "$file" | tail -n 1 || true)
+  [ -n "$line" ] || { echo "No DB_EVENTS_SECRET line in $file." >&2; exit 1; }
+  secret=$(printf %s "$line" | sed -E 's/^[^=]*=[[:space:]]*//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/')
+  [ -n "$secret" ] || { echo "DB_EVENTS_SECRET is empty in $file: set it (openssl rand -hex 32)." >&2; exit 1; }
+  case "$secret" in *"'"*) echo "DB_EVENTS_SECRET can't contain a quote." >&2; exit 1 ;; esac
+fi
 
 # Another variable of the same file, same rules; empty when absent.
 value_of() {
@@ -44,6 +52,10 @@ value_of() {
 media_url=$(value_of MEDIA_PUBLIC_URL)
 media_key=$(value_of MEDIA_SIGNING_KEY)
 case "$media_url$media_key" in *"'"*) echo "MEDIA_PUBLIC_URL and MEDIA_SIGNING_KEY can't contain a quote." >&2; exit 1 ;; esac
+if [ "$env" = local ]; then
+  [ -n "$media_key" ] || { echo "No MEDIA_SIGNING_KEY in $file: staging's media Worker needs it." >&2; exit 1; }
+  media_url=$STAGING_MEDIA_URL
+fi
 [ -n "$media_key" ] || echo "No MEDIA_SIGNING_KEY in $file: media links stay unsigned (public bucket only)." >&2
 
 upsert() { # name value
@@ -55,12 +67,29 @@ upsert() { # name value
 sql=$(mktemp)
 trap 'rm -f "$sql"' EXIT
 {
-  upsert edge_functions_url "https://$ref.supabase.co/functions/v1"
-  upsert db_events_secret "$secret"
-  upsert purchase_environment "$purchases"
+  if [ "$env" != local ]; then
+    upsert edge_functions_url "https://$ref.supabase.co/functions/v1"
+    upsert db_events_secret "$secret"
+    upsert purchase_environment "$purchases"
+  fi
   [ -z "$media_url" ] || upsert media_base_url "$media_url"
   [ -z "$media_key" ] || upsert media_signing_key "$media_key"
 } > "$sql"
+
+if [ "$env" = local ]; then
+  # The local API prepares what it runs: one statement per call.
+  while IFS= read -r statement; do
+    [ -n "$statement" ] || continue
+    printf '%s\n' "$statement" > "$sql"
+    supabase db query --local -f "$sql" -o csv >/dev/null
+  done < <(
+    upsert media_base_url "$media_url" | tr '\n' ' '; echo
+    upsert media_signing_key "$media_key" | tr '\n' ' '; echo
+  )
+  supabase db query --local "select name, updated_at from vault.secrets where name like 'media_%' order by name" -o table
+  echo "Vault synced for local."
+  exit 0
+fi
 
 # On every exit, errors included: remove the SQL file and never leave the CLI linked to production.
 cleanup() {

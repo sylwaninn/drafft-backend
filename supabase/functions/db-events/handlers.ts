@@ -34,6 +34,7 @@ import {
   renderTeamEmail,
 } from "../_shared/notices.ts";
 import { deleteObject, getObject, headObject } from "../_shared/r2.ts";
+import { deleteWithRenditions, warmRenditions } from "../_shared/renditions.ts";
 import { hasFace, moderateImage, moderationConfigured } from "../_shared/moderation.ts";
 import { isGone, type Provider, ProviderError, trackProviders, viaProvider } from "../_shared/providers.ts";
 import { ensureChannel, ensureUsers, sendOnce, setChatHeld, stream } from "../_shared/stream.ts";
@@ -491,10 +492,12 @@ export const handlers: Record<string, Handler> = {
       }
     }
     if (verdict === "rejected") await pushPhotoRefused(ctx, p.userId, p.mediaId);
+    if (verdict === "approved") await ctx.once("renditions", () => warmRenditions(p.key));
   },
 
+  // The object, then the renditions the media Worker kept for it.
   async "media.deleted"(p: { keys: string[] }) {
-    await Promise.all(p.keys.map(deleteObject));
+    await deleteWithRenditions(p.keys, deleteObject);
   },
 
   // Messages on or off in the app: Stream sends chat pushes, so it gets the same setting.
@@ -577,27 +580,30 @@ export const handlers: Record<string, Handler> = {
 
   // A refused photo, approved on the second look the person asked for: they're told by email.
   async "media.approved_on_review"(p: { mediaId: string; userId: string }, ctx) {
-    const { data: media, error } = await admin.from("profile_media").select("status").eq("id", p.mediaId)
+    const { data: media, error } = await admin.from("profile_media").select("status, key").eq("id", p.mediaId)
       .maybeSingle();
     // A failed read is not "nothing to do": throw, and the outbox retries.
     if (error) throw new Error(`media ${p.mediaId}: ${error.message}`);
     // Deleted or refused again since: nothing to celebrate.
     if (media?.status !== "approved") return;
     const email = await accountEmail(p.userId);
-    if (!email) return;
-    const { data: profile, error: profileError } = await admin.from("profiles").select("language")
-      .eq("id", p.userId).maybeSingle();
-    if (profileError) throw new Error(`profile ${p.userId}: ${profileError.message}`);
-    await ctx.once(
-      "email",
-      () =>
-        sendEmail(
-          email,
-          renderNotice("photoApproved", language(profile?.language)),
-          `photo-approved-${p.mediaId}`,
-          supportReplyTo(),
-        ),
-    );
+    if (email) {
+      const { data: profile, error: profileError } = await admin.from("profiles").select("language")
+        .eq("id", p.userId).maybeSingle();
+      if (profileError) throw new Error(`profile ${p.userId}: ${profileError.message}`);
+      await ctx.once(
+        "email",
+        () =>
+          sendEmail(
+            email,
+            renderNotice("photoApproved", language(profile?.language)),
+            `photo-approved-${p.mediaId}`,
+            supportReplyTo(),
+          ),
+      );
+    }
+    // Visible again: its renditions are made before anyone's deck asks for them (after the email).
+    await ctx.once("renditions", () => warmRenditions(media.key));
   },
 
   // A person decided (review_media, from the dashboard). A refusal reaches the owner like Rekognition's: the same
@@ -611,6 +617,14 @@ export const handlers: Record<string, Handler> = {
     secondLook: boolean;
     at: string;
   }, ctx) {
+    if (p.status === "approved") {
+      // Visible from now on: its renditions are made before anyone's deck asks for them.
+      const { data: media, error } = await admin.from("profile_media").select("status, key").eq("id", p.mediaId)
+        .maybeSingle();
+      if (error) throw new Error(`media ${p.mediaId}: ${error.message}`);
+      if (media?.status === "approved") await ctx.once("renditions", () => warmRenditions(media.key));
+      return;
+    }
     if (p.status !== "rejected") return;
     const { data: media, error } = await admin.from("profile_media").select("status").eq("id", p.mediaId)
       .maybeSingle();

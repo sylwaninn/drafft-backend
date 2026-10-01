@@ -4,6 +4,7 @@
 // Every step is idempotent: something already gone counts as done, and only a clear "gone" does (HTTP 404, or
 // Stream's code 16); any other failure throws, and the caller retries.
 import { deleteObject, listKeys } from "./r2.ts";
+import { deleteWithRenditions } from "./renditions.ts";
 import { isGone, viaProvider } from "./providers.ts";
 import { channelMessages, stream, type StreamMessage } from "./stream.ts";
 import { admin, check, must } from "./supabase.ts";
@@ -73,7 +74,9 @@ async function deleteKeys(keys: string[]) {
 export async function eraseChat(matchId: string): Promise<void> {
   const messages = await channelMessages(matchId);
   if (messages === null) return;
-  await deleteKeys(chatMediaKeys(messages));
+  // Then the renditions the media Worker kept for them (a listing by prefix, below, finds those itself).
+  const keys = chatMediaKeys(messages);
+  for (let i = 0; i < keys.length; i += 20) await deleteWithRenditions(keys.slice(i, i + 20), deleteObject);
   await unlessGone(() => stream().channel("messaging", matchId).delete({ hard_delete: true }));
 }
 
@@ -99,9 +102,17 @@ export async function pruneChatUser(userId: string): Promise<void> {
   await streamTask(`prune Stream user ${userId}`, () => stream().deleteUsers([userId], { user: "pruning" }));
 }
 
-/** Every object under the account's prefix: photos, videos, voice intro, what it sent in chats. */
+/**
+ * Every object under the account's prefix: photos, videos, voice intro, what it sent in chats, the renditions
+ * the media Worker kept. Listed again once emptied: a rendition written meanwhile goes too (a few passes at
+ * most; the Worker deletes a late one itself once it sees its original gone).
+ */
 export async function eraseMedia(userId: string): Promise<void> {
-  await deleteKeys(await listKeys(`u/${userId}/`));
+  for (let pass = 0; pass < 3; pass++) {
+    const keys = await listKeys(`u/${userId}/`);
+    if (keys.length === 0) return;
+    await deleteKeys(keys);
+  }
 }
 
 /** Every file of the account's folder in a private Storage bucket, page after page. `optional`: a bucket this

@@ -6,6 +6,7 @@
 // No network: fetch answers Supabase (Auth, the RPCs, Storage) and R2 from a script, and Stream is a fake
 // client. Every call is recorded, in order.
 import { assertEquals } from "jsr:@std/assert@1";
+import { withRenditions } from "../_shared/renditions.ts";
 
 const ENV: Record<string, string> = {
   SUPABASE_URL: "http://supabase.test",
@@ -32,6 +33,8 @@ let channels: Record<string, { id: string; user: { id: string }; attachments: un
 let taskStatus = "completed";
 /** The account's export parts in the data-exports bucket. */
 let exportParts: string[] = [];
+/** R2: what the account's prefix holds (a deleted key is gone from the next listing). */
+let r2Objects: string[] = [];
 /** The data-exports bucket: there, missing from the project, or failing. */
 let exportsBucket: "ok" | "missing" | "down" = "ok";
 
@@ -41,9 +44,12 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
   if (url.host.endsWith("r2.cloudflarestorage.com")) {
     if (url.searchParams.get("list-type") === "2") {
       calls.push(`r2 list ${url.searchParams.get("prefix")}`);
-      return new Response(`<ListBucketResult><Key>u/${USER}/photos/photo.jpg</Key></ListBucketResult>`);
+      const keys = r2Objects.filter((k) => k.startsWith(url.searchParams.get("prefix") ?? ""));
+      return new Response(`<ListBucketResult>${keys.map((k) => `<Key>${k}</Key>`).join("")}</ListBucketResult>`);
     }
-    calls.push(`r2 ${request.method.toLowerCase()} ${decodeURIComponent(url.pathname.split("/").slice(2).join("/"))}`);
+    const key = decodeURIComponent(url.pathname.split("/").slice(2).join("/"));
+    calls.push(`r2 ${request.method.toLowerCase()} ${key}`);
+    if (request.method === "DELETE") r2Objects = r2Objects.filter((k) => k !== key);
     return new Response(null, { status: 204 });
   }
   const call = `${request.method} ${url.pathname}`;
@@ -117,6 +123,7 @@ Deno.serve = serve;
 
 async function deleteAccount(answers: boolean[], chats = { keep: [], erase: [] } as typeof chatsAnswer) {
   calls.length = 0;
+  r2Objects = [`u/${USER}/photos/photo.jpg`];
   retainAnswers = answers;
   chatsAnswer = chats;
   const response = await handler!(
@@ -144,15 +151,20 @@ Deno.test("any other account: chats, Stream user, media, selfies, exports and th
     }],
   };
   assertEquals(await deleteAccount([false, false], { keep: [], erase: ["plain-chat", "never-written"] }), 204);
+  // The chat's photo and the renditions the Worker kept for it, in any order (20 at a time).
+  const chatMedia = withRenditions(`u/${OTHER}/chat/x.jpg`).map((k) => `r2 delete ${k}`);
+  const at = calls.indexOf("POST /rest/v1/rpc/deleted_account_chats") + 1;
+  assertEquals(calls.splice(at, chatMedia.length).sort(), chatMedia.sort());
   assertEquals(calls, [
     "GET /auth/v1/user",
     "POST /rest/v1/rpc/retain_deleted_account",
     "POST /rest/v1/rpc/deleted_account_chats",
-    `r2 delete u/${OTHER}/chat/x.jpg`,
     "stream delete plain-chat",
     `stream hard ${USER}`,
     `r2 list u/${USER}/`,
     `r2 delete u/${USER}/photos/photo.jpg`,
+    // Listed again: empty, nothing written meanwhile.
+    `r2 list u/${USER}/`,
     "POST /storage/v1/object/list/verification-selfies",
     "POST /rest/v1/rpc/forget_selfies",
     "POST /storage/v1/object/list/data-exports",

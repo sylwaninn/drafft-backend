@@ -6,8 +6,11 @@
 //   link to it. Objects never change once written (their key is a fresh UUID), so the copy can live
 //   long; a deleted or hidden object stays unreachable because nobody gets a new link to it.
 // - Range requests (video, audio) are answered from the cache, or from R2 while the cache fills.
-// - `w` asks for a smaller photo (Cloudflare Images binding). Without the binding, or when the
-//   transformation fails, the original is served.
+// - `w` asks for a smaller photo (Cloudflare Images binding), a rendition: made once, then kept in R2 next to
+//   its original (`<key>.w<width>.webp`, renditionKey) so no data centre pays the transformation again. It
+//   is deleted with its original (db-events `media.deleted`, and the account's prefix on erasure), and a
+//   rendition whose original is gone is never served. Without the binding, or when the transformation
+//   fails, the original is served.
 // - /b/<mode>/<token> serves only a blurred copy of a photo (blur_token.ts: the token hides which one,
 //   the signature binds the mode). Never the original: without the binding, or when the transformation
 //   fails, it is a 404.
@@ -35,6 +38,13 @@ export interface R2Bucket {
     key: string,
     options?: { range?: Headers; onlyIf?: Headers },
   ): Promise<R2ObjectBody | R2Object | null>;
+  head(key: string): Promise<R2Object | null>;
+  put(
+    key: string,
+    value: ArrayBuffer,
+    options?: { httpMetadata?: { contentType?: string } },
+  ): Promise<unknown>;
+  delete(key: string): Promise<void>;
 }
 export interface ImagesBinding {
   input(stream: ReadableStream<Uint8Array>): {
@@ -62,8 +72,15 @@ export interface Env {
 const KEY =
   /^u\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(photos|demo|videos|posters|voice|chat)\/[A-Za-z0-9_-]{1,64}\.(jpg|heic|png|mp4|mov|m4a|aac|pdf|bin)$/;
 const RESIZABLE = /\.(jpg|heic|png)$/;
-/** The widths the app and sophros ask for; any other value serves the original. */
-const WIDTHS = new Set([160, 320, 640, 1080]);
+/**
+ * The widths the app and sophros ask for; any other value serves the original. Keep in step with
+ * RENDITION_WIDTHS (supabase/functions/_shared/renditions.ts, which deletes them) and the apps' ladders.
+ */
+export const WIDTHS = [160, 320, 640, 1080, 1440];
+const ALLOWED = new Set(WIDTHS);
+
+/** Where a photo's rendition at `width` is kept, next to its original (same prefix, never a valid KEY). */
+export const renditionKey = (key: string, width: number) => `${key}.w${width}.webp`;
 /** How long the CDN keeps a copy (objects are immutable). */
 const EDGE_TTL = 30 * 24 * 3600;
 
@@ -119,7 +136,7 @@ export async function handle(
   ) return notFound();
 
   const asked = Number(url.searchParams.get("w"));
-  const width = env.IMAGES && RESIZABLE.test(key) && WIDTHS.has(asked) ? asked : null;
+  const width = env.IMAGES && RESIZABLE.test(key) && ALLOWED.has(asked) ? asked : null;
   // The cache key: object and width, never the signature. A GET, whatever the method asked.
   const cacheUrl = `${url.origin}/${key}${width ? `?w=${width}` : ""}`;
   const range = request.headers.get("range");
@@ -131,7 +148,7 @@ export async function handle(
   if (hit) return clientHeaders(hit);
 
   if (width) {
-    const resized = await resize(env, key, width);
+    const resized = await rendition(env, ctx, key, width);
     if (resized) {
       if (cache) {
         ctx.waitUntil(cache.put(new Request(cacheUrl), resized.clone()));
@@ -249,6 +266,55 @@ function partial(object: R2ObjectBody): Response {
   return new Response(object.body, { status: 206, headers });
 }
 
+/**
+ * A photo at `width`: the copy kept in R2, or made now (then kept, in the background). A kept copy whose
+ * original is gone is deleted instead of served (a deletion that raced with its making).
+ */
+async function rendition(
+  env: Env,
+  ctx: Context,
+  key: string,
+  width: number,
+): Promise<Response | null> {
+  const stored = renditionKey(key, width);
+  const [kept, original] = await Promise.all([env.MEDIA.get(stored), env.MEDIA.head(key)]);
+  if (!original) {
+    if (kept) ctx.waitUntil(env.MEDIA.delete(stored));
+    return null;
+  }
+  if (kept && "body" in kept) {
+    const headers = objectHeaders(kept);
+    headers.set("content-length", String(kept.size));
+    headers.delete("accept-ranges");
+    return new Response(kept.body, { status: 200, headers });
+  }
+  const made = await resize(env, key, width);
+  if (!made) return null;
+  let body: ArrayBuffer;
+  try {
+    body = await made.arrayBuffer();
+  } catch (error) {
+    console.error(`resize ${key} w${width}: ${error instanceof Error ? error.message : error}`);
+    return null;
+  }
+  if (body.byteLength === 0) return null;
+  ctx.waitUntil(keep(env, key, stored, body));
+  return new Response(body, { status: 200, headers: made.headers });
+}
+
+/**
+ * Writes a rendition, then looks at its original again: deleted meanwhile (media.deleted deletes the
+ * original first, then its renditions), the copy goes too, so none outlives its photo.
+ */
+async function keep(env: Env, key: string, stored: string, body: ArrayBuffer): Promise<void> {
+  try {
+    await env.MEDIA.put(stored, body, { httpMetadata: { contentType: "image/webp" } });
+    if (!(await env.MEDIA.head(key))) await env.MEDIA.delete(stored);
+  } catch (error) {
+    console.error(`keep ${stored}: ${error instanceof Error ? error.message : error}`);
+  }
+}
+
 async function resize(
   env: Env,
   key: string,
@@ -263,6 +329,8 @@ async function resize(
     })
       .output({ format: "image/webp", quality: 85 });
     const response = result.response();
+    // Never a failed or empty transformation: it would be kept in R2 for good.
+    if (!response.ok || !response.body) throw new Error(`status ${response.status}`);
     const headers = new Headers(response.headers);
     headers.set("etag", `${object.httpEtag.replace(/"$/, "")}-w${width}"`);
     headers.set("cache-control", `public, max-age=${EDGE_TTL}, immutable`);
