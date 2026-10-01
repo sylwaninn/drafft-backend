@@ -1,5 +1,6 @@
-// Photo renditions: the smaller copies the media Worker (cloudflare/media-worker) makes for `&w=` and keeps
-// in R2 next to their original, `<key>.w<width>.webp`. Deleting a photo deletes them with it
+// Photo renditions: the smaller copies the media Worker (cloudflare/media-worker) makes for `&w=` (WebP at
+// RENDITION_QUALITY) and keeps in R2 next to their original, `<key>.w<width>.q<quality>.webp`; copies made at
+// an earlier quality (LEGACY) are deleted too. Deleting a photo deletes them with it
 // (withRenditions); approving one has the Worker make the main ones at once (warmRenditions), so nobody
 // waits on a first transformation. Keep RENDITION_WIDTHS in step with the Worker's WIDTHS: its test
 // compares them.
@@ -13,7 +14,13 @@ export const WARM_WIDTHS = [320, 1080, 1440];
 /** The objects the Worker resizes (its RESIZABLE): only these have renditions. */
 const RESIZABLE = /\.(jpg|heic|png)$/;
 
-export const renditionKey = (key: string, width: number) => `${key}.w${width}.webp`;
+/** Same as the Worker's RENDITION_QUALITY (its test compares them). */
+export const RENDITION_QUALITY = 70;
+
+export const renditionKey = (key: string, width: number) => `${key}.w${width}.q${RENDITION_QUALITY}.webp`;
+
+/** Keys of copies made at an earlier quality, still deleted with their photo: quality 85, until 2026-10-01. */
+const LEGACY_KEYS = [(key: string, width: number) => `${key}.w${width}.webp`];
 
 /** An object and every rendition that may be kept for it: what deleting it removes. */
 export function withRenditions(key: string): string[] {
@@ -22,7 +29,8 @@ export function withRenditions(key: string): string[] {
 
 /** The renditions that may be kept for an object (none for what the Worker doesn't resize). */
 export function renditionsOf(key: string): string[] {
-  return RESIZABLE.test(key) ? RENDITION_WIDTHS.map((w) => renditionKey(key, w)) : [];
+  if (!RESIZABLE.test(key)) return [];
+  return [renditionKey, ...LEGACY_KEYS].flatMap((name) => RENDITION_WIDTHS.map((w) => name(key, w)));
 }
 
 /**

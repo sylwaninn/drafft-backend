@@ -12,10 +12,15 @@ import {
 const photo = "u/0b6f1f5e-8f0c-4a5e-9d3b-2f8a1c7e4d10/photos/a1b2.jpg";
 
 Deno.test("a photo is deleted with every rendition, anything else alone", () => {
-  assertEquals(withRenditions(photo), [photo, ...RENDITION_WIDTHS.map((w) => `${photo}.w${w}.webp`)]);
+  assertEquals(withRenditions(photo), [
+    photo,
+    ...RENDITION_WIDTHS.map((w) => `${photo}.w${w}.q70.webp`),
+    // Made at quality 85 before 2026-10-01.
+    ...RENDITION_WIDTHS.map((w) => `${photo}.w${w}.webp`),
+  ]);
   const voice = "u/0b6f1f5e-8f0c-4a5e-9d3b-2f8a1c7e4d10/voice/a1b2.m4a";
   assertEquals(withRenditions(voice), [voice]);
-  assertEquals(renditionKey(photo, 1080), `${photo}.w1080.webp`);
+  assertEquals(renditionKey(photo, 1080), `${photo}.w1080.q70.webp`);
 });
 
 Deno.test("warming asks the Worker for each main width, and never throws", async () => {
