@@ -124,6 +124,22 @@ chaud / hot, sexy, "get physical", "sweat together" / « transpirer ensemble »,
 in a romantic sense, positions, "body count", partner in a dating sense (FR « partenaire »: use
 « binôme » for training), Netflix. No double meaning, ever.
 
+**Desire and attraction words.** In a dating app, a word that is innocent elsewhere reads as desire
+for the person. Copy talks about the thing (the photo, the answer, the sport, the time), never about
+what the person makes someone feel. Same family as « plan » (5.1).
+
+| Banned when it points at a person or their profile | Use instead |
+|---|---|
+| FR « envie » (« ce qui t'a donné envie », « envie de toi »), « craquer » / « faire craquer », « plaire » / « ce qui t'a plu », « attirer », « désir », « tenter », « séduire », « conquérir » | « petit mot », « réagir », « convaincre », « retenir l'attention » |
+| EN "turn on", "into you", "tempt", "desire", "seduce", "make me fall", "caught your eye", "win me over" | note, react, convince, "stood out" |
+| ES conquistar, seducir, "te pone" | convencer |
+| DE rumkriegen, verführen, anmachen | überzeugen |
+| IT conquistare, sedurre | convincere |
+| PT conquistar, seduzir | convencer |
+| NL versieren, verleiden | overtuigen |
+
+« envie » stays fine when it's about the thing, not the person: « Pas envie d'attendre ? ».
+
 ### 5.3 Category clichés and competitor territory
 
 "It's a match", "find your perfect match", "the one", soulmate / swolemate, gym crush, swipe right,
@@ -174,6 +190,10 @@ repository's copy of this file: keep the format.
 \bsmall talk\b | category cliché (5.3)
 \bsweat\w* | bpm territory (5.3)
 \bsueur\b | bpm territory (5.3)
+\bdonn\w* envie\b | desire wording (5.2)
+\bfaire craquer\b | desire wording (5.2)
+\brumzukriegen\b | desire wording (5.2)
+\bwin (me|you|them) over\b | desire wording (5.2)
 \boops\b | robotic filler (5.5)
 \bdon[’']t miss out\b | fake urgency (5.5)
 ```
@@ -356,3 +376,7 @@ Run on every text before you validate it.
 - 2026-10-01: "plan" stays banned with no exception, subscriptions included: also out of the
   catalog's English keys (the lint checks keys) and of "plano" in ES/PT, even as "flat" or
   "segundo plano" (background).
+- 2026-10-01: Desire and attraction words banned when they point at a person (5.2), like « plan »:
+  « ce qui t'a donné envie », « faire craquer », "win me over", DE "rumkriegen". The like comment
+  field becomes "Add a note" / « Ajoute un petit mot »; the prompt "The way to win me over" reads
+  "To convince me, propose" / « Pour me convaincre, propose-moi ».
