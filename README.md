@@ -1,7 +1,7 @@
 # drafft-backend
 
 Backend for the drafft iOS app: Supabase (Postgres + PostGIS, Auth, Realtime, Edge Functions) in the EU (Ireland),
-Cloudflare R2 for media, Stream for chat, APNs for pushes.
+Cloudflare R2 for media, Stream for chat, APNs (iPhone) and FCM (Android) for pushes.
 
 ## Architecture
 
@@ -9,7 +9,7 @@ Cloudflare R2 for media, Stream for chat, APNs for pushes.
 iPhone ── PostgREST RPCs ─────────────▶ Postgres (eu-west-1)
    │      Realtime (user:<id> topic) ◀──┤  triggers ─▶ outbox ─pg_net─▶ db-events (Edge Function)
    │                                    │                                 ├─ Stream: channels, openers, session messages
-   ├── Edge Functions ──────────────────┤                                 ├─ APNs: match, like, session pushes
+   ├── Edge Functions ──────────────────┤                                 ├─ APNs, FCM: match, like, session pushes
    │   media-upload-url, chat-media,    │                                 └─ R2: moderation check, deletions
    │   delete-account, device-check,    │
    │   support, app-config, stream-token│
@@ -529,7 +529,10 @@ or `functions deploy` by hand.
    see. `MEDIA_SIGNING_KEY` (`openssl rand -hex 32`, one per environment) is the same in the function
    secrets, the Vault (`media_signing_key`, by `scripts/sync-vault.sh`), the Worker and sophros;
    `MEDIA_PUBLIC_URL` is the Worker's domain.
-7. Stream app in the EU region, APNs `.p8` key uploaded in its push settings (chat pushes come from Stream).
+7. Stream app in the EU region, APNs `.p8` key and the Firebase service account uploaded in its push settings
+   (chat pushes come from Stream). `FCM_SERVICE_ACCOUNT` in the function secrets: a service account key of the
+   production Firebase project (the one of the Android app's production `google-services.json`), the JSON on one
+   line; db-events sends Android's pushes with it (`_shared/fcm.ts`), by each token's `platform`.
 8. Moderation and support secrets: `DEVICECHECK_KEY_ID` and `DEVICECHECK_PRIVATE_KEY` (an Apple key with
    DeviceCheck; the team comes from `APNS_TEAM_ID`), `DEVICECHECK_ENVIRONMENT=production` (Apple's environment
    is chosen by the project, never by the app), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key,
@@ -575,6 +578,7 @@ Setting it up once:
    `scripts/deploy.sh` and the app's `Config/Staging.xcconfig`.
 2. `scripts/deploy.sh staging`.
 3. `functions/.env.staging` from `.env.example`: same APNs and Rekognition values as production; its own
+   `FCM_SERVICE_ACCOUNT` (the staging Firebase project's service account),
    R2 token (bucket `drafft-media-staging`, EU), `R2_BUCKET=drafft-media-staging`,
    `R2_ENDPOINT=https://<account>.eu.r2.cloudflarestorage.com` (EU jurisdiction buckets only answer there),
    `MEDIA_PUBLIC_URL=https://pub-2877e6f189f0420785f5cd685f44f789.r2.dev`, the Stream staging app's keys,
