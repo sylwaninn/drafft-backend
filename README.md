@@ -517,13 +517,14 @@ doubles the walk when filters are narrow; see [docs/matching.md](docs/matching.m
 
 ## Production setup
 
-Done once already; kept for the record, not to replay. Production changes only through CI: a `v*` tag runs
+Done once already; kept for the record, not to replay. Production changes only through CI: a `v*` tag (made by
+Actions > release) runs
 `scripts/deploy.sh production` in `.github/workflows/backend.yml` (migrations and functions, after the checks),
 which links the CLI back to staging afterwards. Never `supabase link` the production project and `db push`
 or `functions deploy` by hand.
 
 1. Supabase project `wrcpgnqwjmnirjfxpcux`, **West EU (Ireland)**; compute Small or larger and PITR before the public launch.
-2. Migrations and Edge Functions: a `v*` tag (see Staging). `scripts/deploy.sh production` by hand is a
+2. Migrations and Edge Functions: a release (see Staging). `scripts/deploy.sh production` by hand is a
    fallback only, from that tag's checkout: it asks to type `production`.
 3. `scripts/sync-vault.sh production` (Vault secrets, from `functions/.env.production`; it asks to type
    `production`).
@@ -576,11 +577,15 @@ or `functions deploy` by hand.
 A persistent Supabase branch named `staging` of `drafft-backend` (its own database, Auth, Storage, Edge
 Functions, keys and URL), fed with the same migrations. The app's **Drafft Staging** scheme points at it
 (`drafft β` on the home screen, same bundle id as production). Everything goes to staging first: a merge
-to `main` deploys it, then a `v*` tag deploys to production (below).
+into `staging` (the default branch) deploys it, then a release deploys to production (below).
 
 GitHub Actions (`.github/workflows/backend.yml`) does it on its own: every pull request is checked
-(Deno type checks, unit tests including the copy against [WORDING.md](WORDING.md), database tests), a push to `main` deploys to staging, and a `v*` tag deploys to
-production (the `production` environment only accepts `v*` tags). Migrations and functions only:
+(Deno type checks, unit tests including the copy against [WORDING.md](WORDING.md), database tests), a push to `staging` deploys to staging, and a `v*` tag deploys to
+production (the `production` environment only accepts `v*` tags and `main`). Tags come from Actions > release >
+Run workflow (`.github/workflows/release.yml`, `scripts/ci/release.sh`): with staging's head green, it
+fast-forwards `main` to `staging`, tags the next version (from the released pull request titles: `type!:`
+major, `feat` minor, else patch; or the one asked for), publishes a GitHub release and starts the production
+deploy on that tag. To roll back, Actions > backend > Run workflow on an older tag. Migrations and functions only:
 secrets are still set by hand, always naming the project: `deploy.sh <env> --secrets` or
 `supabase secrets set --project-ref <ref> --env-file supabase/functions/.env.<env>`.
 
