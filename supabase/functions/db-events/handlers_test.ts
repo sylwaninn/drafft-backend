@@ -7,6 +7,7 @@
 // and Stream by a fake client. Everything they're asked is recorded.
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1";
 import { unzipSync } from "npm:fflate@0.8.2";
+import { withRenditions } from "../_shared/renditions.ts";
 
 // A throwaway P-256 key for the APNs provider token.
 const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
@@ -971,13 +972,11 @@ Deno.test("chat.erase: every page's media, each sender's own, then the channel, 
   // Ana's message pointing at Bo's photo: attachments are the app's, never trusted.
   world.channels[match][5].attachments = [{ type: "drafft_media", key: `u/${bo}/photos/profile.jpg` }];
   await runEvent({ id: 30, event: "chat.erase", payload: { matchId: match } });
-  // Media first (in any order: 20 at a time), the channel last.
-  assertEquals(world.erased.slice(0, 3).sort(), [
-    `r2 u/${ana}/chat/p1.jpg`,
-    `r2 u/${bo}/chat/v649.jpg`,
-    `r2 u/${bo}/chat/v649.mp4`,
-  ]);
-  assertEquals(world.erased.slice(3), [`stream channel ${match} hard`]);
+  // Media first, with the renditions the Worker kept (in any order: 20 at a time), the channel last.
+  const media = [`u/${ana}/chat/p1.jpg`, `u/${bo}/chat/v649.jpg`, `u/${bo}/chat/v649.mp4`]
+    .flatMap(withRenditions).map((k) => `r2 ${k}`).sort();
+  assertEquals(world.erased.slice(0, media.length).sort(), media);
+  assertEquals(world.erased.slice(media.length), [`stream channel ${match} hard`]);
   assertEquals(steps(30), ["chat"]);
   assertEquals(calls("chat_erased")[0].args, { p_match: match });
   assertEquals(calls("ack_event").length, 1);
@@ -989,7 +988,8 @@ Deno.test("chat.erase: exactly two full pages end on an empty third", async () =
   world.channels[match] = chat(600);
   await runEvent({ id: 31, event: "chat.erase", payload: { matchId: match } });
   assertEquals(world.erased.at(-1), `stream channel ${match} hard`);
-  assertEquals(world.erased.length, 4);
+  // Three objects (two of them photos, with their renditions), then the channel.
+  assertEquals(world.erased.length, 1 + 2 * withRenditions("x.jpg").length + 1);
 });
 
 Deno.test("chat.erase: a channel Stream doesn't have is done without creating it; one not due is left alone", async () => {
@@ -1084,19 +1084,18 @@ Deno.test("account.purge: its chats, Stream user, media and selfies, then the Au
   world.taskStatus = ["running", "completed"];
   const event = { id: 40, event: "account.purge", payload: { userId: ana } };
   await runEvent(event);
-  assertEquals(world.erased.slice(0, 3).sort(), [
-    `r2 u/${ana}/chat/p1.jpg`,
-    `r2 u/${bo}/chat/v2.jpg`,
-    `r2 u/${bo}/chat/v2.mp4`,
-  ]);
-  assertEquals(world.erased.slice(3, 5), [`stream channel ${match} hard`, `stream user ${ana} hard`]);
+  const media = [`u/${ana}/chat/p1.jpg`, `u/${bo}/chat/v2.jpg`, `u/${bo}/chat/v2.mp4`]
+    .flatMap(withRenditions).map((k) => `r2 ${k}`).sort();
+  const n = media.length;
+  assertEquals(world.erased.slice(0, n).sort(), media);
+  assertEquals(world.erased.slice(n, n + 2), [`stream channel ${match} hard`, `stream user ${ana} hard`]);
   assertEquals(world.stream.filter((c) => c.startsWith("task")).length, 2, "waits for Stream's task");
   assertEquals(
-    world.erased.slice(5, 7).sort(),
+    world.erased.slice(n + 2, n + 4).sort(),
     [`r2 u/${ana}/chat/p1.jpg`, `r2 u/${ana}/photos/a.jpg`],
-    "its prefix only",
+    "its prefix only (renditions are under it: listed, not guessed)",
   );
-  assertEquals(world.erased.slice(7), [`selfies ${ana}/s1.jpg`, `auth ${ana}`]);
+  assertEquals(world.erased.slice(n + 4), [`selfies ${ana}/s1.jpg`, `auth ${ana}`]);
   assertEquals(steps(40), [
     `matches=${match},${match2}`,
     `chat-${match}`,

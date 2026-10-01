@@ -6,6 +6,7 @@
 // No network: fetch answers Supabase (Auth, the RPCs, Storage) and R2 from a script, and Stream is a fake
 // client. Every call is recorded, in order.
 import { assertEquals } from "jsr:@std/assert@1";
+import { withRenditions } from "../_shared/renditions.ts";
 
 const ENV: Record<string, string> = {
   SUPABASE_URL: "http://supabase.test",
@@ -144,11 +145,14 @@ Deno.test("any other account: chats, Stream user, media, selfies, exports and th
     }],
   };
   assertEquals(await deleteAccount([false, false], { keep: [], erase: ["plain-chat", "never-written"] }), 204);
+  // The chat's photo and the renditions the Worker kept for it, in any order (20 at a time).
+  const chatMedia = withRenditions(`u/${OTHER}/chat/x.jpg`).map((k) => `r2 delete ${k}`);
+  const at = calls.indexOf("POST /rest/v1/rpc/deleted_account_chats") + 1;
+  assertEquals(calls.splice(at, chatMedia.length).sort(), chatMedia.sort());
   assertEquals(calls, [
     "GET /auth/v1/user",
     "POST /rest/v1/rpc/retain_deleted_account",
     "POST /rest/v1/rpc/deleted_account_chats",
-    `r2 delete u/${OTHER}/chat/x.jpg`,
     "stream delete plain-chat",
     `stream hard ${USER}`,
     `r2 list u/${USER}/`,

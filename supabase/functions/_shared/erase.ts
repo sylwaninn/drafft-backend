@@ -4,6 +4,7 @@
 // Every step is idempotent: something already gone counts as done, and only a clear "gone" does (HTTP 404, or
 // Stream's code 16); any other failure throws, and the caller retries.
 import { deleteObject, listKeys } from "./r2.ts";
+import { withRenditions } from "./renditions.ts";
 import { isGone, viaProvider } from "./providers.ts";
 import { channelMessages, stream, type StreamMessage } from "./stream.ts";
 import { admin, check, must } from "./supabase.ts";
@@ -73,7 +74,8 @@ async function deleteKeys(keys: string[]) {
 export async function eraseChat(matchId: string): Promise<void> {
   const messages = await channelMessages(matchId);
   if (messages === null) return;
-  await deleteKeys(chatMediaKeys(messages));
+  // With the renditions the media Worker kept for them (a listing by prefix, below, finds those itself).
+  await deleteKeys(chatMediaKeys(messages).flatMap(withRenditions));
   await unlessGone(() => stream().channel("messaging", matchId).delete({ hard_delete: true }));
 }
 
