@@ -7,10 +7,11 @@ import {
   type ImagesBinding,
   type R2Bucket,
   type R2ObjectBody,
+  RENDITION_QUALITY,
   renditionKey,
   WIDTHS,
 } from "./index.ts";
-import { RENDITION_WIDTHS } from "../../../supabase/functions/_shared/renditions.ts";
+import * as deletion from "../../../supabase/functions/_shared/renditions.ts";
 import { sealBlurToken } from "./blur_token.ts";
 import { sign } from "./signature.ts";
 
@@ -294,7 +295,7 @@ Deno.test("a rendition is made once, kept in R2, then served from there in any d
   assertEquals(await res.text(), "blurred(0123456789)");
   await ctx.done();
   assertEquals(b.puts, [renditionKey(photoKey, 1080)]);
-  assertEquals(img.asked.length, 1);
+  assertEquals(img.asked, [{ width: 1080, fit: "scale-down", format: "image/webp", quality: 70 }]);
 
   // Another data centre: an empty edge cache, the copy kept in R2.
   const elsewhere = await handle(
@@ -325,6 +326,9 @@ Deno.test("a rendition key is never a link of its own", async () => {
   await res.body?.cancel();
 });
 
-Deno.test("the Worker's widths are the ones deleted with a photo", () => {
-  assertEquals(WIDTHS, RENDITION_WIDTHS);
+Deno.test("the Worker's widths, quality and keys are the ones deleted with a photo", () => {
+  assertEquals(WIDTHS, deletion.RENDITION_WIDTHS);
+  assertEquals(RENDITION_QUALITY, deletion.RENDITION_QUALITY);
+  for (const width of WIDTHS) assertEquals(renditionKey(photoKey, width), deletion.renditionKey(photoKey, width));
+  assertEquals(renditionKey(photoKey, 1440), `${photoKey}.w1440.q70.webp`);
 });

@@ -6,8 +6,9 @@
 //   link to it. Objects never change once written (their key is a fresh UUID), so the copy can live
 //   long; a deleted or hidden object stays unreachable because nobody gets a new link to it.
 // - Range requests (video, audio) are answered from the cache, or from R2 while the cache fills.
-// - `w` asks for a smaller photo (Cloudflare Images binding), a rendition: made once, then kept in R2 next to
-//   its original (`<key>.w<width>.webp`, renditionKey) so no data centre pays the transformation again. It
+// - `w` asks for a smaller photo (Cloudflare Images binding), a rendition: WebP at quality 70
+//   (RENDITION_QUALITY), made once, then kept in R2 next to its original (`<key>.w<width>.q70.webp`,
+//   renditionKey) so no data centre pays the transformation again. It
 //   is deleted with its original (db-events `media.deleted`, and the account's prefix on erasure), and a
 //   rendition whose original is gone is never served. Without the binding, or when the transformation
 //   fails, the original is served.
@@ -79,8 +80,16 @@ const RESIZABLE = /\.(jpg|heic|png)$/;
 export const WIDTHS = [160, 320, 640, 1080, 1440];
 const ALLOWED = new Set(WIDTHS);
 
+/**
+ * The WebP quality of a rendition. 70: a third lighter than 85 with no visible difference at the size a phone
+ * shows it (at 85 a 1440 px copy of a 2048 px JPEG weighed about as much as the original, measured on
+ * 2026-10-01). It is part of the rendition's key and CDN key, so a new quality never serves an old copy. Keep in
+ * step with supabase/functions/_shared/renditions.ts.
+ */
+export const RENDITION_QUALITY = 70;
+
 /** Where a photo's rendition at `width` is kept, next to its original (same prefix, never a valid KEY). */
-export const renditionKey = (key: string, width: number) => `${key}.w${width}.webp`;
+export const renditionKey = (key: string, width: number) => `${key}.w${width}.q${RENDITION_QUALITY}.webp`;
 /** How long the CDN keeps a copy (objects are immutable). */
 const EDGE_TTL = 30 * 24 * 3600;
 
@@ -138,7 +147,7 @@ export async function handle(
   const asked = Number(url.searchParams.get("w"));
   const width = env.IMAGES && RESIZABLE.test(key) && ALLOWED.has(asked) ? asked : null;
   // The cache key: object and width, never the signature. A GET, whatever the method asked.
-  const cacheUrl = `${url.origin}/${key}${width ? `?w=${width}` : ""}`;
+  const cacheUrl = `${url.origin}/${key}${width ? `?w=${width}&q=${RENDITION_QUALITY}` : ""}`;
   const range = request.headers.get("range");
   const clientHeaders = (response: Response) => forClient(response, Number(exp), request.method);
 
@@ -327,12 +336,12 @@ async function resize(
       width,
       fit: "scale-down",
     })
-      .output({ format: "image/webp", quality: 85 });
+      .output({ format: "image/webp", quality: RENDITION_QUALITY });
     const response = result.response();
     // Never a failed or empty transformation: it would be kept in R2 for good.
     if (!response.ok || !response.body) throw new Error(`status ${response.status}`);
     const headers = new Headers(response.headers);
-    headers.set("etag", `${object.httpEtag.replace(/"$/, "")}-w${width}"`);
+    headers.set("etag", `${object.httpEtag.replace(/"$/, "")}-w${width}q${RENDITION_QUALITY}"`);
     headers.set("cache-control", `public, max-age=${EDGE_TTL}, immutable`);
     return new Response(response.body, { status: 200, headers });
   } catch (error) {

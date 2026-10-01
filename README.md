@@ -536,10 +536,14 @@ or `functions deploy` by hand.
 6. R2 bucket `drafft-media`, private, served only by the media Worker (`cloudflare/media-worker`) on
    `media.getdrafft.com`: signed links of about an hour (`?exp=…&sig=…`, optional `&w=` among 160, 320,
    640, 1080, 1440), issued by the database (cards, `media_urls`) and the Edge Functions for what the caller
-   may see. A photo's smaller copies (`&w=`, WebP) are made once and kept in R2 next to it
-   (`<key>.w<width>.webp`): made at approval for 320, 1080 and 1440 (db-events, `_shared/renditions.ts`), the
+   may see. A photo's smaller copies (`&w=`, WebP at quality 70) are made once and kept in R2 next to it
+   (`<key>.w<width>.q70.webp`): made at approval for 320, 1080 and 1440 (db-events, `_shared/renditions.ts`), the
    others on first view; deleted with the photo (`media.deleted`, chat erasure, the account's prefix), and
-   never served once their original is gone. CI deploys the Worker with each backend deploy, after the functions
+   never served once their original is gone. Quality 70: measured on 2026-10-01, quality 85 made a 1440 px copy
+   of a 2048 px JPEG as heavy as the original (350 to 770 kB), 70 takes about a third off with no visible
+   difference on a phone. The quality is in the copy's key and CDN key, so changing it never serves an old copy;
+   the keys of earlier qualities stay in `_shared/renditions.ts` (LEGACY_KEYS) so deleting a photo still removes
+   them. CI deploys the Worker with each backend deploy, after the functions
    that delete them (`CLOUDFLARE_API_TOKEN` secret, `CLOUDFLARE_ACCOUNT_ID` variable). `MEDIA_SIGNING_KEY` (`openssl rand -hex 32`, one per environment) is the same in the function
    secrets, the Vault (`media_signing_key`, by `scripts/sync-vault.sh`), the Worker and sophros;
    `MEDIA_PUBLIC_URL` is the Worker's domain. The Worker also serves blurred copies at
