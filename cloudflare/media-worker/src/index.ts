@@ -290,12 +290,29 @@ async function rendition(
   }
   const made = await resize(env, key, width);
   if (!made) return null;
-  const body = await made.arrayBuffer();
-  ctx.waitUntil(
-    env.MEDIA.put(stored, body, { httpMetadata: { contentType: "image/webp" } })
-      .catch((error) => console.error(`keep ${stored}: ${error instanceof Error ? error.message : error}`)),
-  );
+  let body: ArrayBuffer;
+  try {
+    body = await made.arrayBuffer();
+  } catch (error) {
+    console.error(`resize ${key} w${width}: ${error instanceof Error ? error.message : error}`);
+    return null;
+  }
+  if (body.byteLength === 0) return null;
+  ctx.waitUntil(keep(env, key, stored, body));
   return new Response(body, { status: 200, headers: made.headers });
+}
+
+/**
+ * Writes a rendition, then looks at its original again: deleted meanwhile (media.deleted deletes the
+ * original first, then its renditions), the copy goes too, so none outlives its photo.
+ */
+async function keep(env: Env, key: string, stored: string, body: ArrayBuffer): Promise<void> {
+  try {
+    await env.MEDIA.put(stored, body, { httpMetadata: { contentType: "image/webp" } });
+    if (!(await env.MEDIA.head(key))) await env.MEDIA.delete(stored);
+  } catch (error) {
+    console.error(`keep ${stored}: ${error instanceof Error ? error.message : error}`);
+  }
 }
 
 async function resize(
@@ -312,6 +329,8 @@ async function resize(
     })
       .output({ format: "image/webp", quality: 85 });
     const response = result.response();
+    // Never a failed or empty transformation: it would be kept in R2 for good.
+    if (!response.ok || !response.body) throw new Error(`status ${response.status}`);
     const headers = new Headers(response.headers);
     headers.set("etag", `${object.httpEtag.replace(/"$/, "")}-w${width}"`);
     headers.set("cache-control", `public, max-age=${EDGE_TTL}, immutable`);
