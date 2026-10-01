@@ -1,9 +1,10 @@
-// Apple Push Notification service, token-based (.p8 key). Used for everything except chat messages,
-// which Stream pushes itself once the same key is configured in the Stream dashboard.
+// Apple Push Notification service, token-based (.p8 key): the iPhone's devices (`_shared/push.ts` picks
+// them). Chat messages are pushed by Stream itself, once the same key is configured in its dashboard.
 import { importPKCS8, SignJWT } from "npm:jose@6";
 import { env, optionalEnv } from "./env.ts";
-import { admin, must } from "./supabase.ts";
-import { ProviderError, reachedProvider, transientStatus } from "./providers.ts";
+import { admin } from "./supabase.ts";
+import { transientStatus } from "./providers.ts";
+import type { Device, Outcome, Push } from "./push.ts";
 
 let cached: { jwt: string; at: number } | undefined;
 
@@ -20,39 +21,20 @@ async function providerToken(): Promise<string> {
   return jwt;
 }
 
-export interface Push {
-  title: string;
-  body: string;
-  /** Opens this place in the app, e.g. { "match": "<id>" }. */
-  data?: Record<string, string>;
-  /** Replaces an earlier notification with the same id instead of stacking. */
-  collapseId?: string;
+export function apnsConfigured(): boolean {
+  return !!optionalEnv("APNS_KEY_ID");
 }
 
-/**
- * Sends to every device of a person. Tokens Apple reports as dead are removed. Each device is tried on its
- * own: one that fails doesn't stop the others. When APNs is down for every device (5xx, 429, network), a
- * transient ProviderError asks for a retry; when some got it, the others are logged, not retried, so a retry
- * never pushes twice to a device already served (and a late push is worse than none).
- */
-export async function pushToUser(userId: string, push: Push): Promise<void> {
-  if (!optionalEnv("APNS_KEY_ID")) {
-    console.warn(`APNs not configured, skipped push to ${userId}: ${push.title}`);
-    return;
-  }
-  const tokens = must(
-    await admin.from("push_tokens").select("token, environment").eq("user_id", userId),
-    "push tokens",
-  );
-  if (tokens.length === 0) return;
+/** Sends to each device on its own. Tokens Apple reports as dead are removed. */
+export async function sendApns(userId: string, devices: Device[], push: Push): Promise<Outcome[]> {
   const jwt = await providerToken();
   const payload = JSON.stringify({
     aps: { alert: { title: push.title, body: push.body }, sound: "default" },
     ...push.data,
   });
 
-  const outcomes = await Promise.all(
-    tokens.map(async ({ token, environment }): Promise<"sent" | "down" | "refused"> => {
+  return await Promise.all(
+    devices.map(async ({ token, environment }): Promise<Outcome> => {
       const host = environment === "production" ? "api.push.apple.com" : "api.sandbox.push.apple.com";
       let res: Response;
       try {
@@ -82,9 +64,4 @@ export async function pushToUser(userId: string, push: Push): Promise<void> {
       return transientStatus(res.status) ? "down" : "refused";
     }),
   );
-
-  if (outcomes.includes("sent") || outcomes.includes("refused")) reachedProvider("apns");
-  if (outcomes.every((o) => o === "down")) {
-    throw new ProviderError("apns", true, `APNs down for every device of user ${userId}`);
-  }
 }

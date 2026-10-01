@@ -10,7 +10,7 @@
 // Pushes carry the event's freshness (`pushUntil`, from the outbox policy): a stale one is skipped, never
 // sent hours late after an outage.
 import { optionalEnv } from "../_shared/env.ts";
-import { type Push, pushToUser } from "../_shared/apns.ts";
+import { type Push, pushToUser } from "../_shared/push.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
 import {
   deleteAccount,
@@ -218,7 +218,7 @@ export const handlers: Record<string, Handler> = {
     if (!lang) return;
     await ctx.push("push", p.to, {
       ...(p.superLike ? superLikeReceived : likeReceived)[lang],
-      data: { tab: "likes" },
+      data: { kind: p.superLike ? "super_like" : "like", tab: "likes" },
       collapseId: "likes",
     });
   },
@@ -267,14 +267,14 @@ export const handlers: Record<string, Handler> = {
     if (langA) {
       await ctx.push("push-a", p.userA, {
         ...matchCreated(langA, nameB),
-        data: { match: p.matchId },
+        data: { kind: "match", match: p.matchId },
         collapseId: `match-${p.matchId}`,
       });
     }
     if (langB) {
       await ctx.push("push-b", p.userB, {
         ...matchCreated(langB, nameA),
-        data: { match: p.matchId },
+        data: { kind: "match", match: p.matchId },
         collapseId: `match-${p.matchId}`,
       });
     }

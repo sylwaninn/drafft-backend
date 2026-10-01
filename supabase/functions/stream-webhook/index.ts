@@ -2,7 +2,7 @@
 // (scripts/stream-webhook.ts): reaction.new and reaction.updated. Signed with the Stream API secret
 // (X-Signature). Message pushes stay Stream's own; reactions are pushed from here, in the person's
 // language and under their settings, WhatsApp-style: "Maya" / "Reacted ❤️ to “See you at 7?”".
-import { pushToUser } from "../_shared/apns.ts";
+import { pushToUser } from "../_shared/push.ts";
 import { HttpError, json, serve } from "../_shared/http.ts";
 import { stream } from "../_shared/stream.ts";
 import { admin } from "../_shared/supabase.ts";
