@@ -1,4 +1,4 @@
-<!-- Synced copy of drafft/WORDING.md. Do not edit here: edit it in drafft, then run drafft/scripts/sync-wording.sh. -->
+<!-- Synced copy of drafft-ios/WORDING.md. Do not edit here: edit it in drafft-ios, then run scripts/sync-docs.sh in the drafft workspace. -->
 
 # WORDING.md
 
@@ -7,8 +7,9 @@ states, errors, push, email, SMS, paywall, App Store / Play Store, website, scre
 
 - **Read it before writing or changing any user-facing text, in any of the 7 languages. Apply it.
   Run the [review checklist](#10-review-checklist) before you finish.**
-- Canonical file: `drafft/WORDING.md`. `drafft-backend/WORDING.md`, `drafft-web/WORDING.md` and
-  `drafft-android/WORDING.md` are synced copies: edit only this one, then run `scripts/sync-wording.sh`.
+- Canonical file: `drafft-ios/WORDING.md`. `drafft-backend/WORDING.md`, `drafft-web/WORDING.md` and
+  `drafft-android/WORDING.md` are synced copies: edit only this one, then run `scripts/sync-docs.sh`
+  in the drafft workspace.
 - Every new editorial decision goes here (section 11). Other files point here, never restate rules.
 - Machine-checked: the forbidden patterns in section 5 fail CI (`scripts/ci/i18n_lint.py` here, a
   test in drafft-backend, a CI step in drafft-web).
@@ -276,7 +277,7 @@ Full store texts: `docs/wording/store.md`.
 | Paywall headline | Take it back. | Train at your tempo. |
 | Session idea | Bouldering, then a beer? | Bouldering, then a smoothie? |
 | FR greeting | Content de te revoir | Te revoilà. |
-| Delete | We're sorry to see you go. | Your call. Here's what deleting removes. |
+| Delete | We're sorry to see you go. / Your call. Here's what deleting removes. | Here's what deleting removes. / « Voici ce que la suppression efface. » |
 
 ## 9. Screenshot and marketing content
 
@@ -348,3 +349,6 @@ Run on every text before you validate it.
 - 2026-09-30: Pack names in the stores keep their capitals, as in App Store Connect and Google Play ("5 Boosts",
   "3 Super Likes"). Running copy stays lowercase (like, super like, boost). The earlier rule "lowercase, also in
   store product names" is withdrawn.
+- 2026-09-30: The delete page no longer opens on "Your call." / « À toi de voir. »: it read as curt, even
+  resentful. It states the fact instead: "Here's what deleting removes." / « Voici ce que la
+  suppression efface. »

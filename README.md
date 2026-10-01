@@ -314,7 +314,7 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 | Data export archives | Storage `data-exports` | 7 days; at once when the account is deleted | `data-exports-expire`, `data-exports-sweep`, `delete-account` (see Data export below) |
 | Deletions asked for without the app (where to confirm, the outcome) | `private.staff_deletions` | until the confirmation is sent (the addresses), 30 days (the row); the audit log keeps what was done | `staff-deletions-cleanup` (see Deleting an account without the app below) |
 | IP addresses | `private.ips` | 180 days after the last open from that address | `device-reports-prune` |
-| Sign-in events with IP addresses | `auth.audit_log_entries` | not enforced yet | see [TODO.md](TODO.md) |
+| Sign-in events with IP addresses | `auth.audit_log_entries` | not enforced yet | see the workspace [TODO.md](../TODO.md) |
 | Devices (model, versions, last IP) | `private.devices` | 1 year after the last open | `device-reports-prune` |
 | Verification texts sent (number, IP) | `private.sms_sends` | 30 days | `sms-sends-cleanup` |
 | Sending queue (pushes, emails, Stream and R2 calls) | `private.outbox` | delivered 7 days; dropped, discarded or failed 30 days, except a failed erasure, kept until the team replays or discards it | `outbox-cleanup` (`private.outbox_cleanup()`) |
@@ -328,8 +328,8 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 | Who was banned (the account id and dates) | `private.banned_accounts` | the account's life, then 3 years after its erasure | `privacy-purge` |
 | Help requests and replies | `private.support_requests`, `private.support_messages` | 3 years after the last exchange | `privacy-purge` |
 | Purchases | `public.purchase_events`, `private.purchase_credits` | 10 years after the event (accounting); unlinked from the account when it's deleted | `privacy-purge`, `on delete set null` |
-| Backups | Supabase | 30 days at most | dashboard setting, see [TODO.md](TODO.md) |
-| What providers keep (RevenueCat, Twilio, Resend, Rekognition, Stream, Cloudflare) | their systems | their own retention, under the processing agreements | see [TODO.md](TODO.md) |
+| Backups | Supabase | 30 days at most | dashboard setting, see the workspace [TODO.md](../TODO.md) |
+| What providers keep (RevenueCat, Twilio, Resend, Rekognition, Stream, Cloudflare) | their systems | their own retention, under the processing agreements | see the workspace [TODO.md](../TODO.md) |
 
 "About a banned account": `private.banned_accounts` has a row for it, written when the account is banned,
 removed if the ban is lifted, and kept 3 years after the account is erased, so a record keeps its 3 years
@@ -605,4 +605,4 @@ Setting it up once:
 
 ## Not done yet
 
-See [TODO.md](TODO.md).
+See the workspace's [TODO.md](../TODO.md) (the parent folder of this checkout): one list for every repository.
