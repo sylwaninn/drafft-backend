@@ -7,7 +7,10 @@ import {
   type ImagesBinding,
   type R2Bucket,
   type R2ObjectBody,
+  renditionKey,
+  WIDTHS,
 } from "./index.ts";
+import { RENDITION_WIDTHS } from "../../../supabase/functions/_shared/renditions.ts";
 import { sealBlurToken } from "./blur_token.ts";
 import { sign } from "./signature.ts";
 
@@ -17,9 +20,27 @@ const bytes = new TextEncoder().encode("0123456789");
 
 function bucket(
   objects: Record<string, Uint8Array>,
-): R2Bucket & { gets: number } {
+): R2Bucket & { gets: number; puts: string[]; deletes: string[] } {
   const b = {
     gets: 0,
+    puts: [] as string[],
+    deletes: [] as string[],
+    head(k: string) {
+      const data = objects[k];
+      return Promise.resolve(
+        data ? { size: data.length, httpEtag: '"e1"', writeHttpMetadata: () => {} } : null,
+      );
+    },
+    put(k: string, value: ArrayBuffer) {
+      b.puts.push(k);
+      objects[k] = new Uint8Array(value);
+      return Promise.resolve(null);
+    },
+    delete(k: string) {
+      b.deletes.push(k);
+      delete objects[k];
+      return Promise.resolve();
+    },
     get(
       k: string,
       options?: { range?: Headers },
@@ -255,4 +276,55 @@ Deno.test("an ordinary link to the photo is not a way around the blur", async ()
   const sharp = `https://media.test/${photo}?exp=${link.searchParams.get("exp")}&sig=${link.searchParams.get("sig")}`;
   const res = await handle(new Request(sharp), env(bucket({ [photo]: bytes })), context(), null);
   assertEquals(res.status, 404);
+});
+
+const photoKey = "u/0b6f1f5e-8f0c-4a5e-9d3b-2f8a1c7e4d10/photos/a1b2.jpg";
+
+Deno.test("a rendition is made once, kept in R2, then served from there in any data centre", async () => {
+  const b = bucket({ [photoKey]: bytes });
+  const img = images();
+  const ctx = context();
+  const res = await handle(
+    new Request(`${await link(photoKey)}&w=1080`),
+    { ...env(b), IMAGES: img },
+    ctx,
+    memoryCache(),
+  );
+  assertEquals(res.status, 200);
+  assertEquals(await res.text(), "blurred(0123456789)");
+  await ctx.done();
+  assertEquals(b.puts, [renditionKey(photoKey, 1080)]);
+  assertEquals(img.asked.length, 1);
+
+  // Another data centre: an empty edge cache, the copy kept in R2.
+  const elsewhere = await handle(
+    new Request(`${await link(photoKey)}&w=1080`),
+    { ...env(b), IMAGES: img },
+    context(),
+    memoryCache(),
+  );
+  assertEquals(await elsewhere.text(), "blurred(0123456789)");
+  assertEquals(img.asked.length, 1, "not transformed again");
+});
+
+Deno.test("a rendition whose original is gone is deleted, never served", async () => {
+  const kept = renditionKey(photoKey, 320);
+  const b = bucket({ [kept]: bytes });
+  const ctx = context();
+  const res = await handle(new Request(`${await link(photoKey)}&w=320`), { ...env(b), IMAGES: images() }, ctx, null);
+  assertEquals(res.status, 404);
+  await res.body?.cancel();
+  await ctx.done();
+  assertEquals(b.deletes, [kept]);
+});
+
+Deno.test("a rendition key is never a link of its own", async () => {
+  const b = bucket({ [renditionKey(photoKey, 320)]: bytes });
+  const res = await handle(new Request(await link(renditionKey(photoKey, 320))), env(b), context(), null);
+  assertEquals(res.status, 404);
+  await res.body?.cancel();
+});
+
+Deno.test("the Worker's widths are the ones deleted with a photo", () => {
+  assertEquals(WIDTHS, RENDITION_WIDTHS);
 });
