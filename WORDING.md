@@ -22,8 +22,8 @@ states, errors, push, email, SMS, paywall, App Store / Play Store, website, scre
   people like each other, drafft makes it easy to **propose a session**: sport, day, time. The
   first date can happen on the track, the wall or the court.
 - **Promise (one sentence):**
-  - EN: "Same rhythm? Propose a session."
-  - FR: « Même rythme ? Propose une séance. »
+  - EN: "Singles who love sport as much as you do, and one more session in your week."
+  - FR: « Des célibataires qui aiment le sport autant que toi, et une séance de plus dans la semaine. »
   - The full message system (line, promise, invitation, confirmation) is in section 7.
 - **A match promises nothing.** It's mutual interest. drafft *invites* people to take it further,
   it never states that a match becomes or leads to anything.
@@ -257,37 +257,46 @@ else. A new tagline is a decision-log entry, not a new string.
 
 | Role | EN | FR | Where |
 |---|---|---|---|
-| **Line** (who it's for) | Meet singles who share your rhythm. | Rencontre des célibataires qui partagent ton rythme. | Website hero, app welcome, store subtitle (short form, 7.4), social bio, Play feature graphic, `og:title`, footer |
-| **Promise** (how it works) | Same rhythm? Propose a session. | Même rythme ? Propose une séance. | How it works, meta description, store description, "how it works" blocks |
+| **Line** (what it is) | Meet someone who gets your rhythm. | Rencontre quelqu'un qui comprend ton rythme. | Website hero, app welcome, store description opening, social bio, Play feature graphic, `og:title`, footer |
+| **Promise** (what you get) | Singles who love sport as much as you do, and one more session in your week. | Des célibataires qui aiment le sport autant que toi, et une séance de plus dans la semaine. | Website hero (right column), meta description, "how it works" blocks |
 | **Invitation** (call to action) | You already speak the same language. See you at the start line? | Vous parlez déjà la même langue. On se retrouve sur la ligne de départ ? | Website closing call to action, ads, social. The only place where the start line is the formula |
 | **Confirmation** (a session is set) | Session confirmed. Tuesday at 7:00. | Séance confirmée. Mardi à 7 h. | Session screen, push, email. Facts, not a slogan; the day and time come from the locale formatter |
 
 Rules:
 
-- **Rhythm is the idea**: people whose week is built around training and who share that pace. Say
-  *rhythm* for how often someone trains and how their week runs, *pace* for speed (section 4).
-  Never "tempo" in these lines: it is the paid tier's name.
-- **One role per place.** The Line names the audience, the Promise names the gesture, the Invitation
-  closes. Don't stack two roles in one block, don't paraphrase them.
+- **One role per place.** The Line names what drafft is, the Promise says what you get, the
+  Invitation closes. Don't stack two roles in one block, don't paraphrase them.
+- **Rhythm** is the Line's word: how often someone trains and how their week runs (section 4). It
+  stays out of the Promise. Never "tempo" in these lines: it is the paid tier's name.
 - **The start line is spent sparingly**: it is the Invitation's image and the campaign hashtag, not a
   refrain. No "start line" in titles, meta tags, welcome screens or session confirmations. Never
   "Meet me on the start line" or "Rendez-vous au départ" as a brand line (retired).
 - **Descriptor**: "dating app" / « app de rencontre » (never « appli », never "sports dating app",
   except the App Store name, 7.4).
-- **No promise on a match.** The Promise invites ("Propose a session"), it never says a match becomes
-  or leads to something.
+- **No promise on a match.** The Promise offers a session (it adds one to your week), it never says a
+  match becomes or leads to something.
 
 Each formula in all 7 languages (gender-neutral where the language marks it):
 
-| | Line | Promise |
-|---|---|---|
-| en | Meet singles who share your rhythm. | Same rhythm? Propose a session. |
-| fr | Rencontre des célibataires qui partagent ton rythme. | Même rythme ? Propose une séance. |
-| es | Conoce a gente soltera que comparte tu ritmo. | ¿Mismo ritmo? Propón una sesión. |
-| de | Triff Singles, die deinen Rhythmus teilen. | Gleicher Rhythmus? Schlag eine Session vor. |
-| it | Incontra single che condividono il tuo ritmo. | Stesso ritmo? Proponi una sessione. |
-| pt | Conhece pessoas solteiras que partilham o teu ritmo. | Mesmo ritmo? Propõe uma sessão. |
-| nl | Ontmoet singles die jouw ritme delen. | Zelfde ritme? Stel een sessie voor. |
+| | Line |
+|---|---|
+| en | Meet someone who gets your rhythm. |
+| fr | Rencontre quelqu'un qui comprend ton rythme. |
+| es | Conoce a alguien que entienda tu ritmo. |
+| de | Triff jemanden, der deinen Rhythmus versteht. |
+| it | Incontra qualcuno che capisce il tuo ritmo. |
+| pt | Conhece alguém que perceba o teu ritmo. |
+| nl | Ontmoet iemand die jouw ritme begrijpt. |
+
+| | Promise |
+|---|---|
+| en | Singles who love sport as much as you do, and one more session in your week. |
+| fr | Des célibataires qui aiment le sport autant que toi, et une séance de plus dans la semaine. |
+| es | Gente soltera que ama el deporte tanto como tú, y una sesión más en la semana. |
+| de | Singles, die Sport so lieben wie du, und eine Session mehr in der Woche. |
+| it | Single che amano lo sport quanto te, e una sessione in più nella settimana. |
+| pt | Pessoas solteiras que gostam de desporto tanto como tu, e mais uma sessão na semana. |
+| nl | Singles die net zo van sport houden als jij, en één sessie extra in de week. |
 
 | | Invitation | Confirmation (lead-in) |
 |---|---|---|
@@ -300,9 +309,10 @@ Each formula in all 7 languages (gender-neutral where the language marks it):
 | nl | Jullie spreken al dezelfde taal. Zien we elkaar op de startlijn? | Sessie bevestigd. |
 
 Retired as brand lines (kept here so nobody reintroduces them): "Turn your matches into sessions.",
-"Meet singles who train.", "Meet me on the start line.", "Dating, with a start time.", "Same start
-line. Your pace.", "From match to start line.", "Ready, set, meet.", "Better in the draft." (the last
-two may still serve a one-off event or campaign, never a product surface).
+"Meet singles who train." (still the store subtitle, 7.4), "Meet singles who share your rhythm.",
+"Same rhythm? Propose a session.", "Meet me on the start line.", "Dating, with a start time.",
+"Same start line. Your pace.", "From match to start line.", "Ready, set, meet.", "Better in the
+draft." (the last two may still serve a one-off event or campaign, never a product surface).
 
 ### 7.3 Declensions
 
@@ -317,8 +327,11 @@ two may still serve a one-off event or campaign, never a product surface).
 | Field | Limit | EN | FR |
 |---|---|---|---|
 | App name | 30 | drafft: Sports Dating | drafft : rencontre sportive |
-| Subtitle (iOS) | 30 | Singles on your rhythm | Célibataires à ton rythme |
-| Short description (Play) | 80 | Meet singles who share your rhythm, then propose a session. | Rencontre des célibataires qui partagent ton rythme, puis propose une séance. |
+| Subtitle (iOS) | 30 | Meet singles who train | Célibataires qui s'entraînent |
+| Short description (Play) | 80 | Meet someone who gets your rhythm, then propose a session. | Rencontre quelqu'un qui comprend ton rythme, puis propose une séance. |
+
+The subtitle is the Line's short form: the line itself is too long for 30 characters and would drop
+"singles" from the store index.
 
 Full store texts: `docs/wording/store.md`.
 
@@ -326,8 +339,8 @@ Full store texts: `docs/wording/store.md`.
 
 | Type | Before | After |
 |---|---|---|
-| Website hero | First dates that move. | Meet singles who share your rhythm. / Rencontre des célibataires qui partagent ton rythme. |
-| Website promise | Every match ends in a plan: a sport, a place, a time. | Same rhythm? Propose a session. |
+| Website hero | First dates that move. | Meet someone who gets your rhythm. / Rencontre quelqu'un qui comprend ton rythme. |
+| Website promise | Every match ends in a plan: a sport, a place, a time. | Singles who love sport as much as you do, and one more session in your week. |
 | Match screen | It's a match. | It's mutual. |
 | Match body | Say hi, then plan a first session. | You both train. Say hi, or propose a session while it's fresh. |
 | Chats empty | Say hi to a new match and plan a first session. | Say hi to a new match, or propose a first session. |
@@ -424,12 +437,16 @@ Run on every text before you validate it.
   « Autres créneaux » (calendar icon); the sheet it opens keeps the full title. Other labels over
   budget were shortened in the languages concerned (calendar, data, undo, comment buttons), and the
   confirm and send buttons drop the day or the count rather than wrap.
-- 2026-10-01: One message system (7.2): four formulas, one role each. Line "Meet singles who share
-  your rhythm." / « Rencontre des célibataires qui partagent ton rythme. » (replaces "Meet singles who
-  train."); Promise "Same rhythm? Propose a session." / « Même rythme ? Propose une séance. »;
+- 2026-10-01: One message system (7.2): four formulas, one role each. Line "Meet someone who gets your
+  rhythm." / « Rencontre quelqu'un qui comprend ton rythme. » (replaces "Meet singles who train.");
+  Promise "Singles who love sport as much as you do, and one more session in your week." / « Des
+  célibataires qui aiment le sport autant que toi, et une séance de plus dans la semaine. »;
   Invitation "You already speak the same language. See you at the start line?" / « Vous parlez déjà la
   même langue. On se retrouve sur la ligne de départ ? »; Confirmation "Session confirmed." + day and
   time (« calée » judged too familiar). The start line is spent sparingly: only the Invitation and the
-  campaign hashtag. Taglines 2 to 9 of the former list are retired. Store subtitle becomes "Singles on
-  your rhythm" / « Célibataires à ton rythme » (30-character limit). Descriptor fixed: "dating app" /
-  « app de rencontre », never « appli ».
+  campaign hashtag. Taglines 2 to 9 of the former list are retired. Store subtitle stays "Meet singles
+  who train" / « Célibataires qui s'entraînent » (30-character limit, keeps "singles" indexed).
+  Descriptor fixed: "dating app" / « app de rencontre », never « appli ».
+  Known proximity: bpm's store copy says « Marre des matchs qui ne comprennent pas ton rythme »
+  (`docs/wording/competitive-research.md`). The Line stays on "rhythm" by the founder's choice; the
+  Promise and Invitation stay clear of it.
