@@ -95,6 +95,13 @@ stay valid: the app asks at its next open (a `terms_version` behind its own, or 
 Withdrawing the consent is deleting the account (`delete-account`); lifestyle answers can be cleared on their own.
 The columns and the log live with the profile: erased with it, or kept with it when the account is kept for safety.
 
+Likes: with drafft tempo `liked_me` returns full cards; a free account gets per like only
+`{likeId, superLike, likedAt, thumbhash, blurUrl}` (no id, name, age, key or sharp URL, and `get_cards` refuses
+its likers). `thumbhash` is the first photo's placeholder; `blurUrl` is a signed link of about an hour to a
+blurred copy of that photo (200 px wide, strong blur, WebP without metadata), or null without a photo, when the
+caller is on hold, or without the Vault secrets. Show the ThumbHash, then the blurred image once loaded; read
+`liked_me` again for fresh links. See the media Worker below for what the link can and cannot open.
+
 Realtime: subscribe to the private broadcast channel `user:<your id>`. Events: `like`, `match`,
 `match_ended`, `session`, `media`, `wallet` (any change to your wallet: purchase, refund, weekly boost,
 `start_boost`, super like, undo, premium starting or ending, RevenueCat transfer; the payload is the whole balance:
@@ -530,7 +537,14 @@ or `functions deploy` by hand.
    640, 1080), issued by the database (cards, `media_urls`) and the Edge Functions for what the caller may
    see. `MEDIA_SIGNING_KEY` (`openssl rand -hex 32`, one per environment) is the same in the function
    secrets, the Vault (`media_signing_key`, by `scripts/sync-vault.sh`), the Worker and sophros;
-   `MEDIA_PUBLIC_URL` is the Worker's domain.
+   `MEDIA_PUBLIC_URL` is the Worker's domain. The Worker also serves blurred copies at
+   `/b/<mode>/<token>?exp=…&sig=…` (the Likes of a free account, `private.blur_url`): the token is the media key
+   encrypted then MACed (AES-256-CBC + HMAC-SHA256, keys derived from `MEDIA_SIGNING_KEY`, details in
+   `cloudflare/media-worker/src/blur_token.ts`), so the link names neither the person nor the photo; the
+   signature binds the mode (`l1`: 200 px, blur 50, WebP) and the expiry, so no change to the link gives the
+   original or a sharper copy. It never falls back to the original (no Images binding or a failed
+   transformation is a 404); the copy is cached at the edge under an opaque id and never written to R2, so
+   deleting a photo or an account leaves nothing behind. Same secret, nothing new to configure.
 7. Stream app in the EU region, APNs `.p8` key and the Firebase service account uploaded in its push settings
    (chat pushes come from Stream). `FCM_SERVICE_ACCOUNT` in the function secrets: a service account key of the
    production Firebase project (the one of the Android app's production `google-services.json`), the JSON on one
