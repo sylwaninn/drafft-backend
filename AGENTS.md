@@ -32,11 +32,14 @@ This repository lives in the drafft workspace (the parent folder, see `../AGENTS
 every repository shares: commit and GitHub rules (`../.claude/rules/`), the `create-pr` and `wording`
 skills (`../.claude/skills/`), and the Claude Code settings and git guard (`../.claude/`). Start agents
 there. In short: work on a branch, one-line commits `type(scope): description` without any
-Co-Authored-By, a pull request into `main`, verify first. The git hooks in `.agents/git-hooks/`
+Co-Authored-By, a pull request into `staging`, verify first. The git hooks in `.agents/git-hooks/`
 enforce it for agents and humans (`git config core.hooksPath .agents/git-hooks`, set by the
 workspace's `scripts/bootstrap.sh`).
 
-`main` is protected by convention: work on a branch, open a pull request. "Verify" in these rules
+`staging` (the default branch) takes every pull request; `main` is production and only moves through
+the release workflow (Actions > release: staging's new commits onto `main`, a `vX.Y.Z` tag and a GitHub
+release, see `scripts/ci/release.sh`). A merge into `staging` deploys staging; the release deploys its
+tag to production. "Verify" in these rules
 (`pnpm verify`) means, in this repository:
 
 ```sh
@@ -47,7 +50,7 @@ deno fmt --check supabase/functions scripts && deno lint supabase/functions scri
 ```
 
 CI (`.github/workflows/`) runs the same, plus shellcheck, actionlint, gitleaks, a schema lint, the
-migration guard (`scripts/ci/migrations-guard.sh`: migrations on main are immutable, destructive or
+migration guard (`scripts/ci/migrations-guard.sh`: migrations on staging are immutable, destructive or
 locking statements need `-- migration-guard: allow <what> - <why>`), and after each deploy and daily
 the drift check between the repository, staging and production (`scripts/ci/env-parity.sh`). A new
 advisor finding fails the build: fix it, or accept it in `supabase/advisors-baseline.json` with a reason.

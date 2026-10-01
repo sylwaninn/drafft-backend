@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Pull request gate for supabase/migrations, against the base branch:
-#  - a migration already on main is never edited, renamed or deleted (both projects already ran it);
+#  - a migration already on staging is never edited, renamed or deleted (both projects already ran it);
 #  - new files are named <14-digit timestamp>_<snake_case>.sql and sort after every existing one;
 #  - destructive or table-locking statements need an explicit reason in the file:
 #      -- migration-guard: allow <what> - <why>
 #
-#   scripts/ci/migrations-guard.sh origin/main
+#   scripts/ci/migrations-guard.sh origin/staging
 set -euo pipefail
-base=${1:-origin/main}
+base=${1:-origin/staging}
 dir=supabase/migrations
 status=0
 fail() { echo "error: $*"; status=1; }
@@ -15,7 +15,7 @@ fail() { echo "error: $*"; status=1; }
 while IFS=$'\t' read -r change path _; do
   case "$change" in
     A) ;;
-    *) fail "$path: migrations already on main are immutable ($change). Add a new migration instead." ;;
+    *) fail "$path: migrations already on staging are immutable ($change). Add a new migration instead." ;;
   esac
 done < <(git diff --name-status "$base"...HEAD -- "$dir" | grep -v '^A' || true)
 
@@ -23,7 +23,7 @@ latest=$(git ls-tree --name-only "$base" "$dir/" | xargs -n1 basename | sort | t
 for path in $(git diff --name-only --diff-filter=A "$base"...HEAD -- "$dir"); do
   name=$(basename "$path")
   [[ "$name" =~ ^[0-9]{14}_[a-z0-9_]+\.sql$ ]] || fail "$name: expected <YYYYMMDDHHMMSS>_<snake_case>.sql"
-  [[ "$name" > "$latest" ]] || fail "$name: sorts before $latest, already on main. Use a newer timestamp."
+  [[ "$name" > "$latest" ]] || fail "$name: sorts before $latest, already on staging. Use a newer timestamp."
 
   sql=$(tr '[:upper:]' '[:lower:]' < "$path")
   check() { # pattern what

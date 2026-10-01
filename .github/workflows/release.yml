@@ -1,0 +1,58 @@
+# Releases staging to production, by hand: Actions > release > Run workflow (scripts/ci/release.sh).
+#
+#   1. staging's head must have passed backend.yml (its push run on that commit);
+#   2. main fast-forwards to it: main only moves here and never has a commit staging lacks;
+#   3. that commit gets the next vX.Y.Z tag and a GitHub release listing its pull requests;
+#   4. backend.yml runs on the tag and deploys it to production (a tag pushed with GITHUB_TOKEN starts no
+#      workflow; a dispatch does).
+#
+# Redeploy or roll back: Actions > backend > Run workflow, on the version's tag.
+#
+# Version: `auto` reads the released commits (squash-merged pull request titles): `type!:` major,
+# any feat minor, anything else patch. Or force patch, minor, major, or an exact vX.Y.Z.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "auto, patch, minor, major, or an exact vX.Y.Z"
+        required: true
+        default: auto
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release (main ← staging, tag, deploy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # push main and the tag, publish the release
+      actions: write # read backend.yml's run on staging, start the production deploy
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fast-forward main, tag, publish the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_WORKFLOW: backend.yml
+          VERSION: ${{ inputs.version }}
+        run: scripts/ci/release.sh "$VERSION"
+      - name: Deploy the tag to production
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh workflow run backend.yml --ref "$TAG"
+          echo "Production deploy started: Actions > backend, on $TAG." >> "$GITHUB_STEP_SUMMARY"
