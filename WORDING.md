@@ -1,4 +1,4 @@
-<!-- Synced copy of drafft-ios/WORDING.md. Do not edit here: edit it in drafft-ios, then run scripts/sync-docs.sh in the drafft workspace. -->
+<!-- Shared copy of drafft-ios/WORDING.md, kept identical in every repository that has it. Changing it? Ask whether the other copies follow (AGENTS.md, Shared docs). -->
 
 # WORDING.md
 
@@ -61,7 +61,7 @@ states, errors, push, email, SMS, paywall, App Store / Play Store, website, scre
 | Concept | EN | FR | Notes |
 |---|---|---|---|
 | Product | drafft | drafft | Always lowercase, even at sentence start. Never "Drafft", "DRAFFT" |
-| Paid tier | drafft tempo | drafft tempo | Never Plus, Premium, Pro, VIP, "+" |
+| Paid tier | drafft tempo | drafft tempo | Never Plus, Premium, Pro, VIP, club, "+" |
 | A training date | session | séance | The login session is "login" / « connexion » |
 | Send one | propose (a session) | proposer (une séance) | The only verb. Not suggest, offer, invite, pitch |
 | The sent card | session invite | proposition de séance | |
@@ -232,7 +232,10 @@ repository's copy of this file: keep the format.
   banned by the design lint), never a masculine default. Rephrase: « Te revoilà. », « les personnes
   qui s'entraînent ».
 - **Translation:** adapt, don't translate word for word. Same register, same length class (a short
-  EN string stays short), same placeholders. Sport names follow the app's sport list.
+  EN string stays short), same placeholders. Sport names follow the app's sport list. Write as a senior
+  copywriter, not a literal translator: informal address but never slangy or over-familiar (FR: no
+  « boulot », « bouffe », « matos », « direct »), no calques, distinct labels for distinct things
+  (the Discover tab is not a discovery session).
 - **Push:** the title is the person's name or the event; the body is one sentence with the useful
   fact (sport, day, time). No emoji, no "!".
 - **Email:** subject ≤ 45 characters, says the one thing; first line repeats it; one CTA.
