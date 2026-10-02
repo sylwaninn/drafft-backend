@@ -333,6 +333,7 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 | Sending queue (pushes, emails, Stream and R2 calls) | `private.outbox` | delivered 7 days; dropped, discarded or failed 30 days, except a failed erasure, kept until the team replays or discards it | `outbox-cleanup` (`private.outbox_cleanup()`) |
 | Session reminders queued | `private.session_reminders` | the session's life | `on delete cascade` from the session |
 | Purchase sync calls (rate limit) | `private.purchase_sync_calls` | 1 hour, trimmed at the member's next sync; the account's life at most | `purchase_sync_begin`, `on delete cascade` |
+| Device check calls (rate limit) | `private.device_check_calls` | 1 hour, trimmed at the account's next Android check; the account's life at most | `device_check_begin`, `on delete cascade` |
 | Team alerts (counts only, nothing personal), job runs | `private.ops_alerts`, `private.job_runs` | 90 days | `ops-alerts-cleanup`, `privacy-purge` |
 | Reports | `public.reports` | 1 year after they're handled; open ones stay; the reporter's id goes when they delete their account | `privacy-purge` |
 | Moderation log, staff notes, photo flags, links between accounts | `private.moderation_log`, `private.staff_notes`, `public.media_flags`, `private.account_links` | 1 year, 3 years about a banned account (the entry behind a hold in force stays with the hold; a flag counts from its review) | `privacy-purge` |
@@ -565,9 +566,14 @@ or `functions deploy` by hand.
    line; db-events sends Android's pushes with it (`_shared/fcm.ts`), by each token's `platform`.
 8. Moderation and support secrets: `DEVICECHECK_KEY_ID` and `DEVICECHECK_PRIVATE_KEY` (an Apple key with
    DeviceCheck; the team comes from `APNS_TEAM_ID`), `DEVICECHECK_ENVIRONMENT=production` (Apple's environment
-   is chosen by the project, never by the app), `PLAY_INTEGRITY_SERVICE_ACCOUNT` (the JSON key of a service account of the
-   Google Cloud project linked in Play Console's App integrity page, with the Play Integrity API enabled and Device recall
-   on) and `PLAY_CLOUD_PROJECT_NUMBER` (that project's number; `PLAY_PACKAGE_NAME` only if the app id isn't `so.drafft.app`), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key,
+   is chosen by the project, never by the app), `PLAY_INTEGRITY_SERVICE_ACCOUNT` (the JSON key of a service
+   account of the Google Cloud project linked in Play Console's App integrity page, with the Play Integrity
+   API enabled and Device recall on) and `PLAY_CLOUD_PROJECT_NUMBER` (that project's number, which the app
+   uses: the server only checks that it is set; both are needed, and with either one unset Android device
+   checks are skipped and logged; `PLAY_PACKAGE_NAME` only if the app id isn't `so.drafft.app`; Google's
+   default quota is 10,000 decodes a day for the whole project, shared by both projects: ask for more in
+   Play Console before Android has thousands of daily users, and alert on the quota in Google Cloud),
+   `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key,
    required: every verification SMS goes to a mobile line Lookup accepted, and none goes out without it), `SUPPORT_INBOX` (the team's copy of support requests, reports and
    exports it must finish by hand), optionally `EXPORT_MAX_BYTES` (the most one export part weighs, in bytes:
    47185920, 45 MiB, when unset; keep it under the Storage upload limit; anything but a positive whole number
@@ -606,7 +612,7 @@ secrets are still set by hand, always naming the project: `deploy.sh <env> --sec
 | Stream | app `drafft` (EU) | app `drafft-staging` (EU) |
 | RevenueCat | project `drafft` (`proj3dc1aebd`) | project `drafft staging` (`proje5eb803d`), same catalog |
 | APNs, Rekognition | shared (same bundle id, same key) | shared |
-| Play Integrity | the same two secrets on both projects (one Play app) | the same |
+| Play Integrity | shared (same service account, same project number, one Play app); Device recall's bits are shared too, so a test hold on staging marks a real device for production | shared |
 | DeviceCheck key | shared, `DEVICECHECK_ENVIRONMENT=production` | shared, `DEVICECHECK_ENVIRONMENT` matching how staging builds are installed (`development` from Xcode, `production` from TestFlight) |
 
 Setting it up once:
