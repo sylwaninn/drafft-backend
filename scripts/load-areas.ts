@@ -1,7 +1,6 @@
 // Loads the areas of France into private.areas, for area_at (migration 20260930000701): every commune, with
 // Paris, Lyon and Marseille split into their arrondissements ("Paris 11", "Lyon 4", "Marseille 1").
 //
-//   deno run -A scripts/load-areas.ts local
 //   deno run -A scripts/load-areas.ts staging
 //   deno run -A scripts/load-areas.ts production
 //
@@ -9,7 +8,7 @@
 // (codes and names), so a deploy costs one download and one query. Bump YEAR once a year, when communes merge.
 // Rows are upserted by INSEE code, and codes gone from the source are removed at the end.
 // Source (Licence Ouverte): Etalab's boundaries of communes and arrondissements, simplified to 100 m.
-// Staging and production go through the Management API (`supabase db query --linked`); the CLI is linked back to
+// The database is reached through the Management API (`supabase db query --linked`); the CLI is linked back to
 // staging on the way out, as in deploy.sh.
 
 const YEAR = 2025;
@@ -105,16 +104,10 @@ async function fingerprint(all: Row[]): Promise<string> {
 }
 
 const [env, ...flags] = Deno.args;
-const ref = env === "production"
-  ? PRODUCTION_REF
-  : env === "staging"
-  ? STAGING_REF
-  : env === "local"
-  ? null
-  : undefined;
+const ref = env === "production" ? PRODUCTION_REF : env === "staging" ? STAGING_REF : undefined;
 if (ref === undefined) {
   console.error(
-    "Usage: deno run -A scripts/load-areas.ts local|staging|production [--yes]",
+    "Usage: deno run -A scripts/load-areas.ts staging|production [--yes]",
   );
   Deno.exit(64);
 }
@@ -133,10 +126,9 @@ if (all.length < 30_000) {
   throw new Error(`only ${all.length} areas downloaded: stopped`);
 }
 const dir = await Deno.makeTempDir({ prefix: "areas-" });
-const target = ref ? ["--linked"] : ["--local"];
-const query = (file: string) => supabase(["db", "query", ...target, "--agent=no", "-o", "csv", "-f", file]);
+const query = (file: string) => supabase(["db", "query", "--linked", "--agent=no", "-o", "csv", "-f", file]);
 try {
-  if (ref) await supabase(["link", "--project-ref", ref]);
+  await supabase(["link", "--project-ref", ref]);
   const check = `${dir}/check.sql`;
   await Deno.writeTextFile(
     check,
@@ -161,7 +153,7 @@ try {
   }
 } finally {
   await Deno.remove(dir, { recursive: true });
-  if (ref && ref !== STAGING_REF) {
+  if (ref !== STAGING_REF) {
     await supabase(["link", "--project-ref", STAGING_REF]).catch(() =>
       console.error(
         `warning: couldn't link the CLI back to staging: run supabase link --project-ref ${STAGING_REF}`,
