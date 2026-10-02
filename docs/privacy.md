@@ -7,7 +7,7 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 
 | Data | Where | Kept | Enforced by |
 | --- | --- | --- | --- |
-| Account, profile, lifestyle, sports, prompts, settings, location, wallet, cards, swipes, matches, blocks, sessions, push tokens, DeviceCheck token, selfie records, export requests, terms and consent log | `auth.users`, `auth.identities`, `public.*`, `private.locations`, `private.device_checks`, `private.selfie_checks`, `private.data_requests`, `private.consent_events` | the account's life | `delete-account`: deleting the Auth user cascades through these tables (purchases, photo flags, help requests and reports' reporter are unlinked instead, `on delete set null`) |
+| Account, profile, lifestyle, sports, prompts, settings, location, wallet, cards, swipes, matches, blocks, sessions, push tokens, DeviceCheck or Play Integrity token, selfie records, export requests, terms and consent log | `auth.users`, `auth.identities`, `public.*`, `private.locations`, `private.device_checks`, `private.selfie_checks`, `private.data_requests`, `private.consent_events` | the account's life | `delete-account`: deleting the Auth user cascades through these tables (purchases, photo flags, help requests and reports' reporter are unlinked instead, `on delete set null`) |
 | Photos, videos, voice intro, chat photos and videos | R2 `u/<id>/…` | the account's life; a removed photo at once | `delete-account` (the whole prefix), db-events `media.deleted` |
 | Profile photos picked but never saved (drafts) | `public.profile_media` (`published_at` null), R2 `u/<id>/…` | deleted by the app when the person leaves without saving; 7 days at most | `media-drafts-purge` (`private.purge_media_drafts()`), db-events `media.deleted` |
 | Chat messages, and the chat photos, videos and voice messages they point to | Stream, one channel per match; R2 `u/<id>/chat/…` | the match's life; an ended match's chat is frozen, then erased 1 year after the match ended | `delete-account` erases its chats and hard-deletes the Stream user; db-events `chat.erase` ([below](#accounts-chats-and-selfies-kept-for-safety)) |
@@ -22,6 +22,7 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 | Sending queue (pushes, emails, Stream and R2 calls) | `private.outbox` | delivered 7 days; dropped, discarded or failed 30 days, except a failed erasure, kept until the team replays or discards it | `outbox-cleanup` (`private.outbox_cleanup()`) |
 | Session reminders queued | `private.session_reminders` | the session's life | `on delete cascade` from the session |
 | Purchase sync calls (rate limit) | `private.purchase_sync_calls` | 1 hour, trimmed at the member's next sync; the account's life at most | `purchase_sync_begin`, `on delete cascade` |
+| Device check calls (rate limit) | `private.device_check_calls` | 1 hour, trimmed at the account's next Android check; the account's life at most | `device_check_begin`, `on delete cascade` |
 | Team alerts (counts only, nothing personal), job runs | `private.ops_alerts`, `private.job_runs` | 90 days | `ops-alerts-cleanup`, `privacy-purge` |
 | Reports | `public.reports` | 1 year after they're handled; open ones stay; the reporter's id goes when they delete their account | `privacy-purge` |
 | Moderation log, staff notes, photo flags, links between accounts | `private.moderation_log`, `private.staff_notes`, `public.media_flags`, `private.account_links` | 1 year, 3 years about a banned account (the entry behind a hold in force stays with the hold; a flag counts from its review) | `privacy-purge` |
@@ -90,7 +91,7 @@ You › Privacy & data › Export my data calls `request_data_export()`, which q
 (`_shared/export.ts`): `data.json` with what `export_data(user)` returns (account and sign-ins, the profile row with
 lifestyle, settings, language and consent, the consent log, sports, prompts, media list, rounded location, wallet
 and credits, likes sent, matches, sessions, blocks, reports made, holds, selfie dates, checks of their own photos,
-help requests and replies, purchases, devices, IPs, DeviceCheck record, verification texts, push tokens, earlier
+help requests and replies, purchases, devices, IPs, DeviceCheck / Play Integrity record, verification texts, push tokens, earlier
 requests), the messages the person sent and the reactions they left (Stream, every match, ended ones too: the
 latest reactions Stream returns per message), and their own files under `files/` (R2): photos, videos, posters,
 voice intro, and the photos, videos and voice messages they sent in chats. Left out on purpose: reports about the

@@ -1,21 +1,34 @@
-// POST /device-check { token, environment } → 204
-// The app sends a fresh DeviceCheck token at each launch and sign-in (never on the Simulator). Apple's
+// POST /device-check { token, environment, platform? } → 204
+// The iPhone app sends a fresh DeviceCheck token at each launch and sign-in (never on the Simulator). Apple's
 // environment is the project's (DEVICECHECK_ENVIRONMENT): the app's `environment` is only logged when it
 // differs, so a client can't steer its token to the other Apple environment. The token
-// is kept for db-events, which sets the iPhone's bits when a hold changes. An account closed or on hold
-// opening the app sets them again; a new account on an iPhone where one was closed goes to review, on one
+// is kept for db-events, which sets the device's bits when a hold changes. An account closed or on hold
+// opening the app sets them again; a new account on a device where one was closed goes to review, on one
 // where an account is on hold owes a selfie, once.
+// The Android app (`platform: "android"`) sends a Play Integrity token each time it opens signed in: checked
+// with Google before it is stored, it reads and writes Device recall, which plays the part of the two bits
+// (android.ts, _shared/playintegrity.ts). Its `environment` is ignored: stored as production, there is no
+// Android counterpart of DEVICECHECK_ENVIRONMENT.
+// `platform` is "ios" (or missing, for the iPhone builds) or "android", else 400 invalid_platform.
 // The answer never says what was found.
+import { androidCheck, flagDevice, noContent } from "./android.ts";
 import { deviceCheckConfigured, deviceCheckEnvironment, queryBits, updateBits } from "../_shared/devicecheck.ts";
 import { HttpError, readJson, serve } from "../_shared/http.ts";
-import { admin, check, must, requireUser } from "../_shared/supabase.ts";
+import { admin, must, requireUser } from "../_shared/supabase.ts";
 
 serve(async (req) => {
   const user = await requireUser(req);
-  const { token, environment } = await readJson<{ token?: unknown; environment?: unknown }>(req);
-  if (typeof token !== "string" || token.length < 20 || token.length > 8192) {
+  const { token, environment, platform } = await readJson<
+    { token?: unknown; environment?: unknown; platform?: unknown }
+  >(req);
+  if (platform !== undefined && platform !== "ios" && platform !== "android") {
+    throw new HttpError(400, "invalid_platform");
+  }
+  const android = platform === "android";
+  if (typeof token !== "string" || token.length < 20 || token.length > (android ? 16384 : 8192)) {
     throw new HttpError(400, "invalid_token");
   }
+  if (android) return await androidCheck(user.id, token);
   const env = deviceCheckEnvironment();
   if (environment !== undefined && environment !== env) {
     // A development build on a production project (or the reverse): Apple will refuse its token.
@@ -26,10 +39,10 @@ serve(async (req) => {
     "record device check",
   ) as string;
 
-  if (next === "none") return new Response(null, { status: 204 });
+  if (next === "none") return noContent();
   if (!deviceCheckConfigured()) {
     console.warn(`device-check: Apple DeviceCheck not configured, ${next} skipped for ${user.id}`);
-    return new Response(null, { status: 204 });
+    return noContent();
   }
   try {
     if (next === "ban") {
@@ -39,11 +52,7 @@ serve(async (req) => {
     } else {
       const bits = await queryBits(token, env);
       if (bits.bit0 || bits.bit1) {
-        check(
-          await admin.rpc("device_flagged", { p_user: user.id, p_closed: bits.bit0, p_held: bits.bit1 }),
-          "device flagged",
-        );
-        console.log(`device-check: ${user.id} on a flagged iPhone (${bits.bit0 ? "closed" : "held"})`);
+        await flagDevice(user.id, bits, "iPhone");
       }
     }
   } catch (error) {
@@ -51,5 +60,5 @@ serve(async (req) => {
     // Never block the person on it, but keep Apple's answer in the logs.
     console.error(`device-check: Apple refused ${next} for ${user.id} (${env})`, error);
   }
-  return new Response(null, { status: 204 });
+  return noContent();
 });

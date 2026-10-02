@@ -96,7 +96,7 @@ Signed in unless noted.
 | `media-upload-url` | a presigned R2 upload URL for a profile photo, video or voice intro, or chat media ([media.md](media.md#uploads)) |
 | `chat-media` | silent check of a photo or video sent in a chat (`{ flagged }`, nothing changes for either person) |
 | `delete-account` | deletes the account, its chats, media, selfies and data exports, or keeps it for safety (erased later by db-events `account.purge`) |
-| `device-check` | the iPhone app's DeviceCheck token, at each launch and sign-in |
+| `device-check` | the device's token, at each launch and sign-in: Apple DeviceCheck on iPhone, Play Integrity (`platform: "android"`) on Android |
 | `phone-code` | texts a code to verify a number: email confirmed, limits per number, account and IP, Twilio Lookup (mobile lines only, fails closed) |
 | `purchase-sync` | credits a purchase or restore straight away from RevenueCat (see [Purchases](#purchases)) |
 | `support` | public: every "Get help" and "Contact us" form, signed in or not (`{ reference }`, see [Support form](#support-form)) |

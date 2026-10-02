@@ -2,15 +2,18 @@
 // opaque token from DCDevice; Apple alone knows which iPhone it stands for. bit0 = an account was closed
 // on this iPhone, bit1 = an account is on hold on it (20260927000004_identity_marks.sql).
 //
+// The same bits on Android: playintegrity.ts (types shared in devicebits.ts).
+//
 // Signed like APNs (ES256 .p8), with a key that has DeviceCheck enabled: DEVICECHECK_KEY_ID,
 // DEVICECHECK_PRIVATE_KEY, and the team in APNS_TEAM_ID. Unset (locally): nothing is sent to Apple.
 //
 // Apple's environment is the project's, never the app's word: DEVICECHECK_ENVIRONMENT (`production` or
 // `development`), `production` when unset on a hosted project, `development` locally.
 import { importPKCS8, SignJWT } from "npm:jose@6";
+import type { BitChange, DeviceBits, DeviceEnvironment } from "./devicebits.ts";
 import { env, optionalEnv } from "./env.ts";
 
-export type DeviceEnvironment = "development" | "production";
+export type { DeviceEnvironment };
 
 let cached: { jwt: string; at: number } | undefined;
 
@@ -55,7 +58,7 @@ async function call(environment: DeviceEnvironment, path: string, body: Record<s
 export async function queryBits(
   token: string,
   environment: DeviceEnvironment,
-): Promise<{ bit0: boolean; bit1: boolean; lastUpdate?: string }> {
+): Promise<DeviceBits & { lastUpdate?: string }> {
   const res = await call(environment, "query_two_bits", { device_token: token });
   const text = await res.text();
   if (!res.ok) throw new Error(`devicecheck query ${environment} ${res.status}: ${text.slice(0, 200)}`);
@@ -74,7 +77,7 @@ export async function queryBits(
 export async function updateBits(
   token: string,
   environment: DeviceEnvironment,
-  change: { bit0?: boolean; bit1?: boolean },
+  change: BitChange,
 ): Promise<void> {
   const current = await queryBits(token, environment);
   const next = { bit0: change.bit0 ?? current.bit0, bit1: change.bit1 ?? current.bit1 };

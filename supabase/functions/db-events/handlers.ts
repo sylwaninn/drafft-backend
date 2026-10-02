@@ -11,7 +11,9 @@
 // sent hours late after an outage.
 import { optionalEnv } from "../_shared/env.ts";
 import { type Push, pushToUser } from "../_shared/push.ts";
-import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
+import { deviceCheckConfigured, updateBits } from "../_shared/devicecheck.ts";
+import { type BitChange, bitChange, type DeviceTokenRow } from "../_shared/devicebits.ts";
+import { canWrite, playIntegrityConfigured, writeBits } from "../_shared/playintegrity.ts";
 import {
   deleteAccount,
   deleteAuthUser,
@@ -204,6 +206,57 @@ async function syncChatHold(userId: string) {
   if (error) throw new Error(`profile ${userId}: ${error.message}`);
   if (!data) return;
   await setChatHeld(userId, data.moderation !== null || data.deleted_at !== null);
+}
+
+/** A bit change that couldn't be written waits for the account's next verified Android token (device-check). */
+async function keepForLater(userId: string, change: BitChange): Promise<void> {
+  check(
+    await admin.rpc("device_check_set_pending", {
+      p_user: userId,
+      p_bit0: change.bit0 ?? null,
+      p_bit1: change.bit1 ?? null,
+    }),
+    "device check pending",
+  );
+}
+
+/**
+ * Applies a change of an account's moderation state to the bits of its device: Apple DeviceCheck on an iPhone,
+ * Play Integrity's Device recall on Android, whichever its latest device record says. Never holds the event
+ * back (the email and the push go out): a failure is logged with its context, and an Android change that
+ * can't be written (token older than 14 days, secrets unset, Google down) is kept for the account's next
+ * verified token, so a lifted ban or hold is cleared too. An iPhone is set again at its next launch.
+ */
+async function syncDeviceBits(eventId: number, userId: string, change: BitChange): Promise<void> {
+  if (Object.keys(change).length === 0) return;
+  const rows = must(await admin.rpc("device_check_token", { p_user: userId }), "device token") as DeviceTokenRow[];
+  for (const row of rows) {
+    const where = `event ${eventId}, ${userId}, ${row.platform}, ${JSON.stringify(change)}`;
+    try {
+      if (row.platform === "android") {
+        if (!playIntegrityConfigured()) {
+          console.warn(`account.moderation: Play Integrity not configured, bits kept for later (${where})`);
+          await keepForLater(userId, change);
+        } else if (!canWrite(row.updated_at)) {
+          console.warn(`account.moderation: android token stored ${row.updated_at}, bits kept for later (${where})`);
+          await keepForLater(userId, change);
+        } else {
+          try {
+            await writeBits(row.token, change);
+          } catch (error) {
+            await keepForLater(userId, change);
+            throw error;
+          }
+        }
+      } else if (deviceCheckConfigured()) {
+        await updateBits(row.token, row.environment, change);
+      } else {
+        console.warn(`account.moderation: Apple DeviceCheck not configured, bits not written (${where})`);
+      }
+    } catch (error) {
+      console.error(`account.moderation: devicecheck failed (${where})`, error);
+    }
+  }
 }
 
 export const handlers: Record<string, Handler> = {
@@ -523,9 +576,12 @@ export const handlers: Record<string, Handler> = {
     await syncChatHold(p.userId);
   },
 
-  // A hold changed. The iPhone's DeviceCheck bits follow (bit0 closed, bit1 on hold), and when the hold is
-  // lifted the person is emailed that they're back. The current state decides, the payload says where it
-  // came from. No token yet (Simulator, an old app): device-check sets the bits at the next launch.
+  // A hold changed. The device's bits follow (Apple DeviceCheck on an iPhone, Play Integrity's Device recall
+  // on Android; bit0 closed, bit1 on hold), and when the hold is lifted the person is emailed that they're
+  // back. The current state decides, the payload says where it came from. No token yet (Simulator, an old
+  // app, an Android token Google didn't accept): device-check sets the bits at the next launch. A change
+  // that can't be written (an Android token older than 14 days, Google down) waits for the next verified
+  // token (device_check_set_pending), clears included.
   async "account.moderation"(p: { userId: string; state?: string | null; previous: string | null }, ctx) {
     const { data: profile, error } = await admin.from("profiles").select("moderation, language, deleted_at")
       .eq("id", p.userId).maybeSingle();
@@ -539,23 +595,8 @@ export const handlers: Record<string, Handler> = {
     // An account kept after deletion stays banned (account.soft_deleted).
     await setChatHeld(p.userId, state !== null || profile.deleted_at !== null);
 
-    if (deviceCheckConfigured() && !ctx.done("devicecheck")) {
-      const held = (s: string | null) => s === "review" || s === "selfie";
-      const change: { bit0?: boolean; bit1?: boolean } = {};
-      if (state === "banned") change.bit0 = true;
-      else if (p.previous === "banned") change.bit0 = false;
-      if (held(state)) change.bit1 = true;
-      else if (held(p.previous)) change.bit1 = false;
-      const rows = must(await admin.rpc("device_check_token", { p_user: p.userId }), "device token") as {
-        token: string;
-        environment: DeviceEnvironment;
-      }[];
-      try {
-        for (const row of rows) await updateBits(row.token, row.environment, change);
-      } catch (error) {
-        // Never hold the email back for Apple: the bits are set again at the next launch.
-        console.error("account.moderation: devicecheck", error);
-      }
+    if ((deviceCheckConfigured() || playIntegrityConfigured()) && !ctx.done("devicecheck")) {
+      await syncDeviceBits(ctx.id, p.userId, bitChange(state, p.previous));
       await ctx.record("devicecheck");
     }
 

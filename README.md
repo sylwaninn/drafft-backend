@@ -130,7 +130,7 @@ flowchart LR
 | Chat, pushes | Stream; APNs and FCM |
 | Email, SMS | Resend; Twilio Messaging and Lookup |
 | Purchases | RevenueCat |
-| Safety | Amazon Rekognition, Apple DeviceCheck, Cloudflare Turnstile |
+| Safety | Amazon Rekognition, Apple DeviceCheck, Google Play Integrity, Cloudflare Turnstile |
 
 ## Getting started
 

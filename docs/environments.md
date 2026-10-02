@@ -17,6 +17,7 @@ Development runs against staging only: there is no local stack, the local databa
 | Stream | app `drafft` (EU) | app `drafft-staging` (EU) |
 | RevenueCat | project `drafft` (`proj3dc1aebd`) | project `drafft staging` (`proje5eb803d`), same catalog |
 | APNs, Rekognition | shared (same bundle id, same key) | shared |
+| Play Integrity | shared (same service account, same project number, one Play app); Device recall's bits are shared too, so a test hold on staging marks a real device for production | shared |
 | DeviceCheck key | shared, `DEVICECHECK_ENVIRONMENT=production` | shared, `development` for Xcode installs, `production` for TestFlight |
 
 ## Deploys and releases
@@ -132,7 +133,14 @@ laptop (`deploy.sh` and `sync-vault.sh` refuse it): the only manual writes are t
    line; db-events sends Android's pushes with it (`_shared/fcm.ts`), by each token's `platform`.
 8. Moderation and support secrets: `DEVICECHECK_KEY_ID` and `DEVICECHECK_PRIVATE_KEY` (an Apple key with
    DeviceCheck; the team comes from `APNS_TEAM_ID`), `DEVICECHECK_ENVIRONMENT=production` (Apple's environment
-   is chosen by the project, never by the app), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key,
+   is chosen by the project, never by the app), `PLAY_INTEGRITY_SERVICE_ACCOUNT` (the JSON key of a service
+   account of the Google Cloud project linked in Play Console's App integrity page, with the Play Integrity
+   API enabled and Device recall on) and `PLAY_CLOUD_PROJECT_NUMBER` (that project's number, which the app
+   uses: the server only checks that it is set; both are needed, and with either one unset Android device
+   checks are skipped and logged; `PLAY_PACKAGE_NAME` only if the app id isn't `so.drafft.app`; Google's
+   default quota is 10,000 decodes a day for the whole project, shared by both projects: ask for more in
+   Play Console before Android has thousands of daily users, and alert on the quota in Google Cloud),
+   `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key,
    required: every verification SMS goes to a mobile line Lookup accepted, and none goes out without it),
    `SUPPORT_INBOX` (the team's copy of support requests, reports and exports it must finish by hand),
    optionally `EXPORT_MAX_BYTES` (the most one export part weighs, in bytes:
