@@ -16,8 +16,7 @@ states, errors, push, email, SMS, paywall, App Store / Play Store, website, scre
 
 ## 1. Positioning
 
-- **Who:** active urban singles, 25–40, who train 2–5 times a week (run clubs, gym, padel,
-  climbing, cycling, swimming). Short on time, their week is built around sessions.
+- **Who:** the audience is described in PRODUCT.md only, never in copy, a README or another doc.
 - **What drafft does:** profiles lead with how someone trains (sports, how often). When two
   people like each other, drafft makes it easy to **propose a session**: sport, day, time. The
   first date can happen on the track, the wall or the court.
@@ -359,7 +358,7 @@ Full store texts: `docs/wording/store.md`.
 
 For App Store / Play screenshots, the website phone, social posts and demos.
 
-- **People:** varied ages (25–40), levels (beginner to competitive), sports, bodies, origins,
+- **People:** varied ages, levels (beginner to competitive), sports, bodies, origins,
   genders and orientations. Invented names common in the market's country. Never real people, never
   invented testimonials, user counts, ratings or press.
 - **Bios:** written like a real person on their phone: short, specific, a little self-deprecating.
