@@ -7,7 +7,7 @@
 //    mentions the production project. So the R2 and Stream credentials in use are staging's.
 // 3. Staging is reached by linking the CLI to the staging ref, hard-coded here.
 // 4. The database itself is asked who it is: its `edge_functions_url` Vault secret (set once per project,
-//    seed.sql and README) must name the staging project for "staging", a local address for "local", and
+//    seed.sql and docs/environments.md) must name the staging project for "staging", a local address for "local", and
 //    never the production project.
 
 export const STAGING_REF = "rjlghcuspdtrmbimyioe";

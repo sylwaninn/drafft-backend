@@ -37,7 +37,7 @@ if [ -e "$out" ]; then
   exit 1
 fi
 
-[ -f "$source_file" ] || { echo "No $source_file (see README, Staging)." >&2; exit 1; }
+[ -f "$source_file" ] || { echo "No $source_file (see docs/environments.md, Staging setup)." >&2; exit 1; }
 # The statement itself, not the example in seed.sql's header comment.
 db_events=$(grep -oE "^select vault\.create_secret\('[^']+', 'db_events_secret'\)" supabase/seed.sql \
   | tail -n 1 | sed -E "s/^[^']*'([^']+)'.*/\1/")
