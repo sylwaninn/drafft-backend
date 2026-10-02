@@ -1,5 +1,5 @@
 #!/bin/sh
-# Enforces the workspace rules (.claude/rules/commits.md) for everyone (agents and humans): one line,
+# Enforces the commit rules (AGENTS.md, "Repository rules") for everyone (agents and humans): one line,
 # `type(scope): description`, no Co-Authored-By. Enabled by `git config core.hooksPath .agents/git-hooks`.
 msg_file=$1
 # The message as git will store it: comment lines and trailing blank lines dropped.
@@ -12,7 +12,7 @@ esac
 
 fail() {
   echo "commit-msg: $1" >&2
-  echo "  Format: type(scope): description   (see .claude/rules/commits.md in the drafft workspace)" >&2
+  echo "  Format: type(scope): description   (see AGENTS.md, Repository rules)" >&2
   exit 1
 }
 
