@@ -12,6 +12,7 @@
 import { optionalEnv } from "../_shared/env.ts";
 import { type Push, pushToUser } from "../_shared/push.ts";
 import { deviceCheckConfigured, type DeviceEnvironment, updateBits } from "../_shared/devicecheck.ts";
+import { playIntegrityConfigured, WRITE_WINDOW_MS, writeBits } from "../_shared/playintegrity.ts";
 import {
   deleteAccount,
   deleteAuthUser,
@@ -539,7 +540,7 @@ export const handlers: Record<string, Handler> = {
     // An account kept after deletion stays banned (account.soft_deleted).
     await setChatHeld(p.userId, state !== null || profile.deleted_at !== null);
 
-    if (deviceCheckConfigured() && !ctx.done("devicecheck")) {
+    if ((deviceCheckConfigured() || playIntegrityConfigured()) && !ctx.done("devicecheck")) {
       const held = (s: string | null) => s === "review" || s === "selfie";
       const change: { bit0?: boolean; bit1?: boolean } = {};
       if (state === "banned") change.bit0 = true;
@@ -549,11 +550,23 @@ export const handlers: Record<string, Handler> = {
       const rows = must(await admin.rpc("device_check_token", { p_user: p.userId }), "device token") as {
         token: string;
         environment: DeviceEnvironment;
+        platform: "ios" | "android";
+        updated_at: string;
       }[];
       try {
-        for (const row of rows) await updateBits(row.token, row.environment, change);
+        for (const row of rows) {
+          if (row.platform === "android") {
+            // A Play Integrity token writes for 14 days: an older one waits for the next launch (device-check).
+            const fresh = Date.now() - new Date(row.updated_at).getTime() < WRITE_WINDOW_MS;
+            if (playIntegrityConfigured() && fresh && Object.keys(change).length > 0) {
+              await writeBits(row.token, change);
+            }
+          } else if (deviceCheckConfigured()) {
+            await updateBits(row.token, row.environment, change);
+          }
+        }
       } catch (error) {
-        // Never hold the email back for Apple: the bits are set again at the next launch.
+        // Never hold the email back for Apple or Google: the bits are set again at the next launch.
         console.error("account.moderation: devicecheck", error);
       }
       await ctx.record("devicecheck");

@@ -1,7 +1,7 @@
 -- Coming back after a ban: normalised emails, digits-only phones, and the iPhone's DeviceCheck bit.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(18);
+select plan(23);
 
 create function pg_temp.person(p_email text, p_phone text default null) returns uuid language plpgsql as $$
 declare
@@ -58,11 +58,24 @@ select public.set_moderation((select ann from ids), null);
 select is(public.record_device_check((select ann from ids), repeat('c', 40), 'development'), 'none',
   'cleared by the team: never flagged again (second-hand iPhone)');
 
+-- MARK: Play Integrity
+
+select is(public.record_device_check((select ann from ids), repeat('p', 900), 'production', 'android'), 'none',
+  'an Android device is recorded like an iPhone');
+select is((select platform from private.device_checks where user_id = (select ann from ids)), 'android',
+  'with its platform');
+select is((select count(*)::int from public.device_check_token((select ann from ids)) where platform = 'android'), 1,
+  'db-events reads the platform and the age of the token');
+select is(public.record_device_check((select ann from ids), repeat('q', 40), 'production'), 'none',
+  'the iPhone builds still send no platform');
+select is((select platform from private.device_checks where user_id = (select ann from ids)), 'ios',
+  'which then reads ios');
+
 select public.set_moderation((select jo from ids), null);
 select is((select payload ->> 'previous' from private.outbox where event = 'account.moderation' order by id desc limit 1),
   'banned', 'lifting a ban clears the device bit');
 
-select ok(not has_function_privilege('authenticated', 'public.record_device_check(uuid, text, text)', 'execute')
+select ok(not has_function_privilege('authenticated', 'public.record_device_check(uuid, text, text, text)', 'execute')
     and not has_function_privilege('authenticated', 'public.device_flagged(uuid, boolean, boolean)', 'execute')
     and not has_function_privilege('authenticated', 'public.device_check_token(uuid)', 'execute'),
   'device functions are server-only');
