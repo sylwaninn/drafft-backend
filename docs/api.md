@@ -143,5 +143,4 @@ link to reset a forgotten password.
 
 Verification SMS: same for the phone step (sign-up and You, a phone change): the Send SMS hook calls
 `auth-sms`, which texts the code through Twilio in the person's language, only to the countries the app
-offers. Locally both land in Mailpit (http://127.0.0.1:55424), unless `EMAIL_REAL=true` or `SMS_REAL=true`
-in `.env.local` sends them for real.
+offers. Both go out for real, on staging too: never trigger them with made-up addresses or numbers.

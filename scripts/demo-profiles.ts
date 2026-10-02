@@ -1,11 +1,10 @@
 // Demo people around Lyon, to try the app with a full Discover: complete, onboarded profiles with photos,
-// sports, prompts and a location. Staging and local only: demo/guard.ts stops it anywhere else.
+// sports, prompts and a location. Staging only: demo/guard.ts stops it anywhere else.
 //
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging seed [count]
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging refresh
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging purge
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-profiles.ts staging thumbhash
-//   deno run -A --env-file=supabase/functions/.env.local scripts/demo-profiles.ts local seed
 //
 // seed: creates the missing demo people (100 by default, from scripts/demo/personas.ts); run it again and it
 // only adds who is missing. refresh: marks them active again (Discover hides people inactive for 30 days).
@@ -62,14 +61,14 @@ const ZONES: [string, number, number, number, number][] = [
   ["Vienne", 45.525, 4.874, 1.5, 1],
 ];
 
-type Target = "staging" | "local";
+type Target = "staging";
 const [target, command, countArg] = Deno.args as [Target, string, string?];
 if (
-  !["staging", "local"].includes(target) ||
+  target !== "staging" ||
   !["seed", "refresh", "purge", "thumbhash"].includes(command)
 ) {
   console.error(
-    "Usage: deno run -A --env-file=<env file> scripts/demo-profiles.ts staging|local seed [count]|refresh|purge|thumbhash",
+    "Usage: deno run -A --env-file=<env file> scripts/demo-profiles.ts staging seed [count]|refresh|purge|thumbhash",
   );
   Deno.exit(64);
 }
@@ -79,7 +78,7 @@ const env = (name: string) =>
     throw new Error(`${name} is not set`);
   })();
 
-// Never production: stops here unless the env file and the database are staging's (or local).
+// Never production: stops here unless the env file and the database are staging's.
 await guard(target);
 
 // MARK: Database
@@ -105,7 +104,7 @@ async function query(sql: string): Promise<string[][]> {
   const csv = await supabase([
     "db",
     "query",
-    target === "staging" ? "--linked" : "--local",
+    "--linked",
     "--agent=no",
     "-o",
     "csv",
@@ -126,10 +125,8 @@ const r2 = new AwsClient({
   service: "s3",
   region: Deno.env.get("R2_REGION") ?? "auto",
 });
-// Locally the endpoint is the one the functions' container sees: from this machine, it is localhost.
-const endpoint = (Deno.env.get("R2_ENDPOINT") ??
-  `https://${env("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com`)
-  .replace("host.docker.internal", "127.0.0.1");
+const endpoint = Deno.env.get("R2_ENDPOINT") ??
+  `https://${env("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com`;
 const bucket = `${endpoint}/${env("R2_BUCKET")}`;
 
 async function r2Get(key: string): Promise<ArrayBuffer> {
@@ -388,7 +385,7 @@ async function seed() {
 
   for (let i = 0; i < missing.length; i += USERS_PER_QUERY) {
     const batch = missing.slice(i, i + USERS_PER_QUERY);
-    // One statement (the local API prepares it), one transaction: a batch lands whole or not at all.
+    // One statement (the API prepares it), one transaction: a batch lands whole or not at all.
     await query(
       `do $demo$ begin\n${batch.map((d) => insertSql(d, hashes)).join("")}\nend $demo$;\n`,
     );

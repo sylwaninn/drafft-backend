@@ -5,7 +5,7 @@ Supabase branch named `staging` of `drafft-backend` (its own database, Auth, Sto
 URL), fed with the same migrations. The apps' staging builds point at staging (iOS scheme **Drafft Staging**,
 Android build variant `staging`, both "drafft β" on the phone, same app id as production). Everything goes to
 staging first: a merge into `staging` (the default branch) deploys it, then a release deploys to production.
-Running the stack on your machine: [local-development.md](local-development.md).
+Development runs against staging only: there is no local stack, the local database exists only inside CI.
 
 | | Production | Staging |
 |---|---|---|
@@ -34,9 +34,16 @@ GitHub Actions (`.github/workflows/backend.yml`) deploys without anyone stepping
   for), publishes a GitHub release and starts the production deploy on that tag.
 
 CI ships code only: migrations, Edge Functions, areas and the media Worker. Secrets are set by hand, always
-naming the project: `deploy.sh <env> --secrets` or
+naming the project: `deploy.sh staging --secrets` or
 `supabase secrets set --project-ref <ref> --env-file supabase/functions/.env.<env>`. Auth settings live in the
 dashboard, and the support mail Worker is deployed by hand ([support.md](support.md#support-by-email)).
+
+### Supabase CLI version
+
+CI pins the CLI (`SUPABASE_CLI` in `.github/workflows/backend.yml`, 2.90 today). The Postgres image bundled
+with CLI 2.90 (17.6.1.106) crashes when a role calls a function it has no EXECUTE on from psql, so tests check
+privileges with `has_function_privilege`; through the API the same call correctly returns 42501. Keep this
+note in step with the pin.
 
 ### Roll back
 
@@ -69,7 +76,7 @@ Done once; kept to rebuild it.
 4. `scripts/sync-vault.sh staging`: the database's Vault secrets (`edge_functions_url`, `db_events_secret`
    from `DB_EVENTS_SECRET`, `purchase_environment`, `media_base_url` and `media_signing_key` from
    `MEDIA_PUBLIC_URL` and `MEDIA_SIGNING_KEY`), so database events reach the functions. Run it again whenever
-   `DB_EVENTS_SECRET` changes, in either environment.
+   `DB_EVENTS_SECRET` changes. Production's Vault is never written by a script (see Production setup).
 5. Auth on the branch: Apple and Google (same client ids as production), Send Email hook to its `auth-email`
    (its own secret and Resend key).
 6. Stream staging app (EU), configured by script like production, `--env-file=supabase/functions/.env.<env>`:
@@ -87,7 +94,7 @@ Done once; kept to rebuild it.
    sandbox, so their server notifications go to staging; their SDK still syncs on launch.
    Each database only credits purchases from its own store environment, the Vault secret
    `purchase_environment` read by `apply_purchase_event`: `PRODUCTION` when unset (production), `SANDBOX`
-   on staging (`sync-vault.sh`) and locally (`seed.sql`). Other events are recorded, not credited
+   on staging (`sync-vault.sh`) and in CI's database (`seed.sql`). Other events are recorded, not credited
    (`ignored: sandbox event`, `ignored: production event`).
 
 ## Production setup
@@ -95,15 +102,20 @@ Done once; kept to rebuild it.
 Done once already; kept for the record, not to replay. Production changes only through CI: a `v*` tag (made by
 Actions > release) runs `scripts/deploy.sh production` in `.github/workflows/backend.yml` (migrations,
 functions and areas, after the checks), which links the CLI back to staging afterwards. Never `supabase link`
-the production project and `db push` or `functions deploy` by hand.
+the production project and `db push` or `functions deploy` by hand. No script writes to production from a
+laptop (`deploy.sh` and `sync-vault.sh` refuse it): the only manual writes are the secrets and the Vault below.
 
 1. Supabase project `wrcpgnqwjmnirjfxpcux`, **West EU (Ireland)**. Before the public launch: compute Small or
    larger, and point-in-time recovery (PITR).
 2. Migrations and Edge Functions: a release (see [Deploys and releases](#deploys-and-releases)).
-   `scripts/deploy.sh production` by hand is a fallback only, from that tag's checkout: it asks to type
-   `production`.
-3. `scripts/sync-vault.sh production` (Vault secrets, from `functions/.env.production`; it asks to type
-   `production`).
+   `scripts/deploy.sh production` refuses to run outside GitHub Actions on a `v*` tag: no production deploy
+   from a laptop. To redeploy, Actions > backend > Run workflow on the tag.
+3. Vault secrets, from the dashboard's SQL editor (`vault.create_secret`, or `vault.update_secret` to change
+   one): `edge_functions_url` (`https://wrcpgnqwjmnirjfxpcux.supabase.co/functions/v1`), `db_events_secret`
+   (the same value as `DB_EVENTS_SECRET` in step 4), `media_base_url` and `media_signing_key` (the same
+   values as `MEDIA_PUBLIC_URL` and `MEDIA_SIGNING_KEY`). `purchase_environment` stays unset: `PRODUCTION`
+   is the default. Change `DB_EVENTS_SECRET` and the Vault together, or database events stop reaching the
+   functions.
 4. Function secrets:
    `supabase secrets set --project-ref wrcpgnqwjmnirjfxpcux --env-file supabase/functions/.env.production`
    (see `functions/.env.example`), **without** `MODERATION_MODE`. Always with `--project-ref`: the CLI stays

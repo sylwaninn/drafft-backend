@@ -134,40 +134,33 @@ flowchart LR
 
 ## Getting started
 
-Needs Docker, the [Supabase CLI](https://supabase.com/docs/guides/cli) (`brew install supabase/tap/supabase`)
-and [Deno](https://deno.com).
+Needs the [Supabase CLI](https://supabase.com/docs/guides/cli) (`brew install supabase/tap/supabase`) and
+[Deno](https://deno.com). Development runs against staging only: there is no local stack, the CLI stays linked
+to staging, and the database tests (`supabase test db`) run in CI, on a throwaway database built from the
+migrations.
 
 ```sh
 git config core.hooksPath .agents/git-hooks
-supabase start                              # ports 55420-55429
-deno run -A scripts/load-areas.ts local     # areas for area_at; again after a db reset
-scripts/local-env.sh                        # once: functions/.env.local from staging's values
-scripts/sync-vault.sh local                 # media signing secrets, so cards get photo links
-supabase functions serve --env-file supabase/functions/.env.local
 ```
-
-Then run `scripts/local-backend.sh` in drafft-ios or drafft-android to point the **Drafft Local** app at it.
-Emails and SMS land in Mailpit (http://127.0.0.1:55424). Offline setup, real emails, local purchases:
-[docs/local-development.md](docs/local-development.md).
 
 ### Checks
 
 ```sh
-supabase test db                            # database tests (pgTAP)
 deno fmt --check supabase/functions scripts cloudflare && deno lint supabase/functions scripts cloudflare
 (cd supabase/functions && deno check ./*/index.ts && deno test --allow-env --allow-read=.,../../WORDING.md)
 ```
 
-The full verify block is in [AGENTS.md](AGENTS.md#this-repository); CI adds the Workers' type checks and tests,
-shellcheck, actionlint, gitleaks and the migration guard.
+The full verify block is in [AGENTS.md](AGENTS.md#this-repository), with the database tests and advisors that
+CI runs on its own database; CI adds the Workers' type checks and tests, shellcheck, actionlint, gitleaks and
+the migration guard.
 
 ## Environments and deploy
 
-| | Local | Staging | Production |
-|---|---|---|---|
-| Supabase | `supabase start` | persistent branch `staging` | project `wrcpgnqwjmnirjfxpcux` |
-| Media | staging's bucket and Worker | `drafft-media-staging` | `drafft-media` |
-| Deployed by | you | every merge into `staging` | a release (`v*` tag) |
+| | Staging | Production |
+|---|---|---|
+| Supabase | persistent branch `staging` | project `wrcpgnqwjmnirjfxpcux` |
+| Media | `drafft-media-staging` | `drafft-media` |
+| Deployed by | every merge into `staging` | a release (`v*` tag) |
 
 | When | CI (`.github/workflows/backend.yml`) |
 |---|---|
@@ -187,7 +180,7 @@ supabase/
 ├── migrations/      schema, RPCs, triggers, jobs
 ├── functions/       Edge Functions; _shared/ holds email, push, erasure and export code
 ├── tests/           pgTAP
-└── seed.sql         local Vault secrets and the dev staff account
+└── seed.sql         Vault secrets and the dev staff account of the database CI builds
 cloudflare/
 ├── media-worker/            serves the private R2 bucket through signed links
 └── support-mail-worker/     files emails to the support address into sophros
@@ -207,7 +200,6 @@ docs/                reference (below)
 | [docs/support.md](docs/support.md) | touch support replies or the support email route |
 | [docs/privacy.md](docs/privacy.md) | store new personal data: retention, erasure, export, deletion |
 | [docs/environments.md](docs/environments.md) | set a secret, rebuild an environment, roll back |
-| [docs/local-development.md](docs/local-development.md) | run the stack offline or test purchases locally |
 | [docs/demo.md](docs/demo.md) | fill staging with demo people |
 | [WORDING.md](WORDING.md) | write any email, push, SMS or notice people receive |
 | [AGENTS.md](AGENTS.md) | run a coding agent, or need the repository rules |

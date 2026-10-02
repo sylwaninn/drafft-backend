@@ -26,7 +26,7 @@ logic, UI, i18n, refactors, config/CI, fixes. For each:
 
 ## 3. Verify
 
-Run the block in `AGENTS.md` (deno fmt, lint, check and test, `supabase test db`, advisors). Zero errors. If a tool is missing (Android SDK, local Supabase not running,
+Run the block in `AGENTS.md` (deno fmt, lint, check and test, `supabase test db`, advisors). Zero errors. If a tool is missing (Android SDK, no local database: only CI has one,
 no macOS on the web), run the rest and say in the pull request what was left to CI.
 
 ## 4. Docs, legal, parity

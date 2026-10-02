@@ -10,7 +10,7 @@ member; the database checks their role in `private.staff` (`support`, `moderator
 insert into private.staff (email, role) values ('someone@getdrafft.com', 'admin');
 ```
 
-Locally, `supabase db reset` seeds `dev@drafft.local` (admin), the identity sophros uses in dev mode.
+CI's throwaway database is seeded with `dev@drafft.local` (admin) by `supabase/seed.sql`.
 
 ## Statements of reasons (DSA art. 17)
 
