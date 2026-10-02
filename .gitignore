@@ -1,3 +1,7 @@
 .DS_Store
 .wrangler/
 node_modules/
+
+# Claude Code: personal and per-session files
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
