@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/sticker.png" alt="drafft-backend" width="140">
+</p>
+
 # drafft-backend
 
 Backend for the drafft iOS app: Supabase (Postgres + PostGIS, Auth, Realtime, Edge Functions) in the EU (Ireland),
