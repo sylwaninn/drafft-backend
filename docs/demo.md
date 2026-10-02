@@ -1,10 +1,10 @@
 # Demo people
 
 100 complete, onboarded demo profiles spread over Lyon and its suburbs, to try the app with a full Discover,
-and a script that makes them act towards a real account to see its notifications. **Staging and local only**:
-`scripts/demo/guard.ts` stops both scripts before any write unless the target is `staging` or `local`, the env
+and a script that makes them act towards a real account to see its notifications. **Staging only**:
+`scripts/demo/guard.ts` stops both scripts before any write unless the target is `staging`, the env
 file is staging's (`R2_BUCKET=drafft-media-staging`, no variable naming the production project), and the
-database itself says it is staging (its `edge_functions_url` Vault secret names the staging ref) or local.
+database itself says it is staging (its `edge_functions_url` Vault secret names the staging ref).
 
 ```sh
 E=supabase/functions/.env.staging

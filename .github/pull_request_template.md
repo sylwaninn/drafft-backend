@@ -23,7 +23,7 @@ Delete these comments and any section that doesn't apply.
 - [ ] `deno fmt --check` and `deno lint` on `supabase/functions` and `scripts`
 - [ ] `deno check` and `deno test` (functions), `deno check scripts/*.ts`
 - [ ] `supabase test db` and the advisors check
-- [ ] Run against the local Supabase, steps:
+- [ ] Run against staging (only what the user asked for), steps:
   1.
 
 ## Notes
