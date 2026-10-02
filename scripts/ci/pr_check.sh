@@ -5,7 +5,8 @@
 #
 #   - base: never main (main only moves through the release workflow, scripts/ci/release.sh), except in
 #     drafft-web, which has no staging: its pr.yml sets ALLOW_MAIN_BASE=true;
-#   - title: `type(scope): description`, lowercase, no final period: it becomes the squash commit;
+#   - title: `type(scope): description`, scope required, lowercase, no final period, 70 characters at most:
+#     it becomes the squash commit;
 #   - body: not empty, no AI attribution line;
 #   - commits: authored by an allowed address, no Co-Authored-By or AI attribution in any message;
 #   - signatures: unverified commits are listed (a warning, an error with REQUIRE_SIGNED=true).
@@ -23,7 +24,7 @@ ALLOW_MAIN_BASE=${ALLOW_MAIN_BASE:-false}
 GITHUB_COMMITTER="noreply@github.com"
 # Attribution lines tools add to commits and pull requests. Naming a tool in prose stays allowed.
 ATTRIBUTION='co-authored-by:|generated (with|by) \[?(claude|copilot|chatgpt|cursor|codex|gemini)|claude\.ai/code|claude\.com/claude-code|@anthropic\.com|claude-session:'
-TITLE='^(feat|fix|docs|style|refactor|test|chore)(\([a-z0-9-]+\))?!?: [a-z].*[^.]$'
+TITLE='^(feat|fix|docs|style|refactor|test|chore)\([a-z0-9-]+\)!?: [a-z].*[^.]$'
 
 errors=0
 error() {
@@ -39,6 +40,7 @@ allowed() {
 
 grep -qE "$TITLE" <<<"$PR_TITLE" ||
   error "Title \"$PR_TITLE\" isn't type(scope): lowercase description without a final period (it becomes the squash commit)."
+[ "${#PR_TITLE}" -le 70 ] || error "Title is ${#PR_TITLE} characters; keep it at 70 or fewer."
 
 [ -n "$(tr -d '[:space:]' <<<"$PR_BODY")" ] || error "The description is empty: fill in .github/pull_request_template.md."
 if grep -inE "$ATTRIBUTION" <<<"$PR_BODY" >/dev/null; then
@@ -63,7 +65,7 @@ if [ -n "${GH_TOKEN:-}" ] && [ -n "${PR_NUMBER:-}" ] && [ -n "${GITHUB_REPOSITOR
   unsigned=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/commits" \
     --jq '.[] | select(.commit.verification.verified | not) | "\(.sha[0:7]) (\(.commit.verification.reason))"')
   if [ -n "$unsigned" ]; then
-    message="Unverified commits (set up commit signing, see README > Contributing): $(tr '\n' ' ' <<<"$unsigned")"
+    message="Unverified commits (set up commit signing, see drafft-ios README > Development > Signed commits): $(tr '\n' ' ' <<<"$unsigned")"
     if [ "$REQUIRE_SIGNED" = true ]; then error "$message"; else echo "::warning::$message"; fi
   fi
 fi

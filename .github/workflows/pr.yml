@@ -33,10 +33,10 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
-          # Commit authors allowed in this repository (GitHub's noreply address of each maintainer).
-          ALLOWED_EMAILS: 147426984+sylwaninn@users.noreply.github.com
+          # Commit authors allowed in this repository (GitHub's noreply address of each maintainer, and Dependabot).
+          ALLOWED_EMAILS: 147426984+sylwaninn@users.noreply.github.com 49699333+dependabot[bot]@users.noreply.github.com
           # true only in drafft-web, which has no staging and takes its pull requests into main.
           ALLOW_MAIN_BASE: "false"
-          # true once every maintainer signs their commits (README > Contributing > Signed commits).
+          # true once every maintainer signs their commits (drafft-ios README > Development > Signed commits).
           REQUIRE_SIGNED: "false"
         run: scripts/ci/pr_check.sh

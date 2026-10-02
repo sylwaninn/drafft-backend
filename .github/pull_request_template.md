@@ -28,7 +28,7 @@ Delete these comments and any section that doesn't apply.
 
 ## Notes
 
-- **Telemetry:** <!-- events, screens, errors and alerts added (docs/telemetry.md), or "none, because ..." -->
+- **Telemetry:** <!-- flows the apps must track (events: drafft-ios/docs/telemetry.md), errors and alerts added, no personal data in logs, or "none, because ..." -->
 - **Wording:** <!-- strings added or changed in the 7 languages after WORDING.md section 10, or "no user-facing text" -->
 - **Privacy:** <!-- new personal data, third party or retention change (legal pages in drafft-web), or "none" -->
 - **Companion pull requests:** <!-- the other drafft repositories, or "none" -->
