@@ -51,6 +51,8 @@ reference), drafft-android and drafft-web: see "Shared docs" before changing it.
   product, way of working) goes into the document it belongs to, in the same change: DESIGN.md,
   PRODUCT.md, this file, or WORDING.md (in drafft-ios, its source). Never save it to Claude Code's auto
   memory: a cloud session, another machine or another agent would never see it.
+- **Who drafft is for stays in PRODUCT.md.** The audience (age above all, city, how often people train) is
+  never written in a README or any other doc. A README never details what a session proposal holds.
 - **Industry-grade solutions.** Every fix or feature takes the robust, secure, scalable solution the
   industry already uses (proven libraries and patterns: idempotency keys, retries with backoff,
   dead-letter queues and redrive, circuit breakers, stale-while-revalidate), never a quick patch.
@@ -117,9 +119,9 @@ request. Compile-only checks are the exception.
 
 ### Work that spans repositories
 
-A product feature usually runs backend, then iOS, then Android (then the website for legal or marketing
+A product feature usually runs backend, then the two apps (then the website for legal or marketing
 copy): one session and one pull request per repository, backend first since the apps call its RPCs and
-functions. iOS is the reference; Android ports it with the same names, behaviour and strings. The first
+functions. Both apps ship it with the same names, behaviour and strings. The first
 pull request states the contract (RPCs, payloads, event names) and the next ones link it. Another
 repository is read on GitHub (`gh repo clone sylwaninn/<repo>` into a temporary folder), never edited
 from here, except the shared docs below when the user agrees.
