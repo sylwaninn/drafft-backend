@@ -131,7 +131,7 @@ Edge Functions (signed in unless noted):
 | `media-upload-url` | a presigned R2 upload URL for a photo, video or voice intro |
 | `chat-media` | silent check of a photo or video sent in a chat (`{ flagged }`, nothing changes for either person) |
 | `delete-account` | deletes the account, its chats, media, selfies and data exports, or keeps it for safety (erased later by db-events `account.purge`) |
-| `device-check` | the iPhone's DeviceCheck token, at each launch and sign-in |
+| `device-check` | the device's token, at each launch and sign-in: Apple DeviceCheck on iPhone, Play Integrity (`platform: "android"`) on Android |
 | `phone-code` | texts a code to verify a number: email confirmed, limits per number, account and IP, Twilio Lookup (mobile lines only, fails closed) |
 | `purchase-sync` | credits a purchase or restore straight away from RevenueCat (see Purchases below) |
 | `support` | public: every "Get help" and "Contact us" form, signed in or not (`{ reference }`) |
@@ -318,7 +318,7 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 
 | Data | Where | Kept | Enforced by |
 | --- | --- | --- | --- |
-| Account, profile, lifestyle, sports, prompts, settings, location, wallet, cards, swipes, matches, blocks, sessions, push tokens, DeviceCheck token, selfie records, export requests, terms and consent log | `auth.users`, `auth.identities`, `public.*`, `private.locations`, `private.device_checks`, `private.selfie_checks`, `private.data_requests`, `private.consent_events` | the account's life | `delete-account`: deleting the Auth user cascades through these tables (purchases, photo flags, help requests and reports' reporter are unlinked instead, `on delete set null`) |
+| Account, profile, lifestyle, sports, prompts, settings, location, wallet, cards, swipes, matches, blocks, sessions, push tokens, DeviceCheck or Play Integrity token, selfie records, export requests, terms and consent log | `auth.users`, `auth.identities`, `public.*`, `private.locations`, `private.device_checks`, `private.selfie_checks`, `private.data_requests`, `private.consent_events` | the account's life | `delete-account`: deleting the Auth user cascades through these tables (purchases, photo flags, help requests and reports' reporter are unlinked instead, `on delete set null`) |
 | Photos, videos, voice intro, chat photos and videos | R2 `u/<id>/…` | the account's life; a removed photo at once | `delete-account` (the whole prefix), db-events `media.deleted` |
 | Profile photos picked but never saved (drafts) | `public.profile_media` (`published_at` null), R2 `u/<id>/…` | deleted by the app when the person leaves without saving; 7 days at most | `media-drafts-purge` (`private.purge_media_drafts()`), db-events `media.deleted` |
 | Chat messages, and the chat photos, videos and voice messages they point to | Stream, one channel per match; R2 `u/<id>/chat/…` | the match's life; an ended match's chat is frozen, then erased 1 year after the match ended | `delete-account` erases its chats and hard-deletes the Stream user; db-events `chat.erase` (below) |
@@ -401,7 +401,7 @@ You › Privacy & data › Export my data calls `request_data_export()`, which q
 (`_shared/export.ts`): `data.json` with what `export_data(user)` returns (account and sign-ins, the profile row with
 lifestyle, settings, language and consent, the consent log, sports, prompts, media list, rounded location, wallet
 and credits, likes sent, matches, sessions, blocks, reports made, holds, selfie dates, checks of their own photos,
-help requests and replies, purchases, devices, IPs, DeviceCheck record, verification texts, push tokens, earlier
+help requests and replies, purchases, devices, IPs, DeviceCheck / Play Integrity record, verification texts, push tokens, earlier
 requests), the messages the person sent and the reactions they left (Stream, every match, ended ones too: the
 latest reactions Stream returns per message), and their own files under `files/` (R2): photos, videos, posters,
 voice intro, and the photos, videos and voice messages they sent in chats. Left out on purpose: reports about the
@@ -565,7 +565,9 @@ or `functions deploy` by hand.
    line; db-events sends Android's pushes with it (`_shared/fcm.ts`), by each token's `platform`.
 8. Moderation and support secrets: `DEVICECHECK_KEY_ID` and `DEVICECHECK_PRIVATE_KEY` (an Apple key with
    DeviceCheck; the team comes from `APNS_TEAM_ID`), `DEVICECHECK_ENVIRONMENT=production` (Apple's environment
-   is chosen by the project, never by the app), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key,
+   is chosen by the project, never by the app), `PLAY_INTEGRITY_SERVICE_ACCOUNT` (the JSON key of a service account of the
+   Google Cloud project linked in Play Console's App integrity page, with the Play Integrity API enabled and Device recall
+   on) and `PLAY_CLOUD_PROJECT_NUMBER` (that project's number; `PLAY_PACKAGE_NAME` only if the app id isn't `so.drafft.app`), `TWILIO_LOOKUP_API_KEY_SID` and `_SECRET` (a US1 API key,
    required: every verification SMS goes to a mobile line Lookup accepted, and none goes out without it), `SUPPORT_INBOX` (the team's copy of support requests, reports and
    exports it must finish by hand), optionally `EXPORT_MAX_BYTES` (the most one export part weighs, in bytes:
    47185920, 45 MiB, when unset; keep it under the Storage upload limit; anything but a positive whole number
@@ -604,6 +606,7 @@ secrets are still set by hand, always naming the project: `deploy.sh <env> --sec
 | Stream | app `drafft` (EU) | app `drafft-staging` (EU) |
 | RevenueCat | project `drafft` (`proj3dc1aebd`) | project `drafft staging` (`proje5eb803d`), same catalog |
 | APNs, Rekognition | shared (same bundle id, same key) | shared |
+| Play Integrity | the same two secrets on both projects (one Play app) | the same |
 | DeviceCheck key | shared, `DEVICECHECK_ENVIRONMENT=production` | shared, `DEVICECHECK_ENVIRONMENT` matching how staging builds are installed (`development` from Xcode, `production` from TestFlight) |
 
 Setting it up once:
