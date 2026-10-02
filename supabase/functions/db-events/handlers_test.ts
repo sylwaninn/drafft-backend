@@ -7,6 +7,7 @@
 // and Stream by a fake client. Everything they're asked is recorded.
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1";
 import { unzipSync } from "npm:fflate@0.8.2";
+import { resetAccessToken } from "../_shared/playintegrity.ts";
 import { withRenditions } from "../_shared/renditions.ts";
 
 // A throwaway P-256 key for the APNs provider token.
@@ -103,10 +104,15 @@ const world = {
   messages: {} as Record<string, Row>,
   /** Renditions asked of the media Worker: `<key> w<width>`. */
   warmed: [] as string[],
+  /** Play Integrity's Device recall writes (`newValues`), and the status Google answers them with. */
+  playWrites: [] as Row[],
+  playWriteStatus: 200,
 };
 
 function reset() {
   world.warmed = [];
+  world.playWrites = [];
+  world.playWriteStatus = 200;
   world.tables = {};
   world.users = {};
   world.rpc = [];
@@ -255,6 +261,11 @@ globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Pr
 
   if (url.host === "oauth2.googleapis.com") {
     return respond({ access_token: "fcm-access", expires_in: 3600, token_type: "Bearer" });
+  }
+
+  if (url.host === "playintegrity.googleapis.com" && url.pathname.endsWith("/deviceRecall:write")) {
+    world.playWrites.push(JSON.parse(text).newValues);
+    return world.playWriteStatus === 200 ? respond({}) : respond({ error: { message: "no" } }, world.playWriteStatus);
   }
 
   if (url.host === "fcm.googleapis.com") {
@@ -842,6 +853,133 @@ Deno.test("account.moderation: no push once the state has moved on", async () =>
   (world.tables.profiles[0] as Row).moderation = "banned";
   await runEvent({ id: 13, event: "account.moderation", payload: { userId: ana, state: null, previous: "review" } });
   assertEquals(world.pushes, []);
+});
+
+// MARK: Device bits (account.moderation)
+
+const PLAY_ENV = {
+  PLAY_INTEGRITY_SERVICE_ACCOUNT: JSON.stringify({
+    client_email: "play@drafft-test.iam.gserviceaccount.com",
+    private_key: rsaPem,
+  }),
+  PLAY_CLOUD_PROJECT_NUMBER: "710693749934",
+};
+
+/** Runs `run` with Play Integrity's secrets set (or not) and the console's errors and warnings collected. */
+async function withDevices(play: boolean, run: () => Promise<void>): Promise<{ errors: string[]; warnings: string[] }> {
+  const { error, warn } = console;
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  console.error = (...args: unknown[]) => void errors.push(args.map(String).join(" "));
+  console.warn = (...args: unknown[]) => void warnings.push(args.map(String).join(" "));
+  if (play) { for (const [name, value] of Object.entries(PLAY_ENV)) Deno.env.set(name, value); }
+  resetAccessToken();
+  try {
+    await run();
+  } finally {
+    for (const name of Object.keys(PLAY_ENV)) Deno.env.delete(name);
+    resetAccessToken();
+    Object.assign(console, { error, warn });
+  }
+  return { errors, warnings };
+}
+
+const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+
+function androidDevice(days: number, platform = "android") {
+  world.rpcResults.device_check_token = [{
+    token: "t".repeat(40),
+    environment: "production",
+    platform,
+    updated_at: daysAgo(days),
+  }];
+}
+
+async function moderated(state: string | null, previous: string | null, id = 30) {
+  people();
+  (world.tables.profiles[0] as Row).moderation = state;
+  await runEvent({ id, event: "account.moderation", payload: { userId: ana, state, previous } });
+}
+
+Deno.test("account.moderation: a ban writes bit0 on a recent Android token", async () => {
+  reset();
+  androidDevice(13);
+  const { errors } = await withDevices(true, () => moderated("banned", null));
+  assertEquals(world.playWrites, [{ bitFirst: true }]);
+  assertEquals(calls("device_check_set_pending").length, 0);
+  assertEquals(steps(30), ["devicecheck"]);
+  assertEquals(errors, []);
+});
+
+Deno.test("account.moderation: a ban lifted on a token older than 14 days waits for the next verified one, and the email goes out", async () => {
+  reset();
+  androidDevice(15);
+  const { warnings } = await withDevices(true, () => moderated(null, "banned"));
+  assertEquals(world.playWrites, []);
+  assertEquals(calls("device_check_set_pending")[0].args, { p_user: ana, p_bit0: false, p_bit1: null });
+  assert(warnings.some((w) => w.includes("kept for later") && w.includes("event 30")));
+  assertEquals(steps(30).includes("devicecheck"), true);
+  assertEquals(world.emails.length, 1, "the person is told they're back");
+});
+
+Deno.test("account.moderation: a Google failure keeps the change and holds nothing back", async () => {
+  reset();
+  androidDevice(1);
+  world.playWriteStatus = 500;
+  const { errors } = await withDevices(true, () => moderated("review", "banned"));
+  assertEquals(calls("device_check_set_pending")[0].args, { p_user: ana, p_bit0: false, p_bit1: true });
+  assert(errors[0].includes("event 30") && errors[0].includes(ana) && errors[0].includes("android"));
+  assertEquals(steps(30).includes("devicecheck"), true);
+});
+
+Deno.test("account.moderation: an Android device without Play Integrity's secrets keeps the change for later", async () => {
+  reset();
+  androidDevice(1);
+  // Apple's secrets stand in for "a service is configured": none are set here, so the gate is Play's alone.
+  Deno.env.set("DEVICECHECK_KEY_ID", "K");
+  Deno.env.set("DEVICECHECK_PRIVATE_KEY", pem);
+  try {
+    const { warnings } = await withDevices(false, () => moderated("banned", null));
+    assertEquals(world.playWrites, []);
+    assertEquals(calls("device_check_set_pending")[0].args, { p_user: ana, p_bit0: true, p_bit1: null });
+    assert(warnings.some((w) => w.includes("Play Integrity not configured")));
+  } finally {
+    Deno.env.delete("DEVICECHECK_KEY_ID");
+    Deno.env.delete("DEVICECHECK_PRIVATE_KEY");
+  }
+});
+
+Deno.test("account.moderation: an iPhone is left to Apple, and said so when Apple isn't configured", async () => {
+  reset();
+  androidDevice(1, "ios");
+  const { warnings } = await withDevices(true, () => moderated("banned", null));
+  assertEquals(world.playWrites, []);
+  assertEquals(calls("device_check_set_pending").length, 0);
+  assert(warnings.some((w) => w.includes("Apple DeviceCheck not configured")));
+});
+
+Deno.test("account.moderation: nothing moved, no device is read", async () => {
+  reset();
+  await withDevices(true, () => moderated(null, null));
+  assertEquals(calls("device_check_token").length, 0);
+  assertEquals(world.playWrites, []);
+});
+
+Deno.test("account.moderation: a replay with the device step done writes nothing", async () => {
+  reset();
+  androidDevice(1);
+  await withDevices(true, async () => {
+    people();
+    (world.tables.profiles[0] as Row).moderation = "banned";
+    await runEvent({
+      id: 31,
+      event: "account.moderation",
+      payload: { userId: ana, state: "banned", previous: null },
+      steps: ["devicecheck"],
+    });
+  });
+  assertEquals(world.playWrites, []);
+  assertEquals(calls("device_check_token").length, 0);
 });
 
 Deno.test("session.accepted: no push about a session already past", async () => {

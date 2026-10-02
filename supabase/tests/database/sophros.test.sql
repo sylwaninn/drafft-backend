@@ -2,7 +2,7 @@
 -- holds with their actor, reports and flags closed, and the app's device reports.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(34);
+select plan(35);
 
 create function pg_temp.person(p_email text, p_name text) returns uuid language plpgsql as $$
 declare
@@ -51,6 +51,9 @@ select is(jsonb_array_length(public.admin_users('sup@drafft.test', 'ANA@sophros'
 select is(public.admin_users('sup@drafft.test', 'ozzwi') -> 0 ->> 'name', 'Bozzwick', 'search by name');
 select is(jsonb_array_length(public.admin_users('sup@drafft.test', '%')), 0, 'wildcards are literal');
 select is(public.admin_user('sup@drafft.test', (select ana from ids)) -> 'auth' ->> 'email', 'ana@sophros.test', 'the whole account');
+select public.record_device_check((select ana from ids), repeat('d', 40), 'production', 'android');
+select is(public.admin_user('sup@drafft.test', (select ana from ids)) -> 'deviceCheck' ->> 'platform', 'android',
+  'which service the device record comes from');
 select is((select action from private.admin_audit order by id desc limit 1), 'user.view', 'opening an account is logged');
 select throws_ok(format($$select public.admin_user('sup@drafft.test', %L)$$, gen_random_uuid()), 'P0001', 'no such account',
   'an unknown account');
