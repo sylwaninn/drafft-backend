@@ -133,7 +133,7 @@ moves when the person:
   like, only `{likeId, superLike, likedAt, thumbhash, blurUrl}`: an opaque handle, the ThumbHash of the
   first photo (placeholder) and `blurUrl`, a signed link of about an hour to a blurred copy of that photo
   (200 px, strong blur), or null without a photo. The link names neither the person nor the photo and only
-  ever opens the blurred copy (README, media Worker).
+  ever opens the blurred copy ([media.md](media.md#blurred-copies)).
 
 ## Boosts
 
@@ -200,13 +200,27 @@ Errors come back from PostgREST with a stable code in `hint`.
 ## Performance
 
 `scripts/bench.sql`: 50,000 profiles in Île-de-France, a viewer with 2,000 past swipes, warm cache,
-database time only.
+database time only (add 10 to 80 ms of network for what the phone sees). Measured from 2026-09-25 to
+2026-09-26 with the local stack; run it again for current figures.
+
+```sh
+docker exec -i supabase_db_drafft-backend psql -U postgres -v n=50000 < scripts/bench.sql
+```
 
 | Query | Time |
 | --- | --- |
 | `discover`, 10 km | ~3 ms |
 | `discover`, any distance, 2 sports, age 25-35 | ~55 ms |
-| `discover`, 2 km, a rare sport, age 40-41 (almost nobody matches) | ~9 ms |
+| `discover`, 2 km, a rare sport, age 40-41 (almost nobody matches; run by hand, not in `bench.sql`) | ~9 ms |
+| one card by id | ~0.5 ms |
+| 20 cards by id | ~1 ms |
+| profile edit + card rebuild | ~2 ms |
+| discover batch payload | 39 kB for 20 cards |
+
+Building one complete profile the way onboarding does (identity + vitals + icebreaker + voice intro,
+3 sports, 3 prompts, 5 photos + 1 video, location, moderation approval, `complete_onboarding`): ~9 ms of
+database time over 11 calls. A full card rebuild from scratch: ~0.15 ms. The finished card: 3.5 kB.
+The first version of Discover filtered and sorted every candidate in the radius: 160 ms on the same data.
 
 Candidates come from `private.nearby_candidates`: a walk of the location index, nearest first, that
 stops once it has `2 × p_limit` eligible people, or at the edge of the radius. Its cost follows how far

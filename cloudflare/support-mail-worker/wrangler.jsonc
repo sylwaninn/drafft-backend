@@ -1,5 +1,5 @@
 // drafft support mail: an Email Worker that files what people write to the support address into sophros
-// (src/index.ts). No HTTP route: Cloudflare Email Routing hands it the emails (README, "Support by email").
+// (src/index.ts). No HTTP route: Cloudflare Email Routing hands it the emails (docs/support.md, "Support by email").
 // Deploy (after `npm ci` here, which fetches postal-mime for the bundle):
 //   npx wrangler@4 deploy --env staging      (support-staging@getdrafft.com → the staging project)
 //   npx wrangler@4 deploy --env production   (support@getdrafft.com → the production project)

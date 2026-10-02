@@ -37,6 +37,6 @@ jobs:
           ALLOWED_EMAILS: 147426984+sylwaninn@users.noreply.github.com 49699333+dependabot[bot]@users.noreply.github.com
           # true only in drafft-web, which has no staging and takes its pull requests into main.
           ALLOW_MAIN_BASE: "false"
-          # true once every maintainer signs their commits (drafft-ios README > Development > Signed commits).
+          # true once every maintainer signs their commits (drafft-ios CONTRIBUTING.md > Signed commits).
           REQUIRE_SIGNED: "false"
         run: scripts/ci/pr_check.sh

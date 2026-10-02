@@ -8,7 +8,7 @@ commands such as cat/grep/sed/base64, scripts, or asking a tool to echo them):
 - `supabase/.env`
 - `supabase/functions/.env`
 - `supabase/functions/.env.production`
-- any other `.env`, `.env.production`, `.env.local` or `.env.*.local`
+- any other `.env` or `.env.*` file, `.env.staging` and any `.local` variant included (not `.env.example`)
 
 They hold production credentials (R2, Stream, APNs, auth providers). To use them, run the CLI that consumes
 them without displaying them, always naming the project, e.g.
@@ -17,25 +17,8 @@ them without displaying them, always naming the project, e.g.
 when the human asks for it: it writes to a remote project. If a task seems to need a value from them, ask the
 human instead. The `.env.example` files are safe to read.
 
-Never write, regenerate or overwrite them either, `supabase/functions/.env.local` above all: it is the
-user's own (a dedicated Resend key, `EMAIL_REAL`, `SMS_REAL`). `scripts/local-env.sh` only creates it when
-it is missing: never run it when it exists, never give it an option that rewrites it. To change a local
-setting, tell the user which line to edit.
-
-## Local stack: real emails, fragile restarts
-
-- **The local functions may send for real.** The user serves them with
-  `supabase functions serve --env-file supabase/functions/.env.local`, where `EMAIL_REAL=true` can be set:
-  emails then go out through Resend, not to Mailpit. Never trigger an email- or SMS-sending flow locally
-  with made-up addresses or numbers. To look at an email, render it from your own Deno process with
-  `MAILPIT_URL=http://127.0.0.1:55424` and `EMAIL_REAL` unset.
-- **Test mutations on throwaway accounts only**: the Drafft Local apps and sophros use this same database.
-- **Avoid restarting the stack.** `supabase stop && supabase start` kills the user's `functions serve`
-  (the default runtime then lacks `EMAIL_FROM` and the rest). If a restart is needed (a function change in
-  `config.toml`), tell the user to start the serve command again.
-- **Storage version.** The local database's storage schema was migrated by storage-api v1.77.5; the CLI
-  starts an older one unless `supabase/.temp/storage-version` (gitignored) says `v1.77.5`, and every
-  upload then fails (500, `42P10`). Keep that file.
+Never write, regenerate or overwrite them either: they are the user's own. To change a setting, tell the
+user which line to edit.
 
 ## User-facing text: WORDING.md first (priority rule)
 
@@ -51,6 +34,8 @@ reference), drafft-android and drafft-web: see "Shared docs" before changing it.
   product, way of working) goes into the document it belongs to, in the same change: DESIGN.md,
   PRODUCT.md, this file, or WORDING.md (in drafft-ios, its source). Never save it to Claude Code's auto
   memory: a cloud session, another machine or another agent would never see it.
+- **Who drafft is for stays in drafft-ios's PRODUCT.md.** The audience (age above all, city, how often people train) is
+  never written in a README or any other doc. A README never details what a session proposal holds.
 - **Industry-grade solutions.** Every fix or feature takes the robust, secure, scalable solution the
   industry already uses (proven libraries and patterns: idempotency keys, retries with backoff,
   dead-letter queues and redrive, circuit breakers, stale-while-revalidate), never a quick patch.
@@ -106,20 +91,23 @@ git guard, skills). Claude Code loads the same files on this machine and on the 
 Never open, print, copy, search or summarize `.env*` files (`.env.example` is safe), `.dev.vars`
 (`.dev.vars.example` is safe), keys, `google-services.json` or anything in `~/Secrets/`, by any means.
 Run the CLI that consumes them without showing them, and only when the user asks: it writes to a remote
-project. Never write, regenerate or overwrite a user's `.env.local`. `.claude/settings.json` denies the
+project. Never write, regenerate or overwrite a user's `.env*` file. `.claude/settings.json` denies the
 reads.
 
 ### Environments
 
-Apps an agent installs or launches always target the local Supabase. Never build, install, deploy or run
-mutations against staging or production unless the user asks for that environment in the current
-request. Compile-only checks are the exception.
+Work only on staging (ref in `scripts/deploy.sh`): there is no local stack for development, and none to
+start (never `supabase start` or `supabase stop`). The local database exists only inside CI, which builds it
+from the migrations to run the database tests and advisors. Apps an agent installs or launches target
+staging unless the user says otherwise; never production. Mutations against staging (data, secrets,
+functions, Vault, migrations pushed by hand) only when the user asks for them in the current request.
+Compile-only checks are the exception.
 
 ### Work that spans repositories
 
-A product feature usually runs backend, then iOS, then Android (then the website for legal or marketing
+A product feature usually runs backend, then the two apps (then the website for legal or marketing
 copy): one session and one pull request per repository, backend first since the apps call its RPCs and
-functions. iOS is the reference; Android ports it with the same names, behaviour and strings. The first
+functions. Both apps ship it with the same names, behaviour and strings. The first
 pull request states the contract (RPCs, payloads, event names) and the next ones link it. Another
 repository is read on GitHub (`gh repo clone sylwaninn/<repo>` into a temporary folder), never edited
 from here, except the shared docs below when the user agrees.
@@ -143,13 +131,14 @@ tag to production. "Verify" in these rules
 (`pnpm verify`) means, in this repository:
 
 ```sh
-deno fmt --check supabase/functions scripts && deno lint supabase/functions scripts \
+deno fmt --check supabase/functions scripts cloudflare && deno lint supabase/functions scripts cloudflare \
   && (cd supabase/functions && deno check ./*/index.ts && deno test --allow-env --allow-read=.,../../WORDING.md) \
   && deno check scripts/*.ts \
   && supabase test db && supabase db advisors --local --level info -o json | python3 scripts/ci/advisors.py
 ```
 
-CI (`.github/workflows/`) runs the same, plus shellcheck, actionlint, gitleaks, a schema lint, the
+The last line (`supabase test db`, advisors) needs the local database, which only CI builds: run the rest
+and leave that line to CI. CI (`.github/workflows/`) runs the same, plus shellcheck, actionlint, gitleaks, a schema lint, the
 migration guard (`scripts/ci/migrations-guard.sh`: migrations on staging are immutable, destructive or
 locking statements need `-- migration-guard: allow <what> - <why>`), and after each deploy and daily
 the drift check between the repository, staging and production (`scripts/ci/env-parity.sh`). A new

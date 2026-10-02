@@ -8,7 +8,7 @@ states, errors, push, email, SMS, paywall, App Store / Play Store, website, scre
 - **Read it before writing or changing any user-facing text, in any of the 7 languages. Apply it.
   Run the [review checklist](#10-review-checklist) before you finish.**
 - Canonical file: `drafft-ios/WORDING.md`. `drafft-backend/WORDING.md`, `drafft-web/WORDING.md` and
-  `drafft-android/WORDING.md` are synced copies: edit only this one, then run `scripts/sync-docs.sh`
+  `drafft-android/WORDING.md` are synced copies: edit only this one, then run `scripts/sync-shared.sh`
   in the drafft workspace.
 - Every new editorial decision goes here (section 11). Other files point here, never restate rules.
 - Machine-checked: the forbidden patterns in section 5 fail CI (`scripts/ci/i18n_lint.py` here, a
@@ -16,8 +16,7 @@ states, errors, push, email, SMS, paywall, App Store / Play Store, website, scre
 
 ## 1. Positioning
 
-- **Who:** active urban singles, 25–40, who train 2–5 times a week (run clubs, gym, padel,
-  climbing, cycling, swimming). Short on time, their week is built around sessions.
+- **Who:** the audience is described in drafft-ios's PRODUCT.md only, never in copy, a README or another doc.
 - **What drafft does:** profiles lead with how someone trains (sports, how often). When two
   people like each other, drafft makes it easy to **propose a session**: sport, day, time. The
   first date can happen on the track, the wall or the court.
@@ -29,7 +28,7 @@ states, errors, push, email, SMS, paywall, App Store / Play Store, website, scre
   it never states that a match becomes or leads to anything.
 - **Against the category:**
   - bpm.so owns "the first date is a workout" and sweat ("Swipe less. Sweat more.").
-  - Breeze plans dates for you.
+  - Breeze sets up the date for you.
   - drafft owns **the start**: the proposal you make, the start line, the moment you both show up.
 
 ## 2. Personality
@@ -359,7 +358,7 @@ Full store texts: `docs/wording/store.md`.
 
 For App Store / Play screenshots, the website phone, social posts and demos.
 
-- **People:** varied ages (25–40), levels (beginner to competitive), sports, bodies, origins,
+- **People:** adults of varied ages, levels (beginner to competitive), sports, bodies, origins,
   genders and orientations. Invented names common in the market's country. Never real people, never
   invented testimonials, user counts, ratings or press.
 - **Bios:** written like a real person on their phone: short, specific, a little self-deprecating.

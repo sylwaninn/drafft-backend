@@ -3,11 +3,11 @@
 # functions' secrets from supabase/functions/.env.<environment>, then the areas (scripts/load-areas.ts).
 #
 #   scripts/deploy.sh staging [--secrets]
-#   scripts/deploy.sh production [--secrets]
-#   echo production | scripts/deploy.sh production   (no terminal to type the confirmation in)
+#   scripts/deploy.sh production   (GitHub Actions only, on a v* tag: .github/workflows/backend.yml)
 #
-# Staging first, always. The CLI is linked back to staging on the way out, success or failure, so a
-# stray `supabase db push` never lands on production.
+# Staging first, always. Production refuses to run anywhere but the production job of CI: the tag is the
+# confirmation, and nobody links or pushes to production from a laptop. The CLI is linked back to staging
+# on the way out, success or failure, so a stray `supabase db push` never lands on production.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -19,11 +19,13 @@ env=${1:-}
 case "$env" in
   staging) ref=$STAGING_REF ;;
   production)
+    [ "${GITHUB_ACTIONS:-}" = true ] && [[ "${GITHUB_REF:-}" == refs/tags/v* ]] \
+      || { echo "Production deploys only from GitHub Actions, on a v* tag (Actions > release)." >&2; exit 1; }
+    [ "${2:-}" != --secrets ] \
+      || { echo "This script never sets production secrets: supabase secrets set --project-ref $PRODUCTION_REF --env-file ..." >&2; exit 1; }
     ref=$PRODUCTION_REF
-    read -r -p "Deploy to PRODUCTION ($ref)? Type 'production' to go on: " answer
-    [ "$answer" = production ] || { echo "Stopped."; exit 1; }
     ;;
-  *) echo "Usage: $0 staging|production [--secrets]" >&2; exit 64 ;;
+  *) echo "Usage: $0 staging [--secrets] | production (CI only)" >&2; exit 64 ;;
 esac
 # A project ref is 20 lowercase letters: anything else is a placeholder or a typo.
 [[ "$ref" =~ ^[a-z]{20}$ ]] || { echo "Set a valid project ref for $env in $0 first (got '$ref')." >&2; exit 1; }

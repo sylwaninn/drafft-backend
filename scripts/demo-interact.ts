@@ -1,6 +1,6 @@
 // The demo people of scripts/demo-profiles.ts act towards one real account, to see its notifications and
-// live screens: likes, super likes, matches, messages, replies, reactions, sessions. Staging and local only:
-// demo/guard.ts stops it anywhere else.
+// live screens: likes, super likes, matches, messages, replies, reactions, sessions. Staging only: demo/guard.ts
+// stops it anywhere else.
 //
 //   deno run -A --env-file=supabase/functions/.env.staging scripts/demo-interact.ts staging <email> <action> [count]
 //
@@ -41,18 +41,16 @@ const ACTIONS = [
 type Action = (typeof ACTIONS)[number];
 
 const [target, email, action, countArg] = Deno.args as [string, string, Action, string?];
-if (!["staging", "local"].includes(target) || !email?.includes("@") || !ACTIONS.includes(action)) {
+if (target !== "staging" || !email?.includes("@") || !ACTIONS.includes(action)) {
   console.error(
-    `Usage: deno run -A --env-file=<env file> scripts/demo-interact.ts staging|local <email> ${
-      ACTIONS.join("|")
-    } [count]`,
+    `Usage: deno run -A --env-file=<env file> scripts/demo-interact.ts staging <email> ${ACTIONS.join("|")} [count]`,
   );
   Deno.exit(64);
 }
 const count = Number(countArg ?? 1);
 if (!Number.isInteger(count) || count < 1 || count > 20) throw new Error("count must be 1 to 20");
 
-// Never production: stops here unless the env file and the database are staging's (or local).
+// Never production: stops here unless the env file and the database are staging's.
 await guard(target);
 
 const env = (name: string) =>
@@ -81,7 +79,7 @@ async function query<T = Record<string, string>>(sql: string): Promise<T[]> {
   const out = await supabase([
     "db",
     "query",
-    target === "staging" ? "--linked" : "--local",
+    "--linked",
     "--agent=no",
     "-o",
     "json",

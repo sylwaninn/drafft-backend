@@ -170,8 +170,8 @@ jobs:
         with:
           deno-version: v2.x
       - name: Deploy to production
-        # The tag is the confirmation deploy.sh asks for (release.yml, or a hand-picked version).
-        run: echo production | scripts/deploy.sh production
+        # deploy.sh production only runs here, on a v* tag (release.yml, or a hand-picked version).
+        run: scripts/deploy.sh production
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Deploy the media Worker to production
