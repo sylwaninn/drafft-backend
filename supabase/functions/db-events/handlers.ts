@@ -190,9 +190,9 @@ async function toTeam(
   await ctx.once("team-email", () => sendEmail(inbox, renderTeamEmail(subject, lines), key, replyTo));
 }
 
-/** Where a member's reply to any email about their account goes: the support address, whose mail comes back into
- * sophros (support-inbound, README "Support by email"); until it is set, the team's mailbox (unset locally: the
- * sender, as before). */
+/** Where a member's reply to any email about their account goes: the support address, whose mail comes back
+ * into sophros (support-inbound, docs/support.md "Support by email"); until it is set, the team's mailbox (unset
+ * locally: the sender, as before). */
 function supportReplyTo(): string | undefined {
   return optionalEnv("SUPPORT_ADDRESS") ?? optionalEnv("SUPPORT_INBOX");
 }

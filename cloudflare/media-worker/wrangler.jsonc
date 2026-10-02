@@ -1,6 +1,6 @@
 // drafft media Worker: serves the private R2 bucket through signed, short-lived URLs (src/index.ts).
 // Deployed by CI with the backend (.github/workflows/backend.yml), after the Edge Functions: staging on every
-// merge to main, production with each release. By hand only to roll back or in an emergency:
+// merge into staging, production with each release. By hand only to roll back or in an emergency:
 //   npx wrangler@4 deploy --env staging      (media-staging.getdrafft.com, bucket drafft-media-staging)
 //   npx wrangler@4 deploy --env production   (media.getdrafft.com, bucket drafft-media)
 // Secret, per environment, equal to MEDIA_SIGNING_KEY of that environment's Edge Functions, Vault

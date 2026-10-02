@@ -5,7 +5,7 @@
 // no HTTP route). It reads the email (postal-mime), keeps what the person wrote this time (message.ts: quoted
 // history and signature cut off, attachments by name only) and the [DR-XXXXXX] reference of its request, and
 // posts that to the `support-inbound` Edge Function with the shared secret. The function files it in its
-// request and reopens it, or opens a new request (README, "Support by email").
+// request and reopens it, or opens a new request (docs/support.md, "Support by email").
 //
 // Never lose a message: the whole email is forwarded to FALLBACK_ADDRESS (the team's mailbox, a verified
 // destination of Email Routing) whenever the function didn't take it (unreachable, an error, over the limits),

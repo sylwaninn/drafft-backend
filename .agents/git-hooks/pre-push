@@ -1,5 +1,5 @@
 #!/bin/sh
-# Refuses pushes to main and staging (workspace .claude/rules/commits.md): staging changes through pull
+# Refuses pushes to main and staging (AGENTS.md, "Repository rules"): staging changes through pull
 # requests, main only through the release workflow. Work on a branch and open a pull request into staging.
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
   case "$remote_ref" in
