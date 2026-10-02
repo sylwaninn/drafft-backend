@@ -51,7 +51,7 @@ reference), drafft-android and drafft-web: see "Shared docs" before changing it.
   product, way of working) goes into the document it belongs to, in the same change: DESIGN.md,
   PRODUCT.md, this file, or WORDING.md (in drafft-ios, its source). Never save it to Claude Code's auto
   memory: a cloud session, another machine or another agent would never see it.
-- **Who drafft is for stays in PRODUCT.md.** The audience (age above all, city, how often people train) is
+- **Who drafft is for stays in drafft-ios's PRODUCT.md.** The audience (age above all, city, how often people train) is
   never written in a README or any other doc. A README never details what a session proposal holds.
 - **Industry-grade solutions.** Every fix or feature takes the robust, secure, scalable solution the
   industry already uses (proven libraries and patterns: idempotency keys, retries with backoff,
@@ -145,7 +145,7 @@ tag to production. "Verify" in these rules
 (`pnpm verify`) means, in this repository:
 
 ```sh
-deno fmt --check supabase/functions scripts && deno lint supabase/functions scripts \
+deno fmt --check supabase/functions scripts cloudflare && deno lint supabase/functions scripts cloudflare \
   && (cd supabase/functions && deno check ./*/index.ts && deno test --allow-env --allow-read=.,../../WORDING.md) \
   && deno check scripts/*.ts \
   && supabase test db && supabase db advisors --local --level info -o json | python3 scripts/ci/advisors.py
