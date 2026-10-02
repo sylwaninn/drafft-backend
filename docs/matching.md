@@ -200,7 +200,8 @@ Errors come back from PostgREST with a stable code in `hint`.
 ## Performance
 
 `scripts/bench.sql`: 50,000 profiles in Île-de-France, a viewer with 2,000 past swipes, warm cache,
-database time only (add 10 to 80 ms of network for what the phone sees).
+database time only (add 10 to 80 ms of network for what the phone sees). Measured from 2026-09-25 to
+2026-09-26 with the local stack; run it again for current figures.
 
 ```sh
 docker exec -i supabase_db_drafft-backend psql -U postgres -v n=50000 < scripts/bench.sql
@@ -210,7 +211,7 @@ docker exec -i supabase_db_drafft-backend psql -U postgres -v n=50000 < scripts/
 | --- | --- |
 | `discover`, 10 km | ~3 ms |
 | `discover`, any distance, 2 sports, age 25-35 | ~55 ms |
-| `discover`, 2 km, a rare sport, age 40-41 (almost nobody matches) | ~9 ms |
+| `discover`, 2 km, a rare sport, age 40-41 (almost nobody matches; run by hand, not in `bench.sql`) | ~9 ms |
 | one card by id | ~0.5 ms |
 | 20 cards by id | ~1 ms |
 | profile edit + card rebuild | ~2 ms |

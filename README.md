@@ -12,7 +12,7 @@ Postgres, Auth, Realtime and Edge Functions on Supabase in the EU, media on Clou
 ![Deno](https://img.shields.io/badge/Edge%20Functions-Deno-000000?logo=deno&logoColor=white)
 ![License](https://img.shields.io/badge/license-proprietary-lightgrey)
 
-[How it works](#how-it-works) · [Getting started](#getting-started) · [Deploy](#environments-and-deploy) · [Docs](#documentation)
+[How it works](#how-it-works) | [Getting started](#getting-started) | [Deploy](#environments-and-deploy) | [Docs](#documentation)
 
 </div>
 
@@ -48,15 +48,18 @@ flowchart LR
 - **Reads and writes.** A screen reads in one round trip: cards are denormalized on write (`profile_cards`),
   and `discover` returns a full batch. Clients read their own rows and update whitelisted profile columns;
   every other write is a `security definer` RPC that validates its input and answers a stable error code in
-  `hint`. Contract: [docs/api.md](docs/api.md).
+  `hint`. Signed out (`anon`), a client runs no database function: it reads `sports` and calls the public
+  functions only. Contract: [docs/api.md](docs/api.md).
 - **Edge Functions.** Each one checks the caller in code (`verify_jwt` is off): the signed-in user for the
   apps' calls (`media-upload-url`, `stream-token`, `chat-media`, `phone-code`, `purchase-sync`,
-  `delete-account`, `device-check`), nobody for `app-config`, and a Turnstile token for `support` when signed
-  out.
+  `delete-account`, `device-check`), nobody for `app-config`, a Turnstile token for `support` when signed
+  out, and a shared secret or a signature for the database's calls (`db-events`, `ops-alert`), Auth's hooks
+  (`auth-email`, `auth-sms`), webhooks (`revenuecat-webhook`, `stream-webhook`) and the support mail Worker
+  (`support-inbound`).
 - **Live.** Triggers broadcast on the private topic `user:<id>`, which only its owner may join: `like`, `match`,
   `match_ended`, `session`, `media`, `wallet`, `profile`, `moderation`, `session_revoked`.
-- **Privacy.** Locations arrive blurred to about 1 km, stay in the `private` schema and leave only as rounded
-  distances or an area name. Birthdates never reach cards.
+- **Privacy.** Locations are snapped to about 1 km on write, stay in the `private` schema and leave only as
+  rounded distances or an area name. Birthdates never reach cards.
 
 ### Side effects: the outbox
 
@@ -80,30 +83,33 @@ flowchart LR
 |---|---|
 | Retry | backoff of 30 s doubling up to 1 hour, with jitter (50 to 100 % of the delay) |
 | Budget | 24 hours per event by default, shorter for pushes that would come too late (`private.outbox_policies`) |
-| Circuit breakers | 5 failures in 2 minutes open a provider's circuit (Stream, APNs, FCM, Resend, Twilio, R2): its events wait without spending attempts, one probe every 2 minutes |
+| Circuit breakers | 5 failures in 2 minutes open a provider's circuit (Stream, APNs, FCM, Resend, Twilio, R2): its events wait without spending attempts; one probe after a minute, each failed probe doubling the wait up to 15 minutes |
 | Idempotency | each handler records the steps it has done, so a retry runs only what's missing |
 | Dead letter | an event out of budget stops; the team replays or discards it in sophros |
-| Alerts | `ops-check` (every minute) emails the team about failed or late events, an open circuit or a job behind, with one reminder after an hour and a daily summary |
+| Alerts | `ops-check` (pg_cron, every minute) opens an incident for failed or late events, an open circuit or a job behind; the `ops-alert` function emails the team once per incident, with one reminder after an hour and a daily summary |
 
 ### Media
 
 1. `media-upload-url` checks the purpose, type and size and returns a presigned R2 PUT (10 minutes).
 2. The app registers the file (`add_profile_media`, as a draft). `db-events` reads it from R2 and runs Rekognition
    (moderation labels, faces for photos): approved, refused, or left for the team.
-3. A profile photo shows on a card only once approved and saved (`save_profile_media`); unsaved drafts go after
-   7 days.
-4. Links are signed by the database (HMAC-SHA256, 60 to 75 minutes) and served by the media Worker, which
-   answers 404 to anything else. Smaller WebP copies are made once and kept in R2; free accounts get blurred
-   copies that name neither the person nor the photo. Details: [docs/media.md](docs/media.md).
+3. A profile photo or video shows on a card only once approved and saved (`save_profile_media`); unsaved drafts
+   go after 7 days. The voice intro isn't moderated: it reaches cards as soon as it's set.
+4. Links are signed (HMAC-SHA256, 60 to 75 minutes) by the database, the Edge Functions and sophros, and served by
+   the media Worker, which answers 404 to anything else. Smaller WebP copies are made once and kept in R2; in
+   Likes, a free account sees blurred copies that name neither the person nor the photo. Details:
+   [docs/media.md](docs/media.md).
 
 ### Chat and pushes
 
 - **Chat.** `stream-token` gives the app a 24-hour token and creates its Stream user, banned while the account
-  is on hold. `db-events` creates one channel per match (the match id) on `match.created`, freezes it when the
-  match ends and erases it a year later. Stream's webhook reports reactions to `stream-webhook`.
-- **Pushes.** Stream pushes chat messages itself. Everything else is sent by the backend through APNs (iPhone)
-  or FCM (Android), chosen by each token's platform, in the person's language, within their notification
-  settings; a push that would arrive too late is dropped.
+  is on hold. `db-events` creates one channel per match (the match id) on `match.created`, posts the openers and
+  the session cards into it, freezes it when the match ends and erases it a year later. Stream's webhook
+  reports reactions to `stream-webhook`.
+- **Pushes.** Stream pushes chat messages itself, to both apps (APNs providers `drafft-apn` and
+  `drafft-apn-dev`, Firebase provider `drafft-fcm`). Everything else is sent by the backend through APNs
+  (iPhone) or FCM (Android), chosen by each token's platform, in the person's language, within their
+  notification settings; a push that would arrive too late is dropped.
 
 ### Purchases, auth, support
 
@@ -148,11 +154,12 @@ Emails and SMS land in Mailpit (http://127.0.0.1:55424). Offline setup, real ema
 
 ```sh
 supabase test db                            # database tests (pgTAP)
-deno fmt --check supabase/functions scripts && deno lint supabase/functions scripts
+deno fmt --check supabase/functions scripts cloudflare && deno lint supabase/functions scripts cloudflare
 (cd supabase/functions && deno check ./*/index.ts && deno test --allow-env --allow-read=.,../../WORDING.md)
 ```
 
-The full list, as CI runs it, is in [AGENTS.md](AGENTS.md#this-repository).
+The full verify block is in [AGENTS.md](AGENTS.md#this-repository); CI adds the Workers' type checks and tests,
+shellcheck, actionlint, gitleaks and the migration guard.
 
 ## Environments and deploy
 
@@ -165,7 +172,7 @@ The full list, as CI runs it, is in [AGENTS.md](AGENTS.md#this-repository).
 | When | CI (`.github/workflows/backend.yml`) |
 |---|---|
 | Pull request | title; Deno format, lint, types and tests (functions, scripts, Workers), shellcheck, actionlint, gitleaks; pgTAP, schema lint, advisors; the migration guard |
-| Merge into `staging` | the same checks, then `scripts/deploy.sh staging` (migrations, functions, areas), the media Worker, and the drift check |
+| Merge into `staging` | the code and database checks, then `scripts/deploy.sh staging` (migrations, functions, areas), the media Worker, and the drift check |
 | Release (**Actions > release**) | `main` fast-forwards to `staging`, a `vX.Y.Z` tag, then the same deploy to production |
 | Every day | `drift.yml` compares the repository, staging and production |
 
@@ -179,11 +186,13 @@ always naming the project. Never deploy production by hand. Secrets, setup and r
 supabase/
 ├── migrations/      schema, RPCs, triggers, jobs
 ├── functions/       Edge Functions; _shared/ holds email, push, erasure and export code
-└── tests/           pgTAP
+├── tests/           pgTAP
+└── seed.sql         local Vault secrets and the dev staff account
 cloudflare/
 ├── media-worker/            serves the private R2 bucket through signed links
 └── support-mail-worker/     files emails to the support address into sophros
-scripts/             deploy, Vault sync, Stream and App Store setup, demo people, benchmark
+scripts/             deploy, Vault sync, Stream setup, App Store products (app-store-products.ts),
+                     demo people, benchmark
 docs/                reference (below)
 ```
 

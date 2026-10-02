@@ -10,11 +10,11 @@ from pg_cron; `private.purge_expired()` (`privacy-purge`, migration `20260930000
 | Account, profile, lifestyle, sports, prompts, settings, location, wallet, cards, swipes, matches, blocks, sessions, push tokens, DeviceCheck token, selfie records, export requests, terms and consent log | `auth.users`, `auth.identities`, `public.*`, `private.locations`, `private.device_checks`, `private.selfie_checks`, `private.data_requests`, `private.consent_events` | the account's life | `delete-account`: deleting the Auth user cascades through these tables (purchases, photo flags, help requests and reports' reporter are unlinked instead, `on delete set null`) |
 | Photos, videos, voice intro, chat photos and videos | R2 `u/<id>/…` | the account's life; a removed photo at once | `delete-account` (the whole prefix), db-events `media.deleted` |
 | Profile photos picked but never saved (drafts) | `public.profile_media` (`published_at` null), R2 `u/<id>/…` | deleted by the app when the person leaves without saving; 7 days at most | `media-drafts-purge` (`private.purge_media_drafts()`), db-events `media.deleted` |
-| Chat messages, and the chat photos, videos and voice messages they point to | Stream, one channel per match; R2 `u/<id>/chat/…` | the match's life; an ended match's chat is frozen, then erased 1 year after the match ended | `delete-account` erases its chats and hard-deletes the Stream user; db-events `chat.erase` (below) |
-| Accounts kept for safety (banned, held or under an open report when deleted) | the same rows, `profiles.deleted_at`, `private.account_deletions` | 1 year after the case is closed | db-events `account.purge` (below) |
-| Verification selfies | Storage `verification-selfies` | until the check is over; a banned account's 6 months, for an appeal | db-events `selfie.delete`, `selfie.expired` (below), `delete-account` |
-| Data export archives | Storage `data-exports` | 7 days; at once when the account is deleted | `data-exports-expire`, `data-exports-sweep`, `delete-account` (see Data export below) |
-| Deletions asked for without the app (where to confirm, the outcome) | `private.staff_deletions` | until the confirmation is sent (the addresses), 30 days (the row); the audit log keeps what was done | `staff-deletions-cleanup` (see Deleting an account without the app below) |
+| Chat messages, and the chat photos, videos and voice messages they point to | Stream, one channel per match; R2 `u/<id>/chat/…` | the match's life; an ended match's chat is frozen, then erased 1 year after the match ended | `delete-account` erases its chats and hard-deletes the Stream user; db-events `chat.erase` ([below](#accounts-chats-and-selfies-kept-for-safety)) |
+| Accounts kept for safety (banned, held or under an open report when deleted) | the same rows, `profiles.deleted_at`, `private.account_deletions` | 1 year after the case is closed | db-events `account.purge` ([below](#accounts-chats-and-selfies-kept-for-safety)) |
+| Verification selfies | Storage `verification-selfies` | until the check is over; a banned account's 6 months, for an appeal | db-events `selfie.delete`, `selfie.expired` ([below](#accounts-chats-and-selfies-kept-for-safety)), `delete-account` |
+| Data export archives | Storage `data-exports` | 7 days; at once when the account is deleted | `data-exports-expire`, `data-exports-sweep`, `delete-account` (see [Data export](#data-export)) |
+| Deletions asked for without the app (where to confirm, the outcome) | `private.staff_deletions` | until the confirmation is sent (the addresses), 30 days (the row); the audit log keeps what was done | `staff-deletions-cleanup` (see [Deleting an account without the app](#deleting-an-account-without-the-app)) |
 | IP addresses | `private.ips` | 180 days after the last open from that address | `device-reports-prune` |
 | Sign-in events with IP addresses | `auth.audit_log_entries` | not enforced yet | |
 | Devices (model, versions, last IP) | `private.devices` | 1 year after the last open | `device-reports-prune` |
@@ -107,10 +107,11 @@ a time: at most one part's files plus its archive in memory, about twice `EXPORT
 private Storage bucket `data-exports` at `<user id>/<request id>-<part>.zip`, and the parts are recorded at once
 (`export_stored`, only the request's own paths), so they expire 7 days on whatever happens next; if the request
 went meanwhile (the account erased), db-events deletes them. The person gets one email in their language with one
-button (part 1 when there are several) and the other parts as plain links, each valid 7 days (Reply-To
-SUPPORT_INBOX); then the request is fulfilled (`export_ready`). A file larger than a part on its own stays out,
-listed with a note, and the team gets a short email to send it another way; with the default limit it can't
-happen (a file is 40 MiB at most, media-upload-url signs each upload's size).
+button (part 1 when there are several) and the other parts as plain links, each valid 7 days (Reply-To the support
+address, `SUPPORT_ADDRESS`, else SUPPORT_INBOX); then the request is fulfilled (`export_ready`). A file larger
+than a part on its own stays out, listed with a note, and the team gets a short email to send it another way; with
+the default limit only a chat video over 45 MiB can be one (`media-upload-url` caps profile videos at 40 MiB, chat
+videos at 100 MiB).
 
 `data-exports-expire` (hourly) queues `export.expired` 7 days on, which deletes every part. `data-exports-sweep`
 (daily) queues `export.sweep` for objects of the bucket no request refers to, a day old at least (a build that

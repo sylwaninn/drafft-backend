@@ -1,9 +1,9 @@
 # Moderation and staff access
 
-Moderation and support run in [drafft-sophros](https://github.com/sylwaninn/drafft-sophros), its own repository: one Cloudflare Worker per
-environment behind Cloudflare Access. It reaches the database with the secret key, only through the
-`admin_*` functions (`20260927000007_sophros.sql`, service role only). Each call names the staff member;
-the database checks their role in `private.staff` (`support`, `moderator`, `admin`) and writes
+Moderation and support run in [drafft-sophros](https://github.com/sylwaninn/drafft-sophros), its own repository:
+one Cloudflare Worker per environment behind Cloudflare Access. It reaches the database with the secret key, only
+through the `admin_*` functions (`20260927000007_sophros.sql`, service role only). Each call names the staff
+member; the database checks their role in `private.staff` (`support`, `moderator`, `admin`) and writes
 `private.admin_audit`, which can't be edited or deleted. Staff are per database:
 
 ```sql
@@ -27,7 +27,7 @@ only email. A removed message is told once Stream shows it removed (a 404 or cod
 decisions (the photo check, holds from a device or a link to a banned account) keep their own messages. The
 statements are part of the member's data export.
 
-The contract for sophros (it must ship before this, see Breaking changes in the pull request):
+What sophros sends with each decision:
 
 | RPC (service role) | New parameters | Statement sent |
 | --- | --- | --- |
@@ -51,11 +51,11 @@ records the category. A removal needs `<match id>/<message id>` and its author a
 
 `admin_log(p_actor, 'conversation.view', p_user, p_match, p_reason, p_override, …, p_override_basis)` is the gate
 sophros calls before reading a conversation from Stream (and `'message.delete'` before removing a message). It needs
-a reason written by the person (`reason_required`; the old default "opened in sophros" is refused) and a basis,
+a reason written by the person (`reason_required` when empty) and a basis,
 from `admin_conversation_access(p_actor, p_match)` → `{ basis: ('report' | 'support' | 'hold')[], canOverride }`
 (`not_found` for an unknown match): `report` (a report between the two members), `support` (a help request from
 either, open or from the last 90 days), `hold` (either account on hold or banned, unless the reader put that hold
 themself). Without one it fails with `no_basis`; an admin may still read it with `p_override = true` and
 `p_override_basis` (`legal_request` or `member_safety`, else `override_basis_required`), for a legal request or
 members' safety only; the audit log records the override and why. The audit log records the basis.
-`admin_selfies(p_actor, p_user, p_reason)` needs a reason (no default any more).
+`admin_selfies(p_actor, p_user, p_reason)` needs a reason too (`reason_required`).

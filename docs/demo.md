@@ -25,5 +25,5 @@ deno run -A --env-file=$E scripts/demo-interact.ts staging <email> replies|react
   rebuilds the person's card (`profile_media_card` trigger).
 - `demo-interact.ts` runs the app's RPCs (`swipe`, `propose_session`, `respond_session`) as the demo person, by
   setting their id as the JWT subject, so rules, events and pushes are the real ones; chat goes through Stream
-  as them, with Stream's own message push (APNs only: no message pushes on Android yet).
+  as them, with Stream's own message push (both apps).
 - Discover's preferences are mutual: an account only sees the demo people whose own preferences include it.

@@ -45,25 +45,27 @@ back, or anything else written to that address, lands in sophros (migration `202
    filed, and forwarded as well. If even that forward fails, the Worker throws and Email Routing refuses the
    email, so the sender's server reports it.
 
-`admin_support` returns each message's `direction`; showing the member's messages as received by email is
-sophros' part (its own pull request). Until then they read like the team's.
+`admin_support` returns each message's `direction`: sophros marks the member's messages that came by email
+("By email").
 
 A team reply is never left "Sending" (`sent_at` and `error` both null): whatever stops db-events from sending it,
 reading it included, is recorded on the message (`error`) and retried, and a reply the outbox gives up on (out of
 budget, or discarded) is marked failed when nothing was recorded (`private.support_reply_given_up`). A replay
 that sends it clears the error.
 
-Setting it up, per environment (production: support@getdrafft.com; staging: support-staging@getdrafft.com):
+### Setting it up
+
+Done once per environment (production: support@getdrafft.com; staging: support-staging@getdrafft.com); kept to
+rebuild it.
 
 1. Function secrets, in both projects (the drift check wants the same names): `SUPPORT_INBOUND_SECRET`
-   (`openssl rand -hex 32`, one per environment). Leave `SUPPORT_ADDRESS` unset for now: replies keep going to
-   SUPPORT_INBOX until the route works.
-2. Merge: CI deploys the migration and `support-inbound`.
+   (`openssl rand -hex 32`, one per environment). Keep `SUPPORT_ADDRESS` unset until the route works (step 7):
+   replies go to SUPPORT_INBOX meanwhile.
+2. CI deploys `support-inbound` with the backend.
 3. Cloudflare, zone `getdrafft.com` › Email › Email Routing: enable it. It adds its MX records
    (`route1/2/3.mx.cloudflare.net`), a DKIM record and an SPF TXT record
-   (`v=spf1 include:_spf.mx.cloudflare.net ~all`); the zone's current `v=spf1 -all` has to give way (one SPF
-   record per name). The apex has no MX today and `mail.getdrafft.com` (Resend's sending subdomain, MX to Amazon
-   SES) is not affected.
+   (`v=spf1 include:_spf.mx.cloudflare.net ~all`); one SPF record per name, so it replaces any other on the
+   apex. `mail.getdrafft.com` (Resend's sending subdomain, MX to Amazon SES) is separate and not affected.
 4. Destination addresses: add the team's mailbox (SUPPORT_INBOX) and confirm the email Cloudflare sends it
    (a Worker can only forward to a verified address).
 5. The Worker, from `cloudflare/support-mail-worker`: `npm ci`, then per environment
