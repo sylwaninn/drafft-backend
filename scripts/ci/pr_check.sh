@@ -65,7 +65,7 @@ if [ -n "${GH_TOKEN:-}" ] && [ -n "${PR_NUMBER:-}" ] && [ -n "${GITHUB_REPOSITOR
   unsigned=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/commits" \
     --jq '.[] | select(.commit.verification.verified | not) | "\(.sha[0:7]) (\(.commit.verification.reason))"')
   if [ -n "$unsigned" ]; then
-    message="Unverified commits (set up commit signing, see drafft-ios README > Development > Signed commits): $(tr '\n' ' ' <<<"$unsigned")"
+    message="Unverified commits (set up commit signing, see drafft-ios CONTRIBUTING.md > Signed commits): $(tr '\n' ' ' <<<"$unsigned")"
     if [ "$REQUIRE_SIGNED" = true ]; then error "$message"; else echo "::warning::$message"; fi
   fi
 fi
